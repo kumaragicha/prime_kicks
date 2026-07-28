@@ -18,6 +18,17 @@ const productInclude = {
   },
 } satisfies Prisma.ProductInclude;
 
+// Storefront reads only ever expose sizes that are in stock — an out-of-stock
+// size is never offered to the customer. Stock is decremented at order time,
+// not when an item is added to the cart, so `stock > 0` reflects real availability.
+const storefrontInclude = {
+  ...productInclude,
+  variants: {
+    ...productInclude.variants,
+    where: { stock: { gt: 0 } },
+  },
+} satisfies Prisma.ProductInclude;
+
 type ProductWithRelations = Prisma.ProductGetPayload<{ include: typeof productInclude }>;
 
 /** Add a computed `totalStock` (sum of all variant stock) to a product. */
@@ -54,7 +65,7 @@ export class ProductsService {
     const [rows, total] = await Promise.all([
       this.prisma.product.findMany({
         where,
-        include: productInclude,
+        include: storefrontInclude,
         skip: (page - 1) * pageSize,
         take: pageSize,
         orderBy: { createdAt: 'desc' },
@@ -71,7 +82,7 @@ export class ProductsService {
   async findOne(id: string) {
     const product = await this.prisma.product.findFirst({
       where: { id, deletedAt: null },
-      include: productInclude,
+      include: storefrontInclude,
     });
     if (!product) {
       throw new NotFoundException(`Product ${id} not found`);

@@ -4,14 +4,16 @@ import { Announcement } from '@/components/announcement';
 import { Icon } from '@/components/icon';
 import { LoginModal } from '@/components/login-modal';
 import { SiteHeader } from '@/components/site-header';
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import { notifyStore, useProduct } from '@/lib/hooks';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { use, useMemo, useRef, useState } from 'react';
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const { data: product, isLoading, isError } = useProduct(id);
   const [activeMedia, setActiveMedia] = useState(0);
   const [size, setSize] = useState('');
@@ -60,13 +62,14 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     try {
       await api.addToCart(id, selectedVariant.id);
       notifyStore();
-      setMessage(
-        action === 'book'
-          ? 'Pair added to your bag — complete checkout to reserve it.'
-          : 'Added to your bag.',
-      );
+      if (action === 'book') {
+        router.push('/cart');
+        return;
+      }
+      setMessage('Added to your bag.');
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') setLoginOpen(true);
+      else if (error instanceof ApiError && error.status === 400) setMessage(error.message);
       else setMessage('We couldn’t add this pair. Please try again.');
     } finally {
       setAdding(false);
@@ -226,27 +229,16 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
         </div>
 
         <aside className="pt-[21px] animate-[enter_0.5s_0.1s_both] max-[760px]:pt-[30px]">
-          <p className="mb-[11px] text-[10px] tracking-[.16em] uppercase font-bold text-[#76552a]">
-            {product.brand}
-            {product.releaseYear ? ` · ${product.releaseYear}` : ''}
-          </p>
           <h1 className="text-[clamp(37px,4vw,64px)] tracking-[-.085em] leading-[.88] m-0 max-w-[550px] max-[760px]:text-[42px]">
-            {product.name}
+            {product.brand} {product.name}
           </h1>
           <p className="text-[21px] font-bold mt-[20px] mb-[7px]">
             {formatCurrency(product.customerPrice, product.currency)}
           </p>
-          <p className="text-[11px] text-[#777] mb-[30px]">
-            {product.totalStock > 0
-              ? `${product.totalStock} pairs available · Authenticated before dispatch`
-              : 'Sold out'}
-          </p>
+
           <div className="border-t border-line py-[20px]">
             <div className="flex justify-between text-[10px] uppercase tracking-[.08em]">
               <span>Select size</span>
-              <b>
-                {product.sizeType.name} {activeSize}
-              </b>
             </div>
             <div
               className={`flex flex-wrap gap-[7px] mt-[15px]${shake ? ' animate-shake' : ''}`}
@@ -266,10 +258,13 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           </div>
           <div className="grid grid-cols-2 gap-[7px] max-[760px]:grid-cols-1">
             <button
-              className="h-[49px] rounded-[9px] uppercase tracking-[.08em] text-[10px] font-bold transition-[transform,background] duration-200 enabled:hover:-translate-y-[2px] disabled:cursor-not-allowed disabled:opacity-[.42] bg-white border border-ink enabled:hover:bg-[#f3f1ec]"
+              className="h-[49px] rounded-[9px] uppercase tracking-[.08em] text-[10px] font-bold transition-[transform,background] duration-200 enabled:hover:-translate-y-[2px] disabled:cursor-not-allowed disabled:opacity-[.42] bg-white border border-ink enabled:hover:bg-[#f3f1ec] flex items-center justify-center gap-[10px] [&_svg]:w-[15px]"
               disabled={!sizes.length || adding}
               onClick={() => addToBag('cart')}
             >
+              <span className="inline-flex max-[760px]:hidden" aria-hidden="true">
+                <Icon name="bag" />
+              </span>
               {adding ? 'Adding…' : 'Add to cart'}
             </button>
             <button
@@ -277,7 +272,10 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               disabled={!sizes.length || adding}
               onClick={() => addToBag('book')}
             >
-              {adding ? 'Adding…' : 'Book now'} <Icon name="arrow" />
+              {adding ? 'Adding…' : 'Book now'}
+              <span className="inline-flex max-[760px]:hidden" aria-hidden="true">
+                <Icon name="arrow" />
+              </span>
             </button>
           </div>
           <div className="border-t border-line mt-[29px] pt-[20px]">
@@ -318,11 +316,6 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               </button>
             </div>
           </div>
-          {message && (
-            <p className="text-[11px] text-[#795120] mt-[14px]" role="status">
-              {message}
-            </p>
-          )}
         </aside>
       </section>
 
@@ -439,6 +432,14 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           onClose={() => setLoginOpen(false)}
           onSuccess={() => setMessage('Signed in — choose your size and add this pair.')}
         />
+      )}
+      {message && (
+        <div
+          className="fixed z-30 left-1/2 bottom-[23px] bg-accent text-ink rounded-[10px] py-[13px] px-[17px] text-[11px] font-bold flex items-center gap-[8px] shadow-[0_10px_28px_rgba(0,0,0,0.28)] animate-[toast_0.25s_ease-out_both] [&_svg]:w-[16px] max-[800px]:w-max max-[800px]:max-w-[calc(100%-30px)]"
+          role="status"
+        >
+          <Icon name="bag" /> {message}
+        </div>
       )}
     </main>
   );

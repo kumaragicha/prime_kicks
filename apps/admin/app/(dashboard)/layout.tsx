@@ -1,6 +1,7 @@
 'use client';
 
 import { AuthGuard, useAuth } from '@/lib/auth';
+import { ToastProvider } from '@/lib/toast';
 import { Button } from '@prime-kicks/ui';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -108,23 +109,25 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <AuthGuard>
-      <div className="min-h-screen bg-neutral-50">
-        <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
-        <div className="min-w-0 lg:pl-56">
-          <header className="sticky top-0 z-20 flex h-16 items-center border-b border-neutral-200 bg-white px-4 lg:hidden">
-            <button
-              type="button"
-              aria-label="Open navigation"
-              className="rounded-md p-2 hover:bg-neutral-100"
-              onClick={() => setNavOpen(true)}
-            >
-              <MenuIcon />
-            </button>
-            <span className="ml-3 font-semibold">Prime Admin</span>
-          </header>
-          <main className="min-w-0 p-4 sm:p-6 lg:p-8">{children}</main>
+      <ToastProvider>
+        <div className="min-h-screen bg-neutral-50">
+          <Sidebar open={navOpen} onClose={() => setNavOpen(false)} />
+          <div className="min-w-0 lg:pl-56">
+            <header className="sticky top-0 z-20 flex h-16 items-center border-b border-neutral-200 bg-white px-4 lg:hidden">
+              <button
+                type="button"
+                aria-label="Open navigation"
+                className="rounded-md p-2 hover:bg-neutral-100"
+                onClick={() => setNavOpen(true)}
+              >
+                <MenuIcon />
+              </button>
+              <span className="ml-3 font-semibold">Prime Admin</span>
+            </header>
+            <main className="min-w-0 p-4 sm:p-6 lg:p-8">{children}</main>
+          </div>
         </div>
-      </div>
+      </ToastProvider>
     </AuthGuard>
   );
 }

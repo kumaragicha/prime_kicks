@@ -2,7 +2,7 @@
 
 import { Announcement } from '@/components/announcement';
 import { Icon } from '@/components/icon';
-import { api, type StoreCart } from '@/lib/api';
+import { ApiError, api, type StoreCart } from '@/lib/api';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -13,8 +13,15 @@ export default function CartPage() {
   const [cart, setCart] = useState<StoreCart | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const [toast, setToast] = useState('');
   const [pending, setPending] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Transient banner for quantity/stock/checkout feedback while the bag is on screen.
+  function notify(text: string) {
+    setToast(text);
+    window.setTimeout(() => setToast(''), 2800);
+  }
 
   const load = useCallback(async () => {
     try {
@@ -40,8 +47,9 @@ export default function CartPage() {
     setPending(itemId);
     try {
       setCart(await api.updateCartItem(itemId, quantity));
-    } catch {
-      setMessage('We couldn’t update this item.');
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 400) notify(error.message);
+      else notify('We couldn’t update this item.');
     } finally {
       setPending(null);
     }
@@ -51,7 +59,7 @@ export default function CartPage() {
     try {
       setCart(await api.removeCartItem(itemId));
     } catch {
-      setMessage('We couldn’t remove this item.');
+      notify('We couldn’t remove this item.');
     } finally {
       setPending(null);
     }
@@ -273,7 +281,7 @@ export default function CartPage() {
               </section>
               <button
                 className="w-full h-[47px] mt-[17px] border-0 rounded-[8px] bg-ink text-white uppercase tracking-[.08em] text-[10px] font-bold flex items-center justify-center gap-[17px] [&_svg]:w-[14px]"
-                onClick={() => setMessage('Checkout is the next step to connect.')}
+                onClick={() => notify('Checkout is the next step to connect.')}
               >
                 Proceed to checkout <Icon name="arrow" />
               </button>
@@ -284,6 +292,14 @@ export default function CartPage() {
           </div>
         )}
       </section>
+      {toast && (
+        <div
+          className="fixed z-30 left-1/2 bottom-[23px] bg-accent text-ink rounded-[10px] py-[13px] px-[17px] text-[11px] font-bold flex items-center gap-[8px] shadow-[0_10px_28px_rgba(0,0,0,0.28)] animate-[toast_0.25s_ease-out_both] [&_svg]:w-[16px] max-[800px]:w-max max-[800px]:max-w-[calc(100%-30px)]"
+          role="status"
+        >
+          <Icon name="bag" /> {toast}
+        </div>
+      )}
       <footer className="bg-[#111] text-white pt-[27px] px-[5.25vw] pb-[21px] max-[800px]:px-[21px] max-[800px]:pb-[19px] max-[760px]:pt-[22px] max-[760px]:px-[15px] max-[760px]:pb-[22px]">
         <div className="flex justify-between gap-[20px] text-[#888] text-[9px] uppercase tracking-[.07em] border-0 p-0 max-[800px]:grid max-[800px]:gap-[17px] max-[800px]:leading-[1.4] max-[760px]:flex">
           <span>© 2026 Prime Kicks. All rights reserved.</span>

@@ -6,19 +6,23 @@ import { Icon } from '@/components/icon';
 import { LoginModal } from '@/components/login-modal';
 import { ProductCard, type StoreProduct } from '@/components/product-card';
 import { SiteHeader } from '@/components/site-header';
-import { api } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import { notifyStore, useAuthCart, useInfiniteProducts } from '@/lib/hooks';
+import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 export default function HomePage() {
   const { data, isLoading, isError, hasNextPage, fetchNextPage, isFetchingNextPage, refetch } =
     useInfiniteProducts();
   const { user, refresh } = useAuthCart();
+  const router = useRouter();
   const [toast, setToast] = useState('');
   const [loginOpen, setLoginOpen] = useState(false);
-  const [pendingAdd, setPendingAdd] = useState<{ product: StoreProduct; variantId: string } | null>(
-    null,
-  );
+  const [pendingAdd, setPendingAdd] = useState<{
+    product: StoreProduct;
+    variantId: string;
+    action: 'cart' | 'book';
+  } | null>(null);
   const loader = useRef<HTMLDivElement>(null);
   const products = useMemo<StoreProduct[]>(
     () =>
@@ -54,6 +58,12 @@ export default function HomePage() {
     return () => observer.disconnect();
   }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
 
+  const [filterCount, setFilterCount] = useState(0);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setFilterCount((params.get('brandId') ? 1 : 0) + (params.get('categoryId') ? 1 : 0));
+  }, []);
+
   useEffect(() => {
     if (window.localStorage.getItem('prime-kicks-open-login') === 'true') {
       window.localStorage.removeItem('prime-kicks-open-login');
@@ -61,18 +71,23 @@ export default function HomePage() {
     }
   }, []);
 
-  async function addToCart(product: StoreProduct, variantId: string) {
+  async function addToCart(product: StoreProduct, variantId: string, action: 'cart' | 'book') {
     if (!user) {
-      setPendingAdd({ product, variantId });
+      setPendingAdd({ product, variantId, action });
       setLoginOpen(true);
       return;
     }
     try {
       await api.addToCart(product.id, variantId);
       notifyStore();
+      if (action === 'book') {
+        router.push('/cart');
+        return;
+      }
       setToast(`${product.name} added to your bag`);
-    } catch {
-      setToast('We couldn’t add this pair. Please try again.');
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 400) setToast(error.message);
+      else setToast('We couldn’t add this pair. Please try again.');
     }
     window.setTimeout(() => setToast(''), 2200);
   }
@@ -107,7 +122,7 @@ export default function HomePage() {
         className="pt-[74px] px-[5.25vw] pb-[42px] max-[800px]:pt-[43px] max-[800px]:px-[15px] max-[800px]:pb-[20px]"
         id="shop"
       >
-        <div className="flex items-end justify-between mb-[27px]">
+        <div className="flex items-center justify-between gap-[16px] mb-[27px]">
           <div>
             <p className="m-0 mb-[11px] text-[10px] tracking-[.16em] uppercase font-bold">
               Curated for you
@@ -116,9 +131,6 @@ export default function HomePage() {
               Fresh drops
             </h2>
           </div>
-          <button className="border border-ink bg-transparent uppercase text-[10px] tracking-[.1em] font-bold py-[10px] px-[12px]">
-            Filter <span className="bg-ink text-white py-[2px] px-[4px] ml-[5px]">12</span>
-          </button>
         </div>
         <div
           className="grid grid-cols-4 gap-x-[16px] gap-y-[27px] max-[800px]:grid-cols-2 max-[800px]:gap-x-[10px] max-[800px]:gap-y-[28px] min-[801px]:max-[1100px]:grid-cols-3"
@@ -283,7 +295,7 @@ export default function HomePage() {
         </div>
       </footer>
       {toast && (
-        <div className="fixed z-30 left-1/2 bottom-[23px] -translate-x-1/2 bg-[#111] text-white py-[13px] px-[17px] text-[11px] flex items-center gap-[8px] shadow-[0_8px_25px_#0003] animate-[toast_0.25s_ease-out] [&_svg]:w-[16px] max-[800px]:w-max max-[800px]:max-w-[calc(100%-30px)]">
+        <div className="fixed z-30 left-1/2 bottom-[23px] bg-accent text-ink rounded-[10px] py-[13px] px-[17px] text-[11px] font-bold flex items-center gap-[8px] shadow-[0_10px_28px_rgba(0,0,0,0.28)] animate-[toast_0.25s_ease-out_both] [&_svg]:w-[16px] max-[800px]:w-max max-[800px]:max-w-[calc(100%-30px)]">
           <Icon name="bag" /> {toast}
         </div>
       )}
@@ -299,9 +311,17 @@ export default function HomePage() {
             if (pendingAdd) {
               try {
                 await api.addToCart(pendingAdd.product.id, pendingAdd.variantId);
+                notifyStore();
+                if (pendingAdd.action === 'book') {
+                  await refresh();
+                  setPendingAdd(null);
+                  router.push('/cart');
+                  return;
+                }
                 setToast(`${pendingAdd.product.name} added to your bag`);
-              } catch {
-                setToast('We couldn’t add this pair. Please try again.');
+              } catch (error) {
+                if (error instanceof ApiError && error.status === 400) setToast(error.message);
+                else setToast('We couldn’t add this pair. Please try again.');
               }
               setPendingAdd(null);
             } else setToast('Welcome back.');
@@ -329,4 +349,3 @@ function ProductSkeleton() {
     </div>
   );
 }
-

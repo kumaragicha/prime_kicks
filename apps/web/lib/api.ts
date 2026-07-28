@@ -13,6 +13,30 @@ export type StoreCartItem = {
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
 
+/** Error carrying the API's HTTP status and its human-readable message. */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+/** Pull the message out of a NestJS error body ({ message, error, statusCode }); fall back to raw text. */
+async function toApiError(res: Response): Promise<ApiError> {
+  const text = await res.text();
+  try {
+    const body = JSON.parse(text) as { message?: string | string[] };
+    const message = Array.isArray(body.message) ? body.message.join(', ') : body.message;
+    if (message) return new ApiError(res.status, message);
+  } catch {
+    // non-JSON body — fall through to raw text
+  }
+  return new ApiError(res.status, text || `Request failed (${res.status})`);
+}
+
 const ACCESS_TOKEN_KEY = 'prime-kicks-access-token';
 const REFRESH_TOKEN_KEY = 'prime-kicks-refresh-token';
 
@@ -30,7 +54,7 @@ function rawFetch(path: string, init?: RequestInit): Promise<Response> {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await rawFetch(path, init);
   if (!res.ok) {
-    throw new Error(`API ${res.status}: ${await res.text()}`);
+    throw await toApiError(res);
   }
   return res.json() as Promise<T>;
 }
@@ -93,7 +117,7 @@ async function authenticatedRequest<T>(path: string, init?: RequestInit): Promis
   }
 
   if (!res.ok) {
-    throw new Error(`API ${res.status}: ${await res.text()}`);
+    throw await toApiError(res);
   }
   return res.json() as Promise<T>;
 }

@@ -1,15 +1,15 @@
 'use client';
 
 import { use } from 'react';
-import { useRouter } from 'next/navigation';
 import type { DefaultValues } from 'react-hook-form';
 import type { CreateProductSchema } from '@prime-kicks/validation';
 import { ProductForm } from '@/components/product-form';
 import { useProduct, useUpdateProduct } from '@/lib/hooks';
+import { useToast } from '@/lib/toast';
 
 export default function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const router = useRouter();
+  const toast = useToast();
   const { data: product, isLoading, isError } = useProduct(id);
   const updateProduct = useUpdateProduct(id);
 
@@ -36,7 +36,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
 
   const onSubmit = async (values: CreateProductSchema) => {
     await updateProduct.mutateAsync(values);
-    router.push('/');
+    toast.success('Changes saved.');
   };
 
   return (

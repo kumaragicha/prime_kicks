@@ -3,6 +3,7 @@
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
 import { useState } from 'react';
+import { Icon } from './icon';
 
 export type StoreProduct = {
   id: string;
@@ -37,18 +38,18 @@ export function ProductCard({
   priority = false,
 }: {
   product: StoreProduct;
-  onAdd: (product: StoreProduct, variantId: string) => void;
+  onAdd: (product: StoreProduct, variantId: string, action: 'cart' | 'book') => void;
   priority?: boolean;
 }) {
   const [variantId, setVariantId] = useState('');
   const [shake, setShake] = useState(false);
 
-  function handleAdd() {
+  function handleAdd(action: 'cart' | 'book') {
     if (!variantId) {
       setShake(true);
       return;
     }
-    onAdd(product, variantId);
+    onAdd(product, variantId, action);
   }
 
   return (
@@ -68,9 +69,7 @@ export function ProductCard({
             </div>
           )}
         </Link>
-        <span className="absolute top-[10px] left-[10px] bg-[linear-gradient(135deg,#d1b076_0%,#b99255_55%,#8d6a38_100%)] text-white rounded-full text-[9px] uppercase tracking-[.08em] font-bold px-[8px] py-[6px] max-[800px]:top-[7px] max-[800px]:left-[7px] max-[800px]:text-[8px] max-[800px]:p-[5px]">
-          {product.sizes.length ? 'In stock' : 'Sold out'}
-        </span>
+
         <Link
           className="absolute bottom-[10px] right-[10px] opacity-0 translate-y-[5px] transition duration-200 bg-white border-0 rounded-full px-[12px] py-[9px] text-[10px] uppercase font-bold flex gap-[6px] items-center shadow-[0_5px_16px_rgba(0,0,0,0.12)] group-hover:opacity-100 group-hover:translate-y-0 [&_svg]:w-[13px] max-[800px]:hidden"
           href={`/products/${product.id}`}
@@ -81,20 +80,17 @@ export function ProductCard({
       <div className="pt-[13px] px-[1px] pb-0">
         <div className="flex justify-between gap-[8px] max-[800px]:block">
           <div>
-            <p className="text-[9px] tracking-[.09em] mb-[4px] font-bold">{product.brand}</p>
             <h3 className="text-[15px] tracking-[-.035em] leading-[1] max-[800px]:text-[14px]">
-              {product.name}
+              {product.brand} {product.name}
             </h3>
           </div>
           <strong className="text-[13px] whitespace-nowrap max-[800px]:block max-[800px]:mt-[7px] max-[800px]:text-[13px]">
             {formatCurrency(product.price, product.currency)}
           </strong>
         </div>
-        <p className="mt-[7px] mb-[11px] text-[10px] text-[#777] max-[800px]:mt-[6px] max-[800px]:mb-[9px] max-[800px]:text-[9px] max-[800px]:whitespace-nowrap max-[800px]:overflow-hidden max-[800px]:text-ellipsis">
-          {product.color}
-        </p>
+
         <div
-          className={`flex gap-[5px] mb-[10px] max-[800px]:gap-[3px]${shake ? ' animate-shake' : ''}`}
+          className={`my-[10px] gap-[4px] flex${shake ? ' animate-shake' : ''}`}
           onAnimationEnd={() => setShake(false)}
           aria-label={`Select size for ${product.name}`}
         >
@@ -109,20 +105,28 @@ export function ProductCard({
             </button>
           ))}
         </div>
-        <div className="grid grid-cols-2 gap-[5px] max-[800px]:grid-cols-1">
+        <div className="grid grid-cols-2 gap-[5px]">
           <button
-            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[9px] font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-transparent hover:bg-[#e6e5e1]"
-            onClick={handleAdd}
+            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[9px] font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-transparent hover:bg-[#e6e5e1] flex justify-center items-center gap-[4px] [&_svg]:w-[15px]"
+            onClick={() => handleAdd('cart')}
             disabled={!product.sizes.length}
+            aria-label="Add to cart"
           >
+            <span className="inline-flex max-[800px]:hidden" aria-hidden="true">
+              <Icon name="bag" />
+            </span>{' '}
             Add to cart
           </button>
           <button
-            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[9px] font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-ink text-white flex justify-center gap-[4px] items-center hover:bg-[#383838] [&_svg]:w-[12px] max-[800px]:hidden"
-            onClick={handleAdd}
+            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[9px] font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-ink text-white flex justify-center gap-[4px] items-center hover:bg-[#383838] [&_svg]:w-[12px] max-[800px]:[&_svg]:w-[16px]"
+            onClick={() => handleAdd('book')}
             disabled={!product.sizes.length}
+            aria-label="Buy now"
           >
-            Buy now <Arrow />
+            Buy now{' '}
+            <span className="inline-flex max-[800px]:hidden" aria-hidden="true">
+              <Arrow />
+            </span>
           </button>
         </div>
       </div>

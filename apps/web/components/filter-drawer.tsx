@@ -49,6 +49,13 @@ export function FilterDrawer() {
     setAppliedCount((params.get('brandId') ? 1 : 0) + (params.get('categoryId') ? 1 : 0));
   }, []);
 
+  // Open from other triggers (e.g. the "Fresh drops" header button) via a shared event.
+  useEffect(() => {
+    const handler = () => openDrawer();
+    window.addEventListener('pk:open-filters', handler);
+    return () => window.removeEventListener('pk:open-filters', handler);
+  }, []);
+
   // Lock body scroll while the drawer is open.
   useEffect(() => {
     if (!open) return;
@@ -90,11 +97,11 @@ export function FilterDrawer() {
         type="button"
         onClick={openDrawer}
         aria-label="Open filters"
-        className="fixed bottom-[24px] right-[24px] z-30 flex items-center gap-[9px] bg-ink text-white rounded-full pl-[18px] pr-[20px] py-[14px] shadow-[0_12px_30px_rgba(0,0,0,0.28)] text-[11px] uppercase tracking-[.08em] font-bold [&_svg]:w-[15px] transition-transform duration-200 hover:-translate-y-[2px] max-[800px]:bottom-[18px] max-[800px]:right-[18px]"
+        className="fixed bottom-[24px] right-[24px] z-30 flex items-center gap-[9px] bg-accent text-ink rounded-full pl-[18px] pr-[20px] py-[14px] shadow-[0_12px_30px_rgba(0,0,0,0.28)] text-[11px] uppercase tracking-[.08em] font-bold [&_svg]:w-[15px] transition-transform duration-200 hover:-translate-y-[2px] max-[800px]:bottom-[18px] max-[800px]:right-[18px]"
       >
         <Icon name="filter" /> Filters
         {appliedCount > 0 && (
-          <span className="grid place-items-center min-w-[18px] h-[18px] px-[5px] rounded-full bg-accent text-ink text-[9px] font-bold">
+          <span className="grid place-items-center min-w-[18px] h-[18px] px-[5px] rounded-full bg-ink text-white text-[9px] font-bold">
             {appliedCount}
           </span>
         )}
