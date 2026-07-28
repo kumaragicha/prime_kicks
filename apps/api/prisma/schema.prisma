@@ -1,0 +1,240 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum UserRole {
+  CUSTOMER
+  RESELLER
+  ADMIN
+}
+
+model User {
+  id        String   @id @default(cuid())
+  firstName String
+  lastName  String
+  name      String // full display name (firstName + lastName)
+  email     String   @unique
+  mobileNo  String
+  city      String
+  state     String
+  role      UserRole @default(CUSTOMER)
+  isActive  Boolean  @default(true) // false = disabled (cannot log in)
+
+  // Auth
+  passwordHash     String
+  refreshTokenHash String? // bcrypt hash of the current refresh token (rotated on use)
+  isEmailVerified  Boolean   @default(false)
+  lastLoginAt      DateTime?
+
+  orders Order[]
+  cart   Cart?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete
+
+  @@index([deletedAt])
+  @@index([role])
+}
+
+/// A size system (e.g. "Nike", "Adidas", "Crocs"). Groups the valid sizes.
+model SizeType {
+  id       String @id @default(cuid())
+  name     String @unique
+  isActive Boolean @default(true)
+
+  sizes    Size[]
+  products Product[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([deletedAt])
+}
+
+/// An individual size within a size type. `label` is the primary value ("36",
+/// "M3"); `conversion` is an optional secondary label ("UK 3").
+model Size {
+  id         String   @id @default(cuid())
+  sizeType   SizeType @relation(fields: [sizeTypeId], references: [id], onDelete: Cascade)
+  sizeTypeId String
+  label      String
+  conversion String?
+  sortOrder  Int      @default(0)
+  isActive   Boolean  @default(true)
+
+  variants ProductVariant[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sizeTypeId, label])
+  @@index([sizeTypeId])
+}
+
+model Product {
+  id          String @id @default(cuid())
+  sku         String @unique
+  name        String
+  brand       String
+  brandRef    Brand? @relation(fields: [brandId], references: [id])
+  brandId     String?
+  description String @default("")
+
+  // Media
+  photoUrls String[]
+  videoUrl  String?
+
+  // Pricing in whole Indian rupees.
+  inhouseCost   Int // what the product costs us
+  resellerPrice Int // selling price offered to resellers
+  customerPrice Int // selling price offered to customers
+  currency      String @default("INR")
+
+  releaseYear Int?
+
+  // Sizing — one size type per product, with per-size stock in variants
+  sizeType   SizeType         @relation(fields: [sizeTypeId], references: [id])
+  sizeTypeId String
+  variants   ProductVariant[]
+  productTypes ProductType[]
+  categories Category[]
+
+  orderItems OrderItem[]
+  cartItems  CartItem[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete
+
+  @@index([brand])
+  @@index([brandId])
+  @@index([sizeTypeId])
+  @@index([deletedAt])
+}
+
+/// Product brand master, e.g. Adidas or Puma.
+model Brand {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  products  Product[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Product type master, e.g. Sneaker, Casual or Sport.
+model ProductType {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  products  Product[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Customer category master, e.g. Men or Women.
+model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  products  Product[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Per-size stock for a product (product X, size UK 3, qty 5).
+model ProductVariant {
+  id        String  @id @default(cuid())
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  size      Size    @relation(fields: [sizeId], references: [id])
+  sizeId    String
+  sku       String? @unique
+  stock     Int     @default(0)
+
+  orderItems OrderItem[]
+  cartItems  CartItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, sizeId])
+  @@index([productId])
+  @@index([sizeId])
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  orderNumber   String      @unique
+  user          User        @relation(fields: [userId], references: [id])
+  userId        String
+  status        OrderStatus @default(PENDING)
+  items         OrderItem[]
+  subtotal Int
+  shipping Int    @default(0)
+  total    Int
+  currency String @default("INR")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([userId])
+}
+
+model Cart {
+  id        String     @id @default(cuid())
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String     @unique
+  items     CartItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model CartItem {
+  id        String         @id @default(cuid())
+  cart      Cart           @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  cartId    String
+  product   Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId String
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  variantId String
+  quantity  Int            @default(1)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@unique([cartId, variantId])
+  @@index([productId])
+}
+
+model OrderItem {
+  id             String          @id @default(cuid())
+  order          Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderId        String
+  product        Product         @relation(fields: [productId], references: [id])
+  productId      String
+  variant        ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  variantId      String?
+  title          String
+  sku            String
+  sizeLabel      String? // snapshot of the size sold (e.g. "UK 3")
+  quantity       Int
+  unitPrice Int
+
+  @@index([orderId])
+  @@index([productId])
+}

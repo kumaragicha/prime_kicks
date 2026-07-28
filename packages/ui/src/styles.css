@@ -1,0 +1,3 @@
+/* Shared component styles entrypoint.
+ * Apps import this so Tailwind can scan the ui package's class names.
+ * Intentionally minimal — component styling is utility-driven. */

@@ -1,0 +1,40 @@
+@import 'tailwindcss';
+@source '../../../packages/ui/src/**/*.{ts,tsx}';
+
+@theme {
+  --color-ink: #171716;
+  --color-paper: #ffffff;
+  --color-line: #e9e6e1;
+  --color-accent: #b99255;
+  --color-accent-soft: #f5ecdf;
+
+  --animate-spin-slow: spin 0.8s linear infinite;
+  --animate-shimmer: shimmer 1.2s linear infinite;
+  --animate-drop: drop 0.22s ease-out;
+  --animate-toast: toast 0.25s ease-out;
+  --animate-fade: fade 0.2s ease-out;
+  --animate-panel: panel 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-drawer: drawer 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-search-drop: search-drop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+  --animate-shake: shake 0.45s ease-in-out;
+  --animate-slide-in-right: slide-in-right 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Keyframes cannot be expressed as utilities; referenced via animate-[<name>_...] and --animate-* tokens above. */
+@keyframes enter { from { opacity: 0; transform: translateY(13px); } to { opacity: 1; transform: none; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes shimmer { to { background-position: -200% 0; } }
+@keyframes drop { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: none; } }
+@keyframes toast { from { opacity: 0; transform: translate(-50%, 12px); } to { opacity: 1; transform: translate(-50%, 0); } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes panel { from { opacity: 0; transform: translateY(18px) scale(0.98); } to { opacity: 1; transform: none; } }
+@keyframes drawer { from { opacity: 0; transform: translateY(100%); } to { opacity: 1; transform: none; } }
+@keyframes search-drop { from { opacity: 0; transform: translateY(-13px); } to { opacity: 1; transform: none; } }
+@keyframes shake { 0%, 100% { transform: translateX(0) scale(1); } 20% { transform: translateX(-4px) scale(0.94); } 40% { transform: translateX(4px) scale(0.94); } 60% { transform: translateX(-3px) scale(0.97); } 80% { transform: translateX(3px) scale(0.97); } }
+@keyframes slide-in-right { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: none; } }
+
+@layer base {
+  /* Vendor pseudo + button cursor: not expressible as utilities, so kept here. */
+  button, a { -webkit-tap-highlight-color: transparent; }
+  button { cursor: pointer; }
+}

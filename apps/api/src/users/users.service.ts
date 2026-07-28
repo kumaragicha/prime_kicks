@@ -1,0 +1,99 @@
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import type { UserQuerySchema } from '@prime-kicks/validation';
+import { PrismaService } from '../prisma/prisma.service';
+
+/** Fields safe to expose to the admin UI (never the password/refresh hashes). */
+const userSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  name: true,
+  email: true,
+  mobileNo: true,
+  city: true,
+  state: true,
+  role: true,
+  isActive: true,
+  isEmailVerified: true,
+  lastLoginAt: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.UserSelect;
+
+@Injectable()
+export class UsersService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async findAll(query: UserQuerySchema) {
+    const { page, pageSize, search, role, status } = query;
+
+    const where: Prisma.UserWhereInput = {
+      deletedAt: null,
+      ...(role ? { role } : {}),
+      ...(status ? { isActive: status === 'active' } : {}),
+      ...(search
+        ? {
+            OR: [
+              { firstName: { contains: search, mode: 'insensitive' } },
+              { lastName: { contains: search, mode: 'insensitive' } },
+              { name: { contains: search, mode: 'insensitive' } },
+              { email: { contains: search, mode: 'insensitive' } },
+              { mobileNo: { contains: search, mode: 'insensitive' } },
+            ],
+          }
+        : {}),
+    };
+
+    const [data, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        select: userSelect,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      data,
+      meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+    };
+  }
+
+  async findOne(id: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id, deletedAt: null },
+      select: userSelect,
+    });
+    if (!user) {
+      throw new NotFoundException(`User ${id} not found`);
+    }
+    return user;
+  }
+
+  /** Enable or disable a user. Disabling also revokes their refresh token. */
+  async setActive(id: string, isActive: boolean) {
+    await this.findOne(id);
+    return this.prisma.user.update({
+      where: { id },
+      data: { isActive, ...(isActive ? {} : { refreshTokenHash: null }) },
+      select: userSelect,
+    });
+  }
+
+  /** Permanently delete the user record. */
+  async remove(id: string) {
+    await this.findOne(id);
+    try {
+      await this.prisma.user.delete({ where: { id } });
+      return { id, deleted: true };
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
+        throw new ConflictException('Cannot delete a user that has orders');
+      }
+      throw error;
+    }
+  }
+}
