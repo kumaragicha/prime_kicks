@@ -1,12 +1,12 @@
 'use client';
 
-import Link from 'next/link';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/icon';
 import { LoginModal } from '@/components/login-modal';
 import { SearchPanel } from '@/components/search-panel';
 import { notifyStore, useAuthCart } from '@/lib/hooks';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -21,7 +21,7 @@ const navLinks = [
   { href: '/#sale', label: 'Sale' },
 ];
 
-/** Canonical storefront header, shared across home, search, and product pages. */
+/** Canonical storefront header, shared across home, search, product, and profile pages. */
 export function SiteHeader() {
   const router = useRouter();
   const { user, cartCount, refresh } = useAuthCart();
@@ -137,6 +137,15 @@ export function SiteHeader() {
           >
             {user ? 'My account' : 'Sign in'}
           </button>
+          {user && (
+            <Link
+              className="text-ink no-underline uppercase text-[14px] tracking-[.08em] font-bold"
+              href="/orders"
+              onClick={() => setMenuOpen(false)}
+            >
+              My orders
+            </Link>
+          )}
         </nav>
       )}
 
@@ -145,7 +154,6 @@ export function SiteHeader() {
         <LoginModal
           onClose={() => setLoginOpen(false)}
           onSuccess={() => {
-            setLoginOpen(false);
             void refresh();
             notifyStore();
           }}

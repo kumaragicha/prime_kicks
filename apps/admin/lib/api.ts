@@ -1,12 +1,16 @@
 import type {
+  AdminOrderRow,
   AdminUserRow,
   AuthResponse,
+  Order,
   Paginated,
+  PaymentStatus,
   Product,
   PublicUser,
   SizeType,
 } from '@prime-kicks/types';
 import type {
+  CreateOrderSchema,
   CreateProductSchema,
   CreateSizeSchema,
   CreateSizeTypeSchema,
@@ -121,13 +125,35 @@ export type UserListParams = {
   status?: string;
 };
 
+export type OrderListParams = {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  status?: string;
+  sort?: 'newest' | 'oldest';
+};
+
 export const api = {
   listBrands: () => request<{ id: string; name: string; isActive: boolean }[]>('/brands'),
-  listProductTypes: () => request<{ id: string; name: string; isActive: boolean }[]>('/product-types'),
+  listProductTypes: () =>
+    request<{ id: string; name: string; isActive: boolean }[]>('/product-types'),
   listCategories: () => request<{ id: string; name: string; isActive: boolean }[]>('/categories'),
-  createMaster: (resource: 'brands' | 'product-types' | 'categories', name: string) => request<{ id: string; name: string; isActive: boolean }>(`/${resource}`, { method: 'POST', body: JSON.stringify({ name }) }),
-  updateMaster: (resource: 'brands' | 'product-types' | 'categories', id: string, body: { name?: string; isActive?: boolean }) => request<{ id: string; name: string; isActive: boolean }>(`/${resource}/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
-  deleteMaster: (resource: 'brands' | 'product-types' | 'categories', id: string) => request<{ id: string; deleted: boolean }>(`/${resource}/${id}`, { method: 'DELETE' }),
+  createMaster: (resource: 'brands' | 'product-types' | 'categories', name: string) =>
+    request<{ id: string; name: string; isActive: boolean }>(`/${resource}`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+  updateMaster: (
+    resource: 'brands' | 'product-types' | 'categories',
+    id: string,
+    body: { name?: string; isActive?: boolean },
+  ) =>
+    request<{ id: string; name: string; isActive: boolean }>(`/${resource}/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  deleteMaster: (resource: 'brands' | 'product-types' | 'categories', id: string) =>
+    request<{ id: string; deleted: boolean }>(`/${resource}/${id}`, { method: 'DELETE' }),
   // Auth
   login: (body: LoginSchema) =>
     request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify(body) }, false),
@@ -148,8 +174,8 @@ export const api = {
   // Users
   listUsers: (params?: UserListParams) =>
     request<Paginated<AdminUserRow>>(`/users${toQuery(params)}`),
-  disableUser: (id: string) =>
-    request<AdminUserRow>(`/users/${id}/disable`, { method: 'PATCH' }),
+  listResellers: () => request<Paginated<AdminUserRow>>(`/users?role=RESELLER&pageSize=100`),
+  disableUser: (id: string) => request<AdminUserRow>(`/users/${id}/disable`, { method: 'PATCH' }),
   enableUser: (id: string) => request<AdminUserRow>(`/users/${id}/enable`, { method: 'PATCH' }),
   deleteUser: (id: string) =>
     request<{ id: string; deleted: boolean }>(`/users/${id}`, { method: 'DELETE' }),
@@ -172,4 +198,21 @@ export const api = {
     request<unknown>(`/sizes/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteSize: (id: string) =>
     request<{ id: string; deleted: boolean }>(`/sizes/${id}`, { method: 'DELETE' }),
+
+  // Orders
+  listOrders: (params?: OrderListParams) =>
+    request<Paginated<AdminOrderRow>>(`/orders${toQuery(params)}`),
+  getOrder: (id: string) => request<Order>(`/orders/${id}`),
+  updateOrderStatus: (id: string, status: string) =>
+    request<Order>(`/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  approveOrder: (id: string, paymentStatus: PaymentStatus) =>
+    request<Order>(`/orders/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify({ paymentStatus }),
+    }),
+  rejectOrder: (id: string) => request<Order>(`/orders/${id}/reject`, { method: 'POST' }),
+  createOrder: (body: CreateOrderSchema) =>
+    request<Order>('/orders', { method: 'POST', body: JSON.stringify(body) }),
+  deleteOrder: (id: string) =>
+    request<{ id: string; deleted: boolean }>(`/orders/${id}`, { method: 'DELETE' }),
 };

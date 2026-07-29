@@ -1,7 +1,8 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { PaymentStatus } from '@prime-kicks/types';
 import type {
+  CreateOrderSchema,
   CreateProductSchema,
   CreateSizeSchema,
   CreateSizeTypeSchema,
@@ -9,7 +10,8 @@ import type {
   UpdateSizeSchema,
   UpdateSizeTypeSchema,
 } from '@prime-kicks/validation';
-import { api, type ProductListParams, type UserListParams } from './api';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { api, type OrderListParams, type ProductListParams, type UserListParams } from './api';
 
 /* ---------------------------------- Products ---------------------------------- */
 
@@ -30,17 +32,34 @@ export function useProduct(id: string) {
 }
 
 export const useBrands = () => useQuery({ queryKey: ['brands'], queryFn: api.listBrands });
-export const useProductTypes = () => useQuery({ queryKey: ['product-types'], queryFn: api.listProductTypes });
-export const useCategories = () => useQuery({ queryKey: ['categories'], queryFn: api.listCategories });
+export const useProductTypes = () =>
+  useQuery({ queryKey: ['product-types'], queryFn: api.listProductTypes });
+export const useCategories = () =>
+  useQuery({ queryKey: ['categories'], queryFn: api.listCategories });
 
 export function useMasterMutations(resource: 'brands' | 'product-types' | 'categories') {
   const qc = useQueryClient();
-  const key = resource === 'brands' ? ['brands'] : resource === 'product-types' ? ['product-types'] : ['categories'];
+  const key =
+    resource === 'brands'
+      ? ['brands']
+      : resource === 'product-types'
+        ? ['product-types']
+        : ['categories'];
   const refresh = () => qc.invalidateQueries({ queryKey: key });
   return {
-    create: useMutation({ mutationFn: (name: string) => api.createMaster(resource, name), onSuccess: refresh }),
-    update: useMutation({ mutationFn: ({ id, body }: { id: string; body: { name?: string; isActive?: boolean } }) => api.updateMaster(resource, id, body), onSuccess: refresh }),
-    remove: useMutation({ mutationFn: (id: string) => api.deleteMaster(resource, id), onSuccess: refresh }),
+    create: useMutation({
+      mutationFn: (name: string) => api.createMaster(resource, name),
+      onSuccess: refresh,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, body }: { id: string; body: { name?: string; isActive?: boolean } }) =>
+        api.updateMaster(resource, id, body),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({
+      mutationFn: (id: string) => api.deleteMaster(resource, id),
+      onSuccess: refresh,
+    }),
   };
 }
 
@@ -78,6 +97,13 @@ export function useUsers(params?: UserListParams) {
     queryKey: ['users', params ?? {}],
     queryFn: () => api.listUsers(params),
     placeholderData: (prev) => prev,
+  });
+}
+
+export function useResellers() {
+  return useQuery({
+    queryKey: ['resellers'],
+    queryFn: () => api.listResellers(),
   });
 }
 
@@ -136,3 +162,74 @@ export const useUpdateSize = () =>
   );
 
 export const useDeleteSize = () => useSizeMutation((id: string) => api.deleteSize(id));
+
+/* ----------------------------------- Orders ------------------------------------ */
+
+export function useOrders(params?: OrderListParams) {
+  return useQuery({
+    queryKey: ['orders', params ?? {}],
+    queryFn: () => api.listOrders(params),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useOrder(id: string) {
+  return useQuery({
+    queryKey: ['order', id],
+    queryFn: () => api.getOrder(id),
+    enabled: Boolean(id),
+  });
+}
+
+export function useCreateOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: CreateOrderSchema) => api.createOrder(body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+}
+
+export function useUpdateOrderStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      api.updateOrderStatus(id, status),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['order'] });
+    },
+  });
+}
+
+export function useDeleteOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.deleteOrder(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['orders'] }),
+  });
+}
+
+export function useApproveOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, paymentStatus }: { id: string; paymentStatus: PaymentStatus }) =>
+      api.approveOrder(id, paymentStatus),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['order'] });
+    },
+  });
+}
+
+export function useRejectOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.rejectOrder(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['order'] });
+    },
+  });
+}

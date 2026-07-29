@@ -1,4 +1,4 @@
-import type { AuthResponse, Paginated, Product } from '@prime-kicks/types';
+import type { AuthResponse, Order, Paginated, Product } from '@prime-kicks/types';
 
 export type FilterOption = { id: string; name: string };
 export type StoreFilters = { brands: FilterOption[]; categories: FilterOption[] };
@@ -128,6 +128,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
+  register: (body: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    mobileNo: string;
+    city: string;
+    state: string;
+    password: string;
+  }) =>
+    request<AuthResponse>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   listProducts: (params?: Record<string, string>) => {
     const qs = params ? `?${new URLSearchParams(params).toString()}` : '';
     return request<Paginated<Product>>(`/products${qs}`);
@@ -147,4 +160,24 @@ export const api = {
     }),
   removeCartItem: (itemId: string) =>
     authenticatedRequest<StoreCart>(`/cart/items/${itemId}`, { method: 'DELETE' }),
+  createOrder: (body: {
+    items: Array<{ productId: string; variantId: string; quantity: number }>;
+    address: {
+      name: string;
+      email: string;
+      mobileNo: string;
+      line1: string;
+      line2?: string;
+      landmark?: string;
+      pincode: string;
+      city: string;
+      state: string;
+    };
+  }) =>
+    authenticatedRequest<{ id: string; orderNumber: string }>('/orders', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  /** Get the current user's order history (for the profile page). */
+  getMyOrders: () => authenticatedRequest<Order[]>('/orders/my'),
 };

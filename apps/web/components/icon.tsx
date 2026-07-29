@@ -14,7 +14,9 @@ export type IconName =
   | 'share'
   | 'chevron-left'
   | 'chevron-right'
-  | 'filter';
+  | 'filter'
+  | 'check'
+  | 'x';
 
 const paths: Record<IconName, ReactNode> = {
   arrow: <path d="M5 12h14m-6-6 6 6-6 6" />,
@@ -55,6 +57,8 @@ const paths: Record<IconName, ReactNode> = {
   'chevron-left': <path d="m14.5 5-7 7 7 7" />,
   'chevron-right': <path d="m9.5 5 7 7-7 7" />,
   filter: <path d="M4 5h16l-6.4 7.6V19l-3.2-1.6v-4.8L4 5Z" />,
+  check: <path d="M5 12l5 5L20 7" />,
+  x: <path d="M6 6l12 12M18 6 6 18" />,
 };
 
 export function Icon({ name }: { name: IconName }) {

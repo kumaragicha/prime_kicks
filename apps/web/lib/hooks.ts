@@ -84,3 +84,21 @@ export function useProduct(id: string) {
     enabled: Boolean(id),
   });
 }
+
+/** The current user's order history, shown on the orders page. */
+export function useMyOrders() {
+  const [enabled, setEnabled] = useState(false);
+
+  useEffect(() => {
+    setEnabled(
+      typeof window !== 'undefined' && !!window.localStorage.getItem('prime-kicks-access-token'),
+    );
+  }, []);
+
+  return useQuery({
+    queryKey: ['my-orders'],
+    queryFn: () => api.getMyOrders(),
+    enabled,
+    refetchOnWindowFocus: true,
+  });
+}
