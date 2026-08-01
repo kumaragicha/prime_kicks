@@ -7,6 +7,7 @@ export function ConfirmDialog({
   open,
   title,
   description,
+  error,
   isConfirming = false,
   onClose,
   onConfirm,
@@ -14,6 +15,7 @@ export function ConfirmDialog({
   open: boolean;
   title: string;
   description: string;
+  error?: string;
   isConfirming?: boolean;
   onClose: () => void;
   onConfirm: () => void;
@@ -52,6 +54,11 @@ export function ConfirmDialog({
         <p id="confirm-dialog-description" className="mt-2 text-sm text-neutral-600">
           {description}
         </p>
+        {error && (
+          <p className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">
+            {error}
+          </p>
+        )}
         <div className="mt-6 flex justify-end gap-3">
           <Button ref={cancelButtonRef} type="button" variant="outline" onClick={onClose} disabled={isConfirming}>
             Cancel

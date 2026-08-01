@@ -4,6 +4,7 @@ import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
 import { useMyOrders } from '@/lib/hooks';
 import { ORDER_STATUS, type Order } from '@prime-kicks/types';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 
 type User = { name: string; email: string };
@@ -47,6 +48,7 @@ function OrderCard({ order }: { order: Order }) {
         {order.items.map((item) => (
           <div key={item.id} className="flex-shrink-0 w-[80px]">
             {item.product.photoUrls[0] && (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={item.product.photoUrls[0]}
                 alt={item.title}
@@ -146,14 +148,14 @@ export default function OrdersPage() {
             !ordersLoading && (
               <div className="text-center py-[40px]">
                 <p className="text-[15px] text-[#666] leading-[1.6] m-0 mb-[20px]">
-                  You haven't placed any orders yet.
+                  You haven&apos;t placed any orders yet.
                 </p>
-                <a
+                <Link
                   href="/"
                   className="inline-flex items-center gap-[12px] px-[15px] py-[13px] bg-ink text-white no-underline text-[10px] uppercase font-bold tracking-[.07em]"
                 >
                   Start shopping
-                </a>
+                </Link>
               </div>
             )
           )}

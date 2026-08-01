@@ -16,7 +16,10 @@ export const createProductSchema = z.object({
   description: z.string().default(''),
 
   // Media
-  photoUrls: z.array(z.string().url('Each photo must be a valid URL')).default([]),
+  photoUrls: z
+    .array(z.string().url('Each photo must be a valid URL'))
+    .max(4, 'Up to 4 photos')
+    .default([]),
   videoUrl: z.string().url('Video must be a valid URL').nullable().default(null),
 
   // Pricing in whole Indian rupees.

@@ -87,7 +87,7 @@ export default function UsersPage() {
         },
       }),
     ],
-    [setActive, deleteUser],
+    [setActive],
   );
 
   const table = useReactTable({

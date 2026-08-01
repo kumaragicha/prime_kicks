@@ -11,12 +11,15 @@ import { OrdersModule } from './orders/orders.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { SizesModule } from './sizes/sizes.module';
+import { StorageModule } from './storage/storage.module';
+import { UploadsModule } from './uploads/uploads.module';
 import { UsersModule } from './users/users.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    StorageModule,
     AuthModule,
     ProductsModule,
     UsersModule,
@@ -24,6 +27,7 @@ import { UsersModule } from './users/users.module';
     MastersModule,
     CartModule,
     OrdersModule,
+    UploadsModule,
   ],
   controllers: [HealthController],
   providers: [

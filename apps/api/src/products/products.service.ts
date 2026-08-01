@@ -159,18 +159,24 @@ export class ProductsService {
     return withTotalStock(product);
   }
 
-  /** Permanently delete the product and its variants. */
+  /**
+   * Soft-delete the product: it disappears from the store and admin list
+   * (all reads filter `deletedAt: null`) while the row stays intact so any
+   * orders that reference it keep working. Always succeeds.
+   */
   async remove(id: string) {
-    await this.ensureExists(id);
-    try {
-      await this.prisma.product.delete({ where: { id } });
-      return { id, deleted: true };
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {
-        throw new ConflictException('Cannot delete a product that is referenced by an order');
-      }
-      throw error;
-    }
+    const product = await this.prisma.product.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, sku: true },
+    });
+    if (!product) throw new NotFoundException(`Product ${id} not found`);
+    // Free the SKU (it's unique) so a new product can reuse it, while keeping
+    // the row for order history. The mangled value stays hidden from all reads.
+    await this.prisma.product.update({
+      where: { id },
+      data: { deletedAt: new Date(), sku: `${product.sku}::deleted::${id}` },
+    });
+    return { id, deleted: true };
   }
 
   private async ensureExists(id: string) {

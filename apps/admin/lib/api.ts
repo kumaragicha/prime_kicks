@@ -103,10 +103,55 @@ async function request<T>(path: string, init?: RequestInit, allowRetry = true): 
   }
 
   if (!res.ok) {
-    throw new Error(`API ${res.status}: ${await res.text()}`);
+    throw new Error(await extractMessage(res));
   }
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;
+}
+
+/** Pull the API's human-readable `message` out of an error response. */
+async function extractMessage(res: Response): Promise<string> {
+  const raw = await res.text();
+  try {
+    const body = JSON.parse(raw) as { message?: string | string[] };
+    const message = Array.isArray(body.message) ? body.message.join(', ') : body.message;
+    if (message) return message;
+  } catch {
+    // non-JSON body — fall through
+  }
+  return raw || `Request failed (${res.status})`;
+}
+
+/** Multipart upload — sends FormData with auth, letting the browser set the boundary. */
+async function uploadFile<T>(path: string, file: File): Promise<T> {
+  const send = () => {
+    const body = new FormData();
+    body.append('file', file);
+    const access = tokenStore.access();
+    return fetch(`${API_URL}${path}`, {
+      method: 'POST',
+      headers: access ? { Authorization: `Bearer ${access}` } : {},
+      body,
+    });
+  };
+
+  let res = await send();
+  if (res.status === 401) {
+    const refreshed = await tryRefresh();
+    if (refreshed) res = await send();
+    else emitLogout();
+  }
+  if (!res.ok) {
+    // Surface the API's message (e.g. unsupported type / too large) when present.
+    let detail = await res.text();
+    try {
+      detail = (JSON.parse(detail) as { message?: string }).message ?? detail;
+    } catch {
+      /* plain text */
+    }
+    throw new Error(detail || `Upload failed (${res.status})`);
+  }
+  return (await res.json()) as T;
 }
 
 export type ProductListParams = {
@@ -170,6 +215,12 @@ export const api = {
     request<Product>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteProduct: (id: string) =>
     request<{ id: string; deleted: boolean }>(`/products/${id}`, { method: 'DELETE' }),
+
+  // Media uploads (→ Cloudflare R2, returns a public CDN URL)
+  uploadImage: (file: File) => uploadFile<{ url: string }>('/uploads/image', file),
+  uploadVideo: (file: File) => uploadFile<{ url: string }>('/uploads/video', file),
+  deleteUpload: (url: string) =>
+    request<{ deleted: boolean }>('/uploads', { method: 'DELETE', body: JSON.stringify({ url }) }),
 
   // Users
   listUsers: (params?: UserListParams) =>

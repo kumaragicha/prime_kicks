@@ -25,6 +25,7 @@ export default function ProductsPage() {
   const [search, setSearch] = useState('');
   const [sizeTypeId, setSizeTypeId] = useState('');
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
+  const [deleteError, setDeleteError] = useState('');
 
   const { data: sizeTypes } = useSizeTypes();
   const { data, isLoading, isError, isFetching } = useProducts({
@@ -44,7 +45,25 @@ export default function ProductsPage() {
 
   const columns = useMemo(
     () => [
-      columnHelper.accessor('sku', { header: 'SKU' }),
+      columnHelper.display({
+        id: 'cover',
+        header: '',
+        cell: (c) => {
+          const src = c.row.original.photoUrls?.[0];
+          return (
+            <div className="h-11 w-11 overflow-hidden rounded-md border border-neutral-200 bg-neutral-100">
+              {src ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={src} alt={c.row.original.name} className="h-full w-full object-cover" />
+              ) : (
+                <span className="flex h-full w-full items-center justify-center text-[9px] font-medium text-neutral-400">
+                  No image
+                </span>
+              )}
+            </div>
+          );
+        },
+      }),
       columnHelper.accessor('name', { header: 'Name' }),
       columnHelper.accessor('brand', { header: 'Brand' }),
       columnHelper.accessor((row) => row.sizeType?.name ?? '—', {
@@ -88,7 +107,7 @@ export default function ProductsPage() {
         ),
       }),
     ],
-    [deleteProduct],
+    [],
   );
 
   const table = useReactTable({
@@ -183,13 +202,24 @@ export default function ProductsPage() {
         open={productToDelete !== null}
         title="Delete product?"
         description={
-          productToDelete ? `“${productToDelete.name}” will be permanently deleted.` : ''
+          productToDelete
+            ? `“${productToDelete.name}” will be removed from your store. Past orders that include it stay intact.`
+            : ''
         }
+        error={deleteError}
         isConfirming={deleteProduct.isPending}
-        onClose={() => setProductToDelete(null)}
+        onClose={() => {
+          setProductToDelete(null);
+          setDeleteError('');
+        }}
         onConfirm={() => {
           if (productToDelete) {
-            deleteProduct.mutate(productToDelete.id, { onSuccess: () => setProductToDelete(null) });
+            setDeleteError('');
+            deleteProduct.mutate(productToDelete.id, {
+              onSuccess: () => setProductToDelete(null),
+              onError: (e) =>
+                setDeleteError(e instanceof Error ? e.message : 'Could not delete this product.'),
+            });
           }
         }}
       />

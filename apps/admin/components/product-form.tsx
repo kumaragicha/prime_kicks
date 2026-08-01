@@ -7,9 +7,22 @@ import { createProductSchema, type CreateProductSchema } from '@prime-kicks/vali
 import { formatSize } from '@prime-kicks/types';
 import { Button } from '@prime-kicks/ui';
 import { useBrands, useCategories, useProductTypes, useSizeTypes } from '@/lib/hooks';
+import { ImageUploader, VideoUploader } from '@/components/media-uploader';
 
 const fieldClass =
   'w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-900 focus:outline-none';
+
+/** Build a unique-ish SKU like "NIK-LZ4F9A2" from the brand + time + randomness. */
+function generateSku(brand?: string): string {
+  const prefix =
+    (brand ?? '')
+      .replace(/[^a-zA-Z]/g, '')
+      .slice(0, 3)
+      .toUpperCase() || 'PK';
+  const stamp = Date.now().toString(36).toUpperCase();
+  const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return `${prefix}-${stamp}${rand}`;
+}
 
 const emptyDefaults: DefaultValues<CreateProductSchema> = {
   sku: '',
@@ -55,6 +68,7 @@ export function ProductForm({
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<CreateProductSchema>({
     resolver: zodResolver(createProductSchema),
@@ -73,15 +87,14 @@ export function ProductForm({
     const variants = (selectedType?.sizes ?? [])
       .map((s) => ({ sizeId: s.id, stock: stockBySize[s.id] ?? 0, sku: null }))
       .filter((v) => v.stock > 0);
-    await onSubmit({ ...values, variants });
+    // SKU is auto-generated for new products; existing products keep theirs.
+    const brandName = brands?.find((b) => b.id === values.brandId)?.name;
+    const sku = values.sku?.trim() || generateSku(brandName);
+    await onSubmit({ ...values, sku, variants });
   });
 
   return (
     <form onSubmit={submit} className="flex w-full max-w-lg flex-col gap-4">
-      <Field label="SKU" error={errors.sku?.message}>
-        <input className={fieldClass} {...register('sku')} />
-      </Field>
-
       <Field label="Name" error={errors.name?.message}>
         <input className={fieldClass} {...register('name')} />
       </Field>
@@ -96,32 +109,18 @@ export function ProductForm({
         <textarea className={fieldClass} rows={3} {...register('description')} />
       </Field>
 
-      <Field
-        label="Photo URLs (comma-separated)"
-        error={errors.photoUrls?.message as string | undefined}
-      >
-        <input
-          className={fieldClass}
-          placeholder="https://…/1.jpg, https://…/2.jpg"
-          {...register('photoUrls', {
-            setValueAs: (v: unknown) =>
-              typeof v === 'string'
-                ? v
-                    .split(',')
-                    .map((s) => s.trim())
-                    .filter(Boolean)
-                : (v ?? []),
-          })}
+      <Field label="Photos" error={errors.photoUrls?.message as string | undefined}>
+        <ImageUploader
+          value={watch('photoUrls') ?? []}
+          onChange={(urls) => setValue('photoUrls', urls, { shouldValidate: true, shouldDirty: true })}
+          max={4}
         />
       </Field>
 
-      <Field label="Video URL" error={errors.videoUrl?.message}>
-        <input
-          className={fieldClass}
-          placeholder="https://…/clip.mp4"
-          {...register('videoUrl', {
-            setValueAs: (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null),
-          })}
+      <Field label="Video" error={errors.videoUrl?.message}>
+        <VideoUploader
+          value={watch('videoUrl') ?? null}
+          onChange={(url) => setValue('videoUrl', url, { shouldValidate: true, shouldDirty: true })}
         />
       </Field>
 

@@ -229,6 +229,7 @@ export default function OrderDetailPage() {
               <div key={item.id} className="px-5 py-4 flex gap-4">
                 {item.product.photoUrls?.[0] && (
                   <div className="w-20 h-20 flex-shrink-0 rounded-lg overflow-hidden bg-neutral-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={item.product.photoUrls[0]}
                       alt={item.title}

@@ -57,6 +57,7 @@ export function ProductCard({
       <div className="relative aspect-[1/1.05] overflow-hidden bg-[#e8e6e0] rounded-[15px] shadow-[0_9px_24px_rgba(28,22,16,0.1)] max-[800px]:aspect-[1/1.16]">
         <Link href={`/products/${product.id}`} aria-label={`View ${product.name}`}>
           {product.image ? (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={product.image}
               alt={product.name}

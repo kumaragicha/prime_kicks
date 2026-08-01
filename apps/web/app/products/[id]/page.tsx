@@ -3,6 +3,7 @@
 import { Announcement } from '@/components/announcement';
 import { Icon } from '@/components/icon';
 import { LoginModal } from '@/components/login-modal';
+import { ProductVideo } from '@/components/product-video';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
 import { ApiError, api } from '@/lib/api';
@@ -157,6 +158,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                     onClick={() => setActiveMedia(index)}
                   >
                     {item.type === 'image' ? (
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         className="w-full h-full block object-cover"
                         src={item.src}
@@ -164,17 +166,11 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                       />
                     ) : (
                       <>
-                        <video
-                          className="w-full h-full block object-cover bg-[#111]"
+                        <ProductVideo
                           src={item.src}
-                          controls
-                          playsInline
-                          preload="metadata"
-                          aria-label={`${product.name} video`}
+                          poster={product.photoUrls[0]}
+                          label={`${product.name} video`}
                         />
-                        <span className="absolute left-[12px] bottom-[12px] flex items-center gap-[7px] bg-[rgba(17,17,17,0.86)] text-white rounded-full px-[10px] py-[8px] uppercase text-[9px] font-bold tracking-[.08em] pointer-events-none [&_svg]:w-[13px] [&_svg]:h-[13px]">
-                          <Icon name="play" /> Product video
-                        </span>
                       </>
                     )}
                   </article>
