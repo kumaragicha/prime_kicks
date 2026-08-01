@@ -206,15 +206,16 @@ model Order {
   currency String @default("INR")
 
   // Shipping address
-  addressName     String
-  addressEmail    String
-  addressMobileNo String
-  addressLine1    String
-  addressLine2    String  @default("")
-  landmark        String  @default("")
-  pincode         String
-  city            String
-  state           String
+  addressName        String
+  addressEmail       String?  // optional — not all customers provide an email
+  addressMobileNo    String
+  addressAltMobileNo String?  // optional alternative phone number
+  addressLine1       String
+  addressLine2       String  @default("")
+  landmark           String  @default("")
+  pincode            String
+  city               String
+  state              String
 
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt

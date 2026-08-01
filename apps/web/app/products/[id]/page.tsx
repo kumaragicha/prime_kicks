@@ -24,6 +24,31 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const [loginOpen, setLoginOpen] = useState(false);
   const [shake, setShake] = useState(false);
   const carousel = useRef<HTMLDivElement>(null);
+
+  function scrollToIndex(index: number) {
+    const el = carousel.current;
+    if (!el) return;
+    const child = el.children[index] as HTMLElement | undefined;
+    if (!child) return;
+    el.scrollTo({ left: child.offsetLeft, behavior: 'smooth' });
+  }
+
+  function handleScroll() {
+    const el = carousel.current;
+    if (!el) return;
+    const scrollLeft = el.scrollLeft;
+    let closest = 0;
+    let closestDist = Infinity;
+    Array.from(el.children).forEach((child, index) => {
+      const pos = (child as HTMLElement).offsetLeft;
+      const dist = Math.abs(pos - scrollLeft);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closest = index;
+      }
+    });
+    setActiveMedia(closest);
+  }
   const sizes = useMemo(
     () => product?.variants.filter((variant) => variant.stock > 0) ?? [],
     [product],
@@ -45,11 +70,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   function moveCarousel(direction: -1 | 1) {
     const next = Math.min(Math.max(activeMedia + direction, 0), media.length - 1);
     setActiveMedia(next);
-    carousel.current?.children[next]?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'nearest',
-      inline: 'start',
-    });
+    scrollToIndex(next);
   }
 
   async function addToBag(action: 'cart' | 'book') {
@@ -148,6 +169,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             <div
               className="flex gap-[12px] overflow-x-auto [scroll-snap-type:x_mandatory] [scrollbar-width:none] p-[1px_1px_12px] scroll-smooth [&::-webkit-scrollbar]:hidden max-[760px]:gap-[10px] max-[760px]:pb-[10px]"
               ref={carousel}
+              onScroll={handleScroll}
               aria-label={`${product.name} media gallery`}
             >
               {media.length ? (
@@ -155,7 +177,10 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                   <article
                     className={`relative flex-[0_0_calc(50%-6px)] aspect-[1/1.08] overflow-hidden border rounded-[16px] bg-[#e8e6e0] shadow-[0_10px_24px_rgba(28,22,16,0.1)] [scroll-snap-align:start] cursor-pointer transition-[transform,box-shadow,border-color] duration-[250ms] hover:-translate-y-[3px] hover:shadow-[0_16px_30px_rgba(28,22,16,0.16)] max-[760px]:basis-[82%] max-[760px]:rounded-[13px] ${activeMedia === index ? 'border-ink' : 'border-transparent'}`}
                     key={`${item.type}-${item.src}`}
-                    onClick={() => setActiveMedia(index)}
+                    onClick={() => {
+                      setActiveMedia(index);
+                      scrollToIndex(index);
+                    }}
                   >
                     {item.type === 'image' ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -214,10 +239,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                 className={`h-[3px] border-0 rounded-[99px] p-0 transition-[width,background] duration-200 ${activeMedia === index ? 'w-[38px] bg-ink' : 'w-[22px] bg-[#ddd]'}`}
                 onClick={() => {
                   setActiveMedia(index);
-                  carousel.current?.children[index]?.scrollIntoView({
-                    behavior: 'smooth',
-                    inline: 'start',
-                  });
+                  scrollToIndex(index);
                 }}
                 aria-label={`Show ${item.label}`}
               />

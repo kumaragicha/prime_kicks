@@ -38,6 +38,16 @@ export function SiteHeader() {
     };
   }, [menuOpen]);
 
+  // Close the menu when clicking outside (on the backdrop).
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
+
   function goAccount() {
     if (user) router.push('/profile');
     else setLoginOpen(true);
@@ -117,36 +127,45 @@ export function SiteHeader() {
       </header>
 
       {menuOpen && (
-        <nav className="fixed top-[107px] left-0 right-0 pt-[24px] px-[6vw] pb-[29px] z-[9] bg-paper border-b border-line grid gap-[20px] animate-[drop_0.22s_ease-out] max-[800px]:top-[92px]">
-          {navLinks.map((link) => (
-            <Link
-              key={link.href}
-              className="text-ink no-underline uppercase text-[14px] tracking-[.08em] font-bold"
-              href={link.href}
-              onClick={() => setMenuOpen(false)}
-            >
-              {link.label}
-            </Link>
-          ))}
+        <>
+          {/* Backdrop — click anywhere outside the menu to close it */}
           <button
-            className="text-ink bg-transparent border-0 p-0 text-left uppercase text-[14px] tracking-[.08em] font-bold"
-            onClick={() => {
-              setMenuOpen(false);
-              goAccount();
-            }}
-          >
-            {user ? 'My account' : 'Sign in'}
-          </button>
-          {user && (
-            <Link
-              className="text-ink no-underline uppercase text-[14px] tracking-[.08em] font-bold"
-              href="/orders"
-              onClick={() => setMenuOpen(false)}
+            type="button"
+            aria-label="Close menu"
+            className="fixed inset-0 z-[8] bg-black/30 animate-[fade_0.18s_ease-out] max-[800px]:block"
+            onClick={() => setMenuOpen(false)}
+          />
+          <nav className="fixed top-0 left-0 right-0 pt-[62px] px-[6vw] pb-[29px] z-[9] bg-paper border-b border-line grid gap-[20px] animate-[drop_0.22s_ease-out] max-[800px]:pt-[62px]">
+            {navLinks.map((link) => (
+              <Link
+                key={link.href}
+                className="text-ink no-underline uppercase text-[14px] tracking-[.08em] font-bold"
+                href={link.href}
+                onClick={() => setMenuOpen(false)}
+              >
+                {link.label}
+              </Link>
+            ))}
+            <button
+              className="text-ink bg-transparent border-0 p-0 text-left uppercase text-[14px] tracking-[.08em] font-bold"
+              onClick={() => {
+                setMenuOpen(false);
+                goAccount();
+              }}
             >
-              My orders
-            </Link>
-          )}
-        </nav>
+              {user ? 'My account' : 'Sign in'}
+            </button>
+            {user && (
+              <Link
+                className="text-ink no-underline uppercase text-[14px] tracking-[.08em] font-bold"
+                href="/orders"
+                onClick={() => setMenuOpen(false)}
+              >
+                My orders
+              </Link>
+            )}
+          </nav>
+        </>
       )}
 
       {searchOpen && <SearchPanel onClose={() => setSearchOpen(false)} />}

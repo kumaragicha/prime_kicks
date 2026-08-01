@@ -140,8 +140,9 @@ export class OrdersService {
           shipping,
           total,
           addressName: addr.name,
-          addressEmail: addr.email,
+          addressEmail: addr.email || null,
           addressMobileNo: addr.mobileNo,
+          addressAltMobileNo: addr.altMobileNo || null,
           addressLine1: addr.line1,
           addressLine2: addr.line2 ?? '',
           landmark: addr.landmark ?? '',
@@ -198,6 +199,7 @@ export class OrdersService {
       address: {
         name: order.addressName,
         email: order.addressEmail,
+        altMobileNo: order.addressAltMobileNo,
         mobileNo: order.addressMobileNo,
         line1: order.addressLine1,
         line2: order.addressLine2,
@@ -251,6 +253,7 @@ export class OrdersService {
       address: {
         name: order.addressName,
         email: order.addressEmail,
+        altMobileNo: order.addressAltMobileNo,
         mobileNo: order.addressMobileNo,
         line1: order.addressLine1,
         line2: order.addressLine2,
@@ -346,6 +349,7 @@ export class OrdersService {
       address: {
         name: order.addressName,
         email: order.addressEmail,
+        altMobileNo: order.addressAltMobileNo,
         mobileNo: order.addressMobileNo,
         line1: order.addressLine1,
         line2: order.addressLine2,
@@ -406,6 +410,7 @@ export class OrdersService {
       address: {
         name: updated.addressName,
         email: updated.addressEmail,
+        altMobileNo: updated.addressAltMobileNo,
         mobileNo: updated.addressMobileNo,
         line1: updated.addressLine1,
         line2: updated.addressLine2,
@@ -489,6 +494,7 @@ export class OrdersService {
       address: {
         name: updated.addressName,
         email: updated.addressEmail,
+        altMobileNo: updated.addressAltMobileNo,
         mobileNo: updated.addressMobileNo,
         line1: updated.addressLine1,
         line2: updated.addressLine2,
@@ -563,6 +569,7 @@ export class OrdersService {
       address: {
         name: updated.addressName,
         email: updated.addressEmail,
+        altMobileNo: updated.addressAltMobileNo,
         mobileNo: updated.addressMobileNo,
         line1: updated.addressLine1,
         line2: updated.addressLine2,

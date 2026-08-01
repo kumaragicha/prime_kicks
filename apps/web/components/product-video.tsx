@@ -1,5 +1,6 @@
 'use client';
 
+import { Icon } from '@/components/icon';
 import { useRef, useState } from 'react';
 
 /**
@@ -43,6 +44,16 @@ export function ProductVideo({
         aria-label={label}
       />
 
+      <a
+        href={src}
+        download
+        onClick={(e) => e.stopPropagation()}
+        aria-label="Download video"
+        className="absolute bottom-[14px] right-[14px] z-10 flex h-[42px] w-[42px] items-center justify-center rounded-full bg-accent text-white shadow-[0_6px_18px_rgba(0,0,0,0.35)] transition-transform duration-200 hover:scale-110 [&_svg]:h-[18px] [&_svg]:w-[18px]"
+      >
+        <Icon name="download" />
+      </a>
+
       <button
         type="button"
         onClick={toggle}
@@ -55,9 +66,7 @@ export function ProductVideo({
         )}
         <span
           className={`relative flex h-[48px] w-[48px] items-center justify-center rounded-full bg-accent text-ink shadow-[0_6px_20px_rgba(0,0,0,0.35)] transition-all duration-300 [&_svg]:h-[38px] [&_svg]:w-[38px] ${
-            playing
-              ? 'scale-90 opacity-0 group-hover:scale-100 group-hover:opacity-100'
-              : 'scale-100 opacity-100'
+            playing ? 'scale-90 bg-[#111a]/70 text-white' : 'scale-100 opacity-100'
           }`}
         >
           {playing ? (

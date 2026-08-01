@@ -39,7 +39,8 @@ export interface OrderItem {
 
 export interface OrderAddress {
   name: string;
-  email: string;
+  email: string | null;
+  altMobileNo: string | null;
   mobileNo: string;
   line1: string;
   line2: string;

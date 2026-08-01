@@ -215,7 +215,8 @@ export default function OrderDetailPage() {
               {order.address.city}, {order.address.state} - {order.address.pincode}
             </p>
             <p className="pt-1">{order.address.mobileNo}</p>
-            <p>{order.address.email}</p>
+            {order.address.altMobileNo && <p>Alt: {order.address.altMobileNo}</p>}
+            {order.address.email && <p>{order.address.email}</p>}
           </div>
         </div>
 

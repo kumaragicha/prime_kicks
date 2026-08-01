@@ -164,7 +164,8 @@ export const api = {
     items: Array<{ productId: string; variantId: string; quantity: number }>;
     address: {
       name: string;
-      email: string;
+      email?: string;
+      altMobileNo?: string;
       mobileNo: string;
       line1: string;
       line2?: string;
@@ -180,4 +181,22 @@ export const api = {
     }),
   /** Get the current user's order history (for the profile page). */
   getMyOrders: () => authenticatedRequest<Order[]>('/orders/my'),
+  parseAddress: (addressBlock: string) =>
+    authenticatedRequest<{
+      parsed: {
+        name: string;
+        email: string;
+        altMobileNo: string;
+        mobileNo: string;
+        line1: string;
+        line2: string;
+        landmark: string;
+        pincode: string;
+        city: string;
+        state: string;
+      };
+    }>('/address/parse', {
+      method: 'POST',
+      body: JSON.stringify({ addressBlock }),
+    }),
 };

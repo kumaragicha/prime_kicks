@@ -13,6 +13,7 @@ type AddressForm = {
   name: string;
   email: string;
   mobileNo: string;
+  altMobileNo: string;
   line1: string;
   line2: string;
   landmark: string;
@@ -25,6 +26,7 @@ const emptyAddress: AddressForm = {
   name: '',
   email: '',
   mobileNo: '',
+  altMobileNo: '',
   line1: '',
   line2: '',
   landmark: '',
@@ -48,6 +50,8 @@ export default function CartPage() {
   const [placing, setPlacing] = useState(false);
   const [placed, setPlaced] = useState(false);
   const [orderNumber, setOrderNumber] = useState('');
+  const [addressBlock, setAddressBlock] = useState('');
+  const [parsing, setParsing] = useState(false);
 
   function notify(text: string) {
     setToast(text);
@@ -112,12 +116,15 @@ export default function CartPage() {
   function validateAddress(a: AddressForm): Partial<Record<keyof AddressForm, string>> {
     const e: Partial<Record<keyof AddressForm, string>> = {};
     if (!a.name.trim()) e.name = 'Please enter your full name.';
-    if (!a.email.trim()) e.email = 'Please enter your email.';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email.trim()))
+    // Email is now optional — only validate format if provided
+    if (a.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email.trim()))
       e.email = 'Enter a valid email address.';
     if (!a.mobileNo.trim()) e.mobileNo = 'Please enter your mobile number.';
     else if (!/^\d{10}$/.test(a.mobileNo.replace(/\D/g, '')))
       e.mobileNo = 'Enter a valid 10-digit mobile number.';
+    // Alternative mobile is optional — only validate format if provided
+    if (a.altMobileNo.trim() && !/^\d{10}$/.test(a.altMobileNo.replace(/\D/g, '')))
+      e.altMobileNo = 'Enter a valid 10-digit alternative mobile number.';
     if (!a.line1.trim()) e.line1 = 'Please enter your address.';
     if (!a.pincode.trim()) e.pincode = 'Please enter your pincode.';
     else if (!/^\d{6}$/.test(a.pincode.trim())) e.pincode = 'Enter a valid 6-digit pincode.';
@@ -152,6 +159,37 @@ export default function CartPage() {
     if (!cart || cart.items.length === 0) return;
     setStep(2);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function parseAddressBlock() {
+    if (!addressBlock.trim()) {
+      notify('Please paste an address block first.');
+      return;
+    }
+    setParsing(true);
+    try {
+      const result = await api.parseAddress(addressBlock);
+      const parsed = result.parsed;
+      setAddress((prev) => ({
+        ...prev,
+        name: parsed.name || prev.name,
+        email: parsed.email || prev.email,
+        mobileNo: parsed.mobileNo || prev.mobileNo,
+        altMobileNo: parsed.altMobileNo || prev.altMobileNo,
+        line1: parsed.line1 || prev.line1,
+        line2: parsed.line2 || prev.line2,
+        landmark: parsed.landmark || prev.landmark,
+        pincode: parsed.pincode || prev.pincode,
+        city: parsed.city || prev.city,
+        state: parsed.state || prev.state,
+      }));
+      notify('Address parsed successfully!');
+    } catch (error) {
+      if (error instanceof ApiError) notify(error.message);
+      else notify('Failed to parse address. Please try again.');
+    } finally {
+      setParsing(false);
+    }
   }
 
   async function placeOrder() {
@@ -416,12 +454,60 @@ export default function CartPage() {
                     <p className="m-0 mb-[20px] text-[10px] tracking-[.16em] uppercase font-bold">
                       Shipping address
                     </p>
+
+                    {/* Quick fill option - Paste address block (always visible) */}
+                    <div className="mb-[20px]">
+                      <p className="m-0 mb-[10px] text-[11px] text-[#666] font-bold">
+                        📋 Quick Fill: Paste full address block (optional)
+                      </p>
+                      <div className="p-[16px] bg-[#f9f8f6] rounded-[10px] border border-dashed border-[#d6d1c7]">
+                        <p className="m-0 mb-[10px] text-[11px] text-[#666]">
+                          Paste the full address block here and click "Parse Address" to auto-fill
+                          all fields:
+                        </p>
+                        <textarea
+                          className="w-full border rounded-[8px] px-[13px] py-[11px] text-[13px] bg-white placeholder:text-[#aaa] outline-none transition-colors border-line focus:border-ink min-h-[100px] resize-y"
+                          placeholder="Example:&#10;John Doe&#10;john@example.com&#10;9876543210&#10;123 Main Street, Apartment 4B&#10;Near City Mall&#10;Mumbai, Maharashtra 400001"
+                          value={addressBlock}
+                          onChange={(e) => setAddressBlock(e.target.value)}
+                        />
+                        <button
+                          className="mt-[10px] w-full h-[42px] border-0 rounded-[8px] bg-ink text-white uppercase tracking-[.08em] text-[10px] font-bold flex items-center justify-center gap-[8px] disabled:opacity-30 disabled:cursor-not-allowed [&_svg]:w-[14px]"
+                          disabled={parsing || !addressBlock.trim()}
+                          onClick={parseAddressBlock}
+                        >
+                          {parsing ? (
+                            <>
+                              <i className="w-[14px] h-[14px] border-2 border-white/30 border-t-white rounded-full animate-[spin_0.8s_linear_infinite]" />{' '}
+                              Parsing…
+                            </>
+                          ) : (
+                            <>
+                              <Icon name="search" /> Parse Address
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-[12px] mb-[20px]">
+                      <div className="flex-1 h-px bg-[#ddd6c9]" />
+                      <span className="text-[11px] text-[#999] uppercase tracking-[.08em] font-bold">
+                        or enter manually
+                      </span>
+                      <div className="flex-1 h-px bg-[#ddd6c9]" />
+                    </div>
+
+                    {/* Manual entry form */}
                     <div className="grid gap-[14px]">
                       <div className="grid grid-cols-2 gap-[12px] items-start max-[480px]:grid-cols-1">
                         {renderField('name', 'Full name *')}
-                        {renderField('email', 'Email *', 'email')}
+                        {renderField('email', 'Email (optional)', 'email')}
                       </div>
-                      {renderField('mobileNo', 'Mobile number *')}
+                      <div className="grid grid-cols-2 gap-[12px] items-start max-[480px]:grid-cols-1">
+                        {renderField('mobileNo', 'Mobile number *')}
+                        {renderField('altMobileNo', 'Alternative mobile (optional)')}
+                      </div>
                       {renderField('line1', 'Address line 1 *')}
                       {renderField('line2', 'Address line 2')}
                       {renderField('landmark', 'Landmark')}
@@ -482,6 +568,13 @@ export default function CartPage() {
                   </button>
                 ) : (
                   <>
+                    {/* Address verification line */}
+                    <div className="border border-line rounded-[10px] p-[14px] bg-white">
+                      <p className="m-0 mb-[8px] text-[10px] uppercase tracking-[.12em] font-bold text-[#999]">
+                        Please verify your address & contact details before placing the order:
+                      </p>
+                    </div>
+
                     {/* Place order button */}
                     <button
                       className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] disabled:opacity-50 [&_svg]:w-[14px]"

@@ -32,6 +32,7 @@ export function CreateOrderForm({ open, onClose }: { open: boolean; onClose: () 
     name: '',
     email: '',
     mobileNo: '',
+    altMobileNo: '',
     line1: '',
     line2: '',
     landmark: '',
@@ -111,6 +112,7 @@ export function CreateOrderForm({ open, onClose }: { open: boolean; onClose: () 
       name: '',
       email: '',
       mobileNo: '',
+      altMobileNo: '',
       line1: '',
       line2: '',
       landmark: '',
@@ -377,6 +379,12 @@ export function CreateOrderForm({ open, onClose }: { open: boolean; onClose: () 
                 placeholder="Mobile number"
                 value={address.mobileNo}
                 onChange={(e) => handleAddressChange('mobileNo', e.target.value)}
+              />
+              <input
+                className={fieldClass}
+                placeholder="Alternative mobile (optional)"
+                value={address.altMobileNo}
+                onChange={(e) => handleAddressChange('altMobileNo', e.target.value)}
               />
               <input
                 className={fieldClass}

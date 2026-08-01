@@ -13,7 +13,12 @@ export const orderTypeSchema = z.enum(['BULK', 'SINGLE']);
 
 export const addressSchema = z.object({
   name: z.string().min(1, 'Full name is required'),
-  email: z.string().email('Valid email is required'),
+  email: z.string().email('Valid email is required').optional().or(z.literal('')),
+  altMobileNo: z
+    .string()
+    .min(10, 'Alternative mobile number must be at least 10 digits')
+    .optional()
+    .or(z.literal('')),
   mobileNo: z.string().min(10, 'Mobile number is required'),
   line1: z.string().min(1, 'Address line 1 is required'),
   line2: z.string().optional().default(''),

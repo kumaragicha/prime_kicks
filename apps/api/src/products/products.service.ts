@@ -1,10 +1,10 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
 import type {
   CreateProductSchema,
   ProductQuerySchema,
   UpdateProductSchema,
 } from '@prime-kicks/validation';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 const productInclude = {
@@ -47,20 +47,24 @@ export class ProductsService {
   async findAll(query: ProductQuerySchema) {
     const { page, pageSize, brandId, categoryId, sizeTypeId, search } = query;
 
-    const where: Prisma.ProductWhereInput = {
+    const buildWhere = (withSearch: boolean): Prisma.ProductWhereInput => ({
       deletedAt: null,
       ...(brandId ? { brandId } : {}),
       ...(categoryId ? { categories: { some: { id: categoryId } } } : {}),
       ...(sizeTypeId ? { sizeTypeId } : {}),
-      ...(search
+      ...(withSearch && search
         ? {
             OR: [
               { name: { contains: search, mode: 'insensitive' } },
               { sku: { contains: search, mode: 'insensitive' } },
+              { brand: { contains: search, mode: 'insensitive' } },
+              { brandRef: { name: { contains: search, mode: 'insensitive' } } },
             ],
           }
         : {}),
-    };
+    });
+
+    let where = buildWhere(true);
 
     const [rows, total] = await Promise.all([
       this.prisma.product.findMany({
@@ -72,6 +76,30 @@ export class ProductsService {
       }),
       this.prisma.product.count({ where }),
     ]);
+
+    // Fallback: if the search returned no results, show all products (ignoring search).
+    if (search && rows.length === 0) {
+      where = buildWhere(false);
+      const [fallbackRows, fallbackTotal] = await Promise.all([
+        this.prisma.product.findMany({
+          where,
+          include: storefrontInclude,
+          skip: (page - 1) * pageSize,
+          take: pageSize,
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.product.count({ where }),
+      ]);
+      return {
+        data: fallbackRows.map(withTotalStock),
+        meta: {
+          page,
+          pageSize,
+          total: fallbackTotal,
+          totalPages: Math.ceil(fallbackTotal / pageSize),
+        },
+      };
+    }
 
     return {
       data: rows.map(withTotalStock),
@@ -127,15 +155,22 @@ export class ProductsService {
   async update(id: string, input: UpdateProductSchema) {
     await this.ensureExists(id);
     const { variants, brandId, productTypeIds, categoryIds, ...data } = input;
-    const brand = brandId ? await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } }) : null;
+    const brand = brandId
+      ? await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } })
+      : null;
 
     const product = await this.prisma.$transaction(async (tx) => {
-      await tx.product.update({ where: { id }, data: {
-        ...data,
-        ...(brand ? { brandId, brand: brand.name } : {}),
-        ...(productTypeIds ? { productTypes: { set: productTypeIds.map((id) => ({ id })) } } : {}),
-        ...(categoryIds ? { categories: { set: categoryIds.map((id) => ({ id })) } } : {}),
-      } });
+      await tx.product.update({
+        where: { id },
+        data: {
+          ...data,
+          ...(brand ? { brandId, brand: brand.name } : {}),
+          ...(productTypeIds
+            ? { productTypes: { set: productTypeIds.map((id) => ({ id })) } }
+            : {}),
+          ...(categoryIds ? { categories: { set: categoryIds.map((id) => ({ id })) } } : {}),
+        },
+      });
 
       if (variants) {
         const keep = variants.map((v) => v.sizeId);

@@ -16,7 +16,8 @@ export type IconName =
   | 'chevron-right'
   | 'filter'
   | 'check'
-  | 'x';
+  | 'x'
+  | 'download';
 
 const paths: Record<IconName, ReactNode> = {
   arrow: <path d="M5 12h14m-6-6 6 6-6 6" />,
@@ -59,6 +60,12 @@ const paths: Record<IconName, ReactNode> = {
   filter: <path d="M4 5h16l-6.4 7.6V19l-3.2-1.6v-4.8L4 5Z" />,
   check: <path d="M5 12l5 5L20 7" />,
   x: <path d="M6 6l12 12M18 6 6 18" />,
+  download: (
+    <>
+      <path d="M12 3v12m0 0 4-4m-4 4-4-4" />
+      <path d="M5 21h14" />
+    </>
+  ),
 };
 
 export function Icon({ name }: { name: IconName }) {
