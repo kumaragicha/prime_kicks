@@ -1,7 +1,15 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
 import { Button } from '@prime-kicks/ui';
+import { cn } from '@prime-kicks/utils';
+import { useEffect, useRef } from 'react';
+
+const CONFIRM_TONE_CLASSES = {
+  danger: 'bg-red-600 hover:bg-red-700',
+  success: 'bg-green-600 hover:bg-green-700',
+  warning: 'bg-orange-600 hover:bg-orange-700',
+  neutral: 'bg-neutral-900 hover:bg-neutral-800',
+} as const;
 
 export function ConfirmDialog({
   open,
@@ -9,6 +17,9 @@ export function ConfirmDialog({
   description,
   error,
   isConfirming = false,
+  confirmLabel = 'Delete',
+  confirmPendingLabel = 'Deleting…',
+  confirmTone = 'danger',
   onClose,
   onConfirm,
 }: {
@@ -17,6 +28,9 @@ export function ConfirmDialog({
   description: string;
   error?: string;
   isConfirming?: boolean;
+  confirmLabel?: string;
+  confirmPendingLabel?: string;
+  confirmTone?: keyof typeof CONFIRM_TONE_CLASSES;
   onClose: () => void;
   onConfirm: () => void;
 }) {
@@ -60,11 +74,22 @@ export function ConfirmDialog({
           </p>
         )}
         <div className="mt-6 flex justify-end gap-3">
-          <Button ref={cancelButtonRef} type="button" variant="outline" onClick={onClose} disabled={isConfirming}>
+          <Button
+            ref={cancelButtonRef}
+            type="button"
+            variant="outline"
+            onClick={onClose}
+            disabled={isConfirming}
+          >
             Cancel
           </Button>
-          <Button type="button" onClick={onConfirm} disabled={isConfirming} className="bg-red-600 hover:bg-red-700">
-            {isConfirming ? 'Deleting…' : 'Delete'}
+          <Button
+            type="button"
+            onClick={onConfirm}
+            disabled={isConfirming}
+            className={cn(CONFIRM_TONE_CLASSES[confirmTone])}
+          >
+            {isConfirming ? confirmPendingLabel : confirmLabel}
           </Button>
         </div>
       </section>

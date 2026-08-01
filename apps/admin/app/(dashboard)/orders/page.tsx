@@ -71,7 +71,19 @@ export default function OrdersPage() {
     () => [
       columnHelper.accessor('orderNumber', {
         header: 'Order',
-        cell: (c) => <span className="text-blue-600">{c.getValue()}</span>,
+        cell: (c) => {
+          const id = c.row.original.id;
+          const orderNumber = c.getValue();
+          return (
+            <button
+              type="button"
+              className="text-blue-600 hover:underline cursor-pointer"
+              onClick={() => router.push(`/orders/${id}`)}
+            >
+              {orderNumber}
+            </button>
+          );
+        },
       }),
       columnHelper.accessor('userName', { header: 'Customer' }),
       columnHelper.accessor('status', {
@@ -98,13 +110,19 @@ export default function OrdersPage() {
         cell: (c) => {
           const order = c.row.original;
           return (
-            <div className="flex justify-end gap-1 items-center">
+            <div
+              className="flex justify-end gap-1 items-center"
+              onClick={(e) => e.stopPropagation()}
+            >
               {order.status === ORDER_STATUS.PENDING && (
                 <>
                   <button
                     type="button"
                     className="text-green-600 hover:text-green-800 p-1 bg-green-100 rounded cursor-pointer"
-                    onClick={() => setOrderToApproveReceived(order)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOrderToApproveReceived(order);
+                    }}
                     title="Approve & Payment Received"
                   >
                     <span className="">Approved ₹</span>
@@ -112,15 +130,21 @@ export default function OrdersPage() {
                   <button
                     type="button"
                     className="text-orange-600 hover:text-orange-800 p-1 bg-red-100 rounded cursor-pointer"
-                    onClick={() => setOrderToApprovePending(order)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOrderToApprovePending(order);
+                    }}
                     title="Approve & Payment Pending"
                   >
-                    <span className="">Approved ₹</span>
+                    <span className="">Approve ₹</span>
                   </button>
                   <button
                     type="button"
                     className="text-red-600 hover:text-red-800 p-1 bg-red-100 rounded cursor-pointer"
-                    onClick={() => setOrderToReject(order)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOrderToReject(order);
+                    }}
                     title="Reject"
                   >
                     <svg
@@ -138,7 +162,10 @@ export default function OrdersPage() {
               <button
                 type="button"
                 className="text-red-600 hover:text-red-800 p-1 bg-red-100 rounded cursor-pointer"
-                onClick={() => setOrderToDelete(order)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOrderToDelete(order);
+                }}
                 title="Delete"
               >
                 <svg
@@ -231,13 +258,15 @@ export default function OrdersPage() {
               </thead>
               <tbody>
                 {table.getRowModel().rows.map((row) => (
-                  <tr
-                    key={row.id}
-                    className="border-b border-neutral-100 last:border-0 cursor-pointer hover:bg-neutral-50"
-                    onClick={() => router.push(`/orders/${row.original.id}`)}
-                  >
+                  <tr key={row.id} className="border-b border-neutral-100 last:border-0">
                     {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-4 py-3">
+                      <td
+                        key={cell.id}
+                        className="px-4 py-3"
+                        onClick={
+                          cell.column.id === 'actions' ? (e) => e.stopPropagation() : undefined
+                        }
+                      >
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </td>
                     ))}
@@ -276,6 +305,9 @@ export default function OrdersPage() {
             : ''
         }
         isConfirming={deleteOrder.isPending}
+        confirmLabel="Delete"
+        confirmPendingLabel="Deleting…"
+        confirmTone="danger"
         onClose={() => setOrderToDelete(null)}
         onConfirm={() => {
           if (orderToDelete) {
@@ -294,6 +326,9 @@ export default function OrdersPage() {
             : ''
         }
         isConfirming={approveOrder.isPending}
+        confirmLabel="Approve"
+        confirmPendingLabel="Approving…"
+        confirmTone="success"
         onClose={() => setOrderToApproveReceived(null)}
         onConfirm={() => {
           if (orderToApproveReceived) {
@@ -315,6 +350,9 @@ export default function OrdersPage() {
             : ''
         }
         isConfirming={approveOrder.isPending}
+        confirmLabel="Approve"
+        confirmPendingLabel="Approving…"
+        confirmTone="warning"
         onClose={() => setOrderToApprovePending(null)}
         onConfirm={() => {
           if (orderToApprovePending) {
@@ -336,6 +374,9 @@ export default function OrdersPage() {
             : ''
         }
         isConfirming={rejectOrder.isPending}
+        confirmLabel="Reject"
+        confirmPendingLabel="Rejecting…"
+        confirmTone="danger"
         onClose={() => setOrderToReject(null)}
         onConfirm={() => {
           if (orderToReject) {

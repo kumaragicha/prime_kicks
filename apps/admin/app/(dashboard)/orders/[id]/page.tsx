@@ -291,6 +291,9 @@ export default function OrderDetailPage() {
               : 'This will reset the order to PENDING status. Inventory will be restored.'
         }
         isConfirming={approveOrder.isPending || rejectOrder.isPending}
+        confirmLabel="Undo"
+        confirmPendingLabel="Undoing…"
+        confirmTone="neutral"
         onClose={() => {
           setShowUndoConfirm(false);
           setActionType(null);
