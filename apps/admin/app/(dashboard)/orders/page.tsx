@@ -103,62 +103,23 @@ export default function OrdersPage() {
                 <>
                   <button
                     type="button"
-                    className="text-green-600 hover:text-green-800 p-1"
+                    className="text-green-600 hover:text-green-800 p-1 bg-green-100 rounded cursor-pointer"
                     onClick={() => setOrderToApproveReceived(order)}
                     title="Approve & Payment Received"
                   >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      <text
-                        x="12"
-                        y="16"
-                        textAnchor="middle"
-                        fontSize="7"
-                        fill="currentColor"
-                        stroke="none"
-                        fontWeight="bold"
-                      >
-                        ₹
-                      </text>
-                    </svg>
+                    <span className="">Approved ₹</span>
                   </button>
                   <button
                     type="button"
-                    className="text-orange-600 hover:text-orange-800 p-1"
+                    className="text-orange-600 hover:text-orange-800 p-1 bg-red-100 rounded cursor-pointer"
                     onClick={() => setOrderToApprovePending(order)}
                     title="Approve & Payment Pending"
                   >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                      <text
-                        x="12"
-                        y="16"
-                        textAnchor="middle"
-                        fontSize="7"
-                        fill="currentColor"
-                        stroke="none"
-                        fontWeight="bold"
-                      >
-                        ₹
-                      </text>
-                      <path d="M12 2v4M12 18v4M2 12h4M18 12h4" strokeWidth="1.5" />
-                    </svg>
+                    <span className="">Approved ₹</span>
                   </button>
                   <button
                     type="button"
-                    className="text-red-600 hover:text-red-800 p-1"
+                    className="text-red-600 hover:text-red-800 p-1 bg-red-100 rounded cursor-pointer"
                     onClick={() => setOrderToReject(order)}
                     title="Reject"
                   >
@@ -176,7 +137,7 @@ export default function OrdersPage() {
               )}
               <button
                 type="button"
-                className="text-red-600 hover:text-red-800 p-1"
+                className="text-red-600 hover:text-red-800 p-1 bg-red-100 rounded cursor-pointer"
                 onClick={() => setOrderToDelete(order)}
                 title="Delete"
               >
