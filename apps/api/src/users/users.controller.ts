@@ -1,7 +1,9 @@
 import { Controller, Delete, Get, Param, Patch, Query } from '@nestjs/common';
 import { userQuerySchema, type UserQuerySchema } from '@prime-kicks/validation';
-import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import type { AuthenticatedUser } from '../auth/auth.types';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
+import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { UsersService } from './users.service';
 
 @Roles('ADMIN')
@@ -20,17 +22,17 @@ export class UsersController {
   }
 
   @Patch(':id/disable')
-  disable(@Param('id') id: string) {
-    return this.users.setActive(id, false);
+  disable(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser) {
+    return this.users.setActive(id, false, actor.id);
   }
 
   @Patch(':id/enable')
-  enable(@Param('id') id: string) {
-    return this.users.setActive(id, true);
+  enable(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser) {
+    return this.users.setActive(id, true, actor.id);
   }
 
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.users.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser) {
+    return this.users.remove(id, actor.id);
   }
 }

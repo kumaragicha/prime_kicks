@@ -1,6 +1,11 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import type { UserQuerySchema } from '@prime-kicks/validation';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Fields safe to expose to the admin UI (never the password/refresh hashes). */
@@ -74,8 +79,11 @@ export class UsersService {
   }
 
   /** Enable or disable a user. Disabling also revokes their refresh token. */
-  async setActive(id: string, isActive: boolean) {
+  async setActive(id: string, isActive: boolean, actorId?: string) {
     await this.findOne(id);
+    if (actorId && id === actorId) {
+      throw new BadRequestException('You cannot disable your own account');
+    }
     return this.prisma.user.update({
       where: { id },
       data: { isActive, ...(isActive ? {} : { refreshTokenHash: null }) },
@@ -84,8 +92,11 @@ export class UsersService {
   }
 
   /** Permanently delete the user record. */
-  async remove(id: string) {
+  async remove(id: string, actorId?: string) {
     await this.findOne(id);
+    if (actorId && id === actorId) {
+      throw new BadRequestException('You cannot delete your own account');
+    }
     try {
       await this.prisma.user.delete({ where: { id } });
       return { id, deleted: true };

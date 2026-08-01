@@ -23,12 +23,15 @@ export class OrdersService {
     const actualUserId = input.resellerId ?? userId;
     const isAdminCreated = Boolean(input.resellerId);
 
-    // Validate user exists
+    // Validate user exists and is active (disabled users cannot place orders)
     const user = await this.prisma.user.findFirst({
       where: { id: actualUserId, deletedAt: null },
-      select: { id: true, name: true },
+      select: { id: true, name: true, isActive: true },
     });
     if (!user) throw new NotFoundException('User not found');
+    if (!user.isActive) {
+      throw new BadRequestException('Your account is disabled. You cannot place orders.');
+    }
 
     // Validate all items and compute pricing
     type ItemWithDetails = {

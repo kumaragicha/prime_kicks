@@ -3,6 +3,7 @@
 import { DeleteIcon, IconButton, Toggle } from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { controlClass, Pagination } from '@/components/table-controls';
+import { useAuth } from '@/lib/auth';
 import { useDeleteUser, useSetUserActive, useUsers } from '@/lib/hooks';
 import type { AdminUserRow } from '@prime-kicks/types';
 import { Badge } from '@prime-kicks/ui';
@@ -18,6 +19,7 @@ const columnHelper = createColumnHelper<AdminUserRow>();
 const PAGE_SIZE = 10;
 
 export default function UsersPage() {
+  const { user: currentUser } = useAuth();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [role, setRole] = useState('');
@@ -67,6 +69,14 @@ export default function UsersPage() {
         header: '',
         cell: (c) => {
           const user = c.row.original;
+          const isSelf = currentUser?.id === user.id;
+          if (isSelf) {
+            return (
+              <div className="flex justify-end">
+                <Badge tone="neutral">You</Badge>
+              </div>
+            );
+          }
           return (
             <div className="flex justify-end gap-1 items-center">
               <Toggle
@@ -87,7 +97,7 @@ export default function UsersPage() {
         },
       }),
     ],
-    [setActive],
+    [setActive, currentUser?.id],
   );
 
   const table = useReactTable({
