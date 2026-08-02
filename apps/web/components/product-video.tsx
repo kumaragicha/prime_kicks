@@ -3,6 +3,25 @@
 import { Icon } from '@/components/icon';
 import { useRef, useState } from 'react';
 
+async function downloadVideo(url: string, filename: string) {
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(blobUrl);
+  } catch (error) {
+    console.error('Download failed:', error);
+    // Fallback: open in new tab
+    window.open(url, '_blank');
+  }
+}
+
 /**
  * Silent, chromeless product video. No native controls — a custom centered
  * button toggles play/pause. Muted + looped so it plays inline like a GIF.
@@ -44,15 +63,18 @@ export function ProductVideo({
         aria-label={label}
       />
 
-      <a
-        href={src}
-        download
-        onClick={(e) => e.stopPropagation()}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          const filename = src.split('/').pop() || 'product-video.mp4';
+          void downloadVideo(src, filename);
+        }}
         aria-label="Download video"
-        className="absolute bottom-[14px] right-[14px] z-10 flex h-[42px] w-[42px] items-center justify-center rounded-full bg-accent text-white shadow-[0_6px_18px_rgba(0,0,0,0.35)] transition-transform duration-200 hover:scale-110 [&_svg]:h-[18px] [&_svg]:w-[18px]"
+        className="absolute bottom-[14px] left-[14px] z-10 flex h-[42px] w-[42px] items-center justify-center rounded-full bg-accent text-white shadow-[0_6px_18px_rgba(0,0,0,0.35)] transition-transform duration-200 hover:scale-110 [&_svg]:h-[18px] [&_svg]:w-[18px]"
       >
         <Icon name="download" />
-      </a>
+      </button>
 
       <button
         type="button"

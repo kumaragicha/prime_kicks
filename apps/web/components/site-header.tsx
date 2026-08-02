@@ -81,6 +81,22 @@ export function SiteHeader() {
               {link.label}
             </Link>
           ))}
+          {user && (
+            <>
+              <Link
+                className="text-ink no-underline uppercase text-[11px] tracking-[.08em] font-bold"
+                href="/profile"
+              >
+                My account
+              </Link>
+              <Link
+                className="text-ink no-underline uppercase text-[11px] tracking-[.08em] font-bold"
+                href="/orders"
+              >
+                My orders
+              </Link>
+            </>
+          )}
         </nav>
         <div className="flex gap-[7px] items-center max-[800px]:gap-[1px]">
           <button
