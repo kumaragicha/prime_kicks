@@ -1,17 +1,24 @@
 'use client';
 
-import { useRouter } from 'next/navigation';
-import type { CreateProductSchema } from '@prime-kicks/validation';
 import { ProductForm } from '@/components/product-form';
 import { useCreateProduct } from '@/lib/hooks';
+import type { CreateProductSchema } from '@prime-kicks/validation';
+import { useRouter } from 'next/navigation';
 
 export default function NewProductPage() {
   const router = useRouter();
   const createProduct = useCreateProduct();
 
   const onSubmit = async (values: CreateProductSchema) => {
-    await createProduct.mutateAsync(values);
-    router.push('/');
+    try {
+      console.log('Submitting product:', values);
+      await createProduct.mutateAsync(values);
+      console.log('Product created successfully');
+      router.push('/');
+    } catch (error) {
+      console.error('Failed to create product:', error);
+      throw error;
+    }
   };
 
   return (

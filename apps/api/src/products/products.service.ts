@@ -121,10 +121,15 @@ export class ProductsService {
   async create(input: CreateProductSchema) {
     const { variants, brandId, productTypeIds, categoryIds, ...data } = input;
     const brand = await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } });
+
+    // Auto-generate SKU if not provided
+    const sku = data.sku?.trim() || this.generateSku(brand.name);
+
     try {
       const product = await this.prisma.product.create({
         data: {
           ...data,
+          sku,
           brand: brand.name,
           brandId,
           productTypes: { connect: productTypeIds.map((id) => ({ id })) },
@@ -212,6 +217,17 @@ export class ProductsService {
       data: { deletedAt: new Date(), sku: `${product.sku}::deleted::${id}` },
     });
     return { id, deleted: true };
+  }
+
+  private generateSku(brand: string): string {
+    const prefix =
+      brand
+        .replace(/[^a-zA-Z]/g, '')
+        .slice(0, 3)
+        .toUpperCase() || 'PK';
+    const stamp = Date.now().toString(36).toUpperCase();
+    const rand = Math.random().toString(36).slice(2, 6).toUpperCase();
+    return `${prefix}-${stamp}${rand}`;
   }
 
   private async ensureExists(id: string) {

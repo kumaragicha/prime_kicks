@@ -1,13 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
-import { useForm, type DefaultValues } from 'react-hook-form';
+import { ImageUploader, VideoUploader } from '@/components/media-uploader';
+import { useBrands, useCategories, useProductTypes, useSizeTypes } from '@/lib/hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { createProductSchema, type CreateProductSchema } from '@prime-kicks/validation';
 import { formatSize } from '@prime-kicks/types';
 import { Button } from '@prime-kicks/ui';
-import { useBrands, useCategories, useProductTypes, useSizeTypes } from '@/lib/hooks';
-import { ImageUploader, VideoUploader } from '@/components/media-uploader';
+import { createProductSchema, type CreateProductSchema } from '@prime-kicks/validation';
+import { useMemo, useState } from 'react';
+import { useForm, type DefaultValues } from 'react-hook-form';
 
 const fieldClass =
   'w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-900 focus:outline-none';
@@ -83,15 +83,38 @@ export function ProductForm({
 
   const totalStock = Object.values(stockBySize).reduce((sum, n) => sum + (n || 0), 0);
 
-  const submit = handleSubmit(async (values) => {
-    const variants = (selectedType?.sizes ?? [])
-      .map((s) => ({ sizeId: s.id, stock: stockBySize[s.id] ?? 0, sku: null }))
-      .filter((v) => v.stock > 0);
-    // SKU is auto-generated for new products; existing products keep theirs.
-    const brandName = brands?.find((b) => b.id === values.brandId)?.name;
-    const sku = values.sku?.trim() || generateSku(brandName);
-    await onSubmit({ ...values, sku, variants });
-  });
+  const submit = handleSubmit(
+    async (values) => {
+      console.log('🚀 Form submitted with values:', values);
+      console.log('📦 Brand data:', brands);
+      console.log('📏 Selected type:', selectedType);
+      console.log('📊 Stock by size:', stockBySize);
+
+      try {
+        const variants = (selectedType?.sizes ?? [])
+          .map((s) => ({ sizeId: s.id, stock: stockBySize[s.id] ?? 0, sku: null }))
+          .filter((v) => v.stock > 0);
+        console.log('🔧 Variants to create:', variants);
+
+        // SKU is auto-generated for new products; existing products keep theirs.
+        const brandName = brands?.find((b) => b.id === values.brandId)?.name;
+        console.log('🏷️ Brand name:', brandName);
+        const sku = values.sku?.trim() || generateSku(brandName);
+        console.log('🏷️ Final SKU:', sku);
+
+        const result = await onSubmit({ ...values, sku, variants });
+        console.log('✅ onSubmit completed:', result);
+        return result;
+      } catch (error) {
+        console.error('❌ Error in submit handler:', error);
+        throw error;
+      }
+    },
+    (errors) => {
+      // Log validation errors
+      console.error('❌ Form validation errors:', errors);
+    },
+  );
 
   return (
     <form onSubmit={submit} className="flex w-full max-w-lg flex-col gap-4">
@@ -100,10 +123,35 @@ export function ProductForm({
       </Field>
 
       <Field label="Brand" error={errors.brandId?.message}>
-        <select className={fieldClass} {...register('brandId')}><option value="">Select brand</option>{brands?.map((brand) => <option key={brand.id} value={brand.id}>{brand.name}</option>)}</select>
+        <select className={fieldClass} {...register('brandId')}>
+          <option value="">Select brand</option>
+          {brands?.map((brand) => (
+            <option key={brand.id} value={brand.id}>
+              {brand.name}
+            </option>
+          ))}
+        </select>
       </Field>
-      <Field label="Types" error={errors.productTypeIds?.message as string | undefined}><div className="grid grid-cols-2 gap-2">{productTypes?.map((type) => <label key={type.id} className="flex items-center gap-2 text-sm"><input type="checkbox" value={type.id} {...register('productTypeIds')} />{type.name}</label>)}</div></Field>
-      <Field label="Categories" error={errors.categoryIds?.message as string | undefined}><div className="grid grid-cols-2 gap-2">{categories?.map((category) => <label key={category.id} className="flex items-center gap-2 text-sm"><input type="checkbox" value={category.id} {...register('categoryIds')} />{category.name}</label>)}</div></Field>
+      <Field label="Types" error={errors.productTypeIds?.message as string | undefined}>
+        <div className="grid grid-cols-2 gap-2">
+          {productTypes?.map((type) => (
+            <label key={type.id} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" value={type.id} {...register('productTypeIds')} />
+              {type.name}
+            </label>
+          ))}
+        </div>
+      </Field>
+      <Field label="Categories" error={errors.categoryIds?.message as string | undefined}>
+        <div className="grid grid-cols-2 gap-2">
+          {categories?.map((category) => (
+            <label key={category.id} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" value={category.id} {...register('categoryIds')} />
+              {category.name}
+            </label>
+          ))}
+        </div>
+      </Field>
 
       <Field label="Description" error={errors.description?.message}>
         <textarea className={fieldClass} rows={3} {...register('description')} />
@@ -112,7 +160,9 @@ export function ProductForm({
       <Field label="Photos" error={errors.photoUrls?.message as string | undefined}>
         <ImageUploader
           value={watch('photoUrls') ?? []}
-          onChange={(urls) => setValue('photoUrls', urls, { shouldValidate: true, shouldDirty: true })}
+          onChange={(urls) =>
+            setValue('photoUrls', urls, { shouldValidate: true, shouldDirty: true })
+          }
           max={4}
         />
       </Field>
@@ -197,7 +247,11 @@ export function ProductForm({
         </Field>
       </div>
 
-      {errorMessage && <p className="text-sm text-red-600">{errorMessage}</p>}
+      {errorMessage && (
+        <div className="rounded-md border border-red-200 bg-red-50 p-3">
+          <p className="text-sm text-red-600 font-medium">Error: {errorMessage}</p>
+        </div>
+      )}
 
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? 'Saving…' : submitLabel}

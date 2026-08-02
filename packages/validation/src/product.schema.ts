@@ -8,7 +8,7 @@ export const productVariantInputSchema = z.object({
 });
 
 export const createProductSchema = z.object({
-  sku: z.string().min(1, 'SKU is required'),
+  sku: z.string().default(''),
   name: z.string().min(1, 'Name is required'),
   brandId: z.string().min(1, 'Pick a brand'),
   productTypeIds: z.array(z.string().min(1)).min(1, 'Pick at least one product type'),
