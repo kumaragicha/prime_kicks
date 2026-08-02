@@ -30,13 +30,13 @@ export function SiteHeader() {
   const [loginOpen, setLoginOpen] = useState(false);
 
   useEffect(() => {
-    if (!menuOpen) return;
+    if (!menuOpen && !searchOpen) return;
     const previous = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => {
       document.body.style.overflow = previous;
     };
-  }, [menuOpen]);
+  }, [menuOpen, searchOpen]);
 
   // Close the menu when clicking outside (on the backdrop).
   useEffect(() => {
@@ -151,7 +151,7 @@ export function SiteHeader() {
             className="fixed inset-0 z-[8] bg-black/30 animate-[fade_0.18s_ease-out] max-[800px]:block"
             onClick={() => setMenuOpen(false)}
           />
-          <nav className="fixed top-0 left-0 right-0 pt-[62px] px-[6vw] pb-[29px] z-[9] bg-paper border-b border-line grid gap-[20px] animate-[drop_0.22s_ease-out] max-[800px]:pt-[62px]">
+          <nav className="fixed top-[34px] left-0 right-0 pt-[62px] px-[6vw] pb-[29px] z-[9] bg-paper border-b border-line grid gap-[20px] animate-[drop_0.22s_ease-out] max-[800px]:top-[30px] max-[800px]:pt-[62px]">
             {navLinks.map((link) => (
               <Link
                 key={link.href}
@@ -184,7 +184,18 @@ export function SiteHeader() {
         </>
       )}
 
-      {searchOpen && <SearchPanel onClose={() => setSearchOpen(false)} />}
+      {searchOpen && (
+        <>
+          {/* Backdrop — click anywhere outside to close search */}
+          <button
+            type="button"
+            aria-label="Close search"
+            className="fixed inset-0 z-[8] bg-black/30 animate-[fade_0.18s_ease-out]"
+            onClick={() => setSearchOpen(false)}
+          />
+          <SearchPanel onClose={() => setSearchOpen(false)} />
+        </>
+      )}
       {loginOpen && (
         <LoginModal
           onClose={() => setLoginOpen(false)}

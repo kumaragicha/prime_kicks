@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/icon';
+import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
 export function SearchPanel({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState('');

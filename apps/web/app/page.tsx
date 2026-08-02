@@ -7,8 +7,10 @@ import { LoginModal } from '@/components/login-modal';
 import { ProductCard, type StoreProduct } from '@/components/product-card';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
+import { Toast } from '@/components/toast';
 import { ApiError, api } from '@/lib/api';
 import { notifyStore, useAuthCart, useInfiniteProducts } from '@/lib/hooks';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -18,6 +20,7 @@ export default function HomePage() {
   const { user, refresh } = useAuthCart();
   const router = useRouter();
   const [toast, setToast] = useState('');
+  const [toastVisible, setToastVisible] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [pendingAdd, setPendingAdd] = useState<{
     product: StoreProduct;
@@ -31,8 +34,7 @@ export default function HomePage() {
         page.data.map((product) => {
           const sizes = product.variants
             .filter((variant) => variant.stock > 0)
-            .map((variant) => ({ id: variant.id, label: variant.size.label }))
-            .slice(0, 4);
+            .map((variant) => ({ id: variant.id, label: variant.size.label }));
           return {
             id: product.id,
             name: product.name,
@@ -72,6 +74,16 @@ export default function HomePage() {
     }
   }, []);
 
+  useEffect(() => {
+    if (!toast) return;
+    setToastVisible(true);
+    const timer = setTimeout(() => {
+      setToastVisible(false);
+      setTimeout(() => setToast(''), 250);
+    }, 2200);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   async function addToCart(product: StoreProduct, variantId: string, action: 'cart' | 'book') {
     if (!user) {
       setPendingAdd({ product, variantId, action });
@@ -88,9 +100,8 @@ export default function HomePage() {
       setToast(`${product.name} added to your bag`);
     } catch (error) {
       if (error instanceof ApiError && error.status === 400) setToast(error.message);
-      else setToast('We couldn’t add this pair. Please try again.');
+      else setToast("We couldn't add this pair. Please try again.");
     }
-    window.setTimeout(() => setToast(''), 2200);
   }
 
   return (
@@ -108,11 +119,11 @@ export default function HomePage() {
         <h1 className="text-[clamp(48px,7.6vw,110px)] tracking-[-.09em] leading-[.82] m-0 mb-[33px] font-[900] max-[800px]:text-[57px]">
           Step into
           <br />
-          <em className="font-[Georgia,serif] font-normal tracking-[-.1em]">what&apos;s next.</em>
+          <em className="font-[Georgia,serif] font-normal tracking-[-.1em]">what's next.</em>
         </h1>
         <a
           className="text-white bg-ink border border-[rgba(255,255,255,0.3)] no-underline uppercase text-[11px] font-bold tracking-[.09em] py-[15px] px-[17px] inline-flex gap-[22px] items-center transition-[transform,background] duration-200 hover:translate-x-[5px] hover:bg-[#31302d] [&_svg]:w-[16px] [&_svg]:h-[16px]"
-          href="#shop"
+          href="/search"
         >
           Shop new arrivals <Icon name="arrow" />
         </a>
@@ -125,9 +136,6 @@ export default function HomePage() {
       >
         <div className="flex items-center justify-between gap-[16px] mb-[27px]">
           <div>
-            <p className="m-0 mb-[11px] text-[10px] tracking-[.16em] uppercase font-bold">
-              Curated for you
-            </p>
             <h2 className="text-[38px] tracking-[-.07em] m-0 leading-[.9] max-[800px]:text-[31px]">
               Fresh drops
             </h2>
@@ -137,15 +145,16 @@ export default function HomePage() {
           className="grid grid-cols-4 gap-x-[16px] gap-y-[27px] max-[800px]:grid-cols-2 max-[800px]:gap-x-[10px] max-[800px]:gap-y-[28px] min-[801px]:max-[1100px]:grid-cols-3"
           id="new"
         >
-          {products.map((product, index) => (
+          {products.slice(0, 4).map((product, index) => (
             <ProductCard
               key={product.id}
               product={product}
               onAdd={addToCart}
               priority={index < 4}
+              isHomePage
             />
           ))}
-          {isLoading && Array.from({ length: 8 }, (_, index) => <ProductSkeleton key={index} />)}
+          {isLoading && Array.from({ length: 4 }, (_, index) => <ProductSkeleton key={index} />)}
         </div>
         {isLoading && (
           <div className="h-[130px] flex items-center justify-center gap-[10px] text-[10px] tracking-[.1em] uppercase text-[#666] max-[800px]:h-[100px]">
@@ -155,7 +164,7 @@ export default function HomePage() {
         )}
         {isError && (
           <div className="text-center text-[13px] text-[#666] pt-[40px] px-0 pb-[70px]">
-            <p>We couldn’t load the catalogue. Check that the product API is running.</p>
+            <p>We couldn't load the catalogue. Check that the product API is running.</p>
             <button
               className="border-0 bg-ink text-white py-[11px] px-[14px] mt-[6px] text-[10px] font-bold uppercase tracking-[.08em] inline-flex items-center gap-[12px] [&_svg]:w-[13px]"
               onClick={() => refetch()}
@@ -170,29 +179,18 @@ export default function HomePage() {
           </p>
         )}
         {!isLoading && !isError && products.length > 0 && (
-          <div
-            className="h-[130px] flex items-center justify-center gap-[10px] text-[10px] tracking-[.1em] uppercase text-[#666] max-[800px]:h-[100px]"
-            ref={loader}
-          >
-            {hasNextPage ? (
-              <>
-                {isFetchingNextPage && (
-                  <i className="w-[15px] h-[15px] border-2 border-[#ccc] border-t-[#111] rounded-full animate-[spin_0.8s_linear_infinite]" />
-                )}
-                {isFetchingNextPage ? 'Loading more kicks' : 'Scroll for more drops'}
-              </>
-            ) : (
-              'You’re all caught up.'
-            )}
+          <div className="mt-[40px] flex justify-center  ">
+            <Link
+              href="/search"
+              className="text-white bg-ink border border-[rgba(255,255,255,0.3)] no-underline uppercase text-[11px] font-bold tracking-[.09em] py-[11px] px-[15px] inline-flex gap-[22px] items-center transition-[transform,background] duration-200 hover:translate-x-[5px] hover:bg-[#31302d] [&_svg]:w-[16px] [&_svg]:h-[16px]"
+            >
+              View more <Icon name="arrow" />
+            </Link>
           </div>
         )}
       </section>
       <SiteFooter />
-      {toast && (
-        <div className="fixed z-30 left-1/2 bottom-[23px] bg-accent text-ink rounded-[10px] py-[13px] px-[17px] text-[11px] font-bold flex items-center gap-[8px] shadow-[0_10px_28px_rgba(0,0,0,0.28)] animate-[toast_0.25s_ease-out_both] [&_svg]:w-[16px] max-[800px]:w-max max-[800px]:max-w-[calc(100%-30px)]">
-          <Icon name="bag" /> {toast}
-        </div>
-      )}
+      <Toast message={toast} visible={toastVisible} />
       <FilterDrawer />
       {loginOpen && (
         <LoginModal
@@ -214,13 +212,12 @@ export default function HomePage() {
                 setToast(`${pendingAdd.product.name} added to your bag`);
               } catch (error) {
                 if (error instanceof ApiError && error.status === 400) setToast(error.message);
-                else setToast('We couldn’t add this pair. Please try again.');
+                else setToast("We couldn't add this pair. Please try again.");
               }
               setPendingAdd(null);
             } else setToast('Welcome back.');
             await refresh();
             notifyStore();
-            window.setTimeout(() => setToast(''), 2200);
           }}
         />
       )}

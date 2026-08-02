@@ -6,12 +6,13 @@ import { LoginModal } from '@/components/login-modal';
 import { ProductVideo } from '@/components/product-video';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
+import { Toast } from '@/components/toast';
 import { ApiError, api } from '@/lib/api';
 import { notifyStore, useProduct } from '@/lib/hooks';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { use, useMemo, useRef, useState } from 'react';
+import { use, useEffect, useMemo, useRef, useState } from 'react';
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -20,6 +21,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const [activeMedia, setActiveMedia] = useState(0);
   const [size, setSize] = useState('');
   const [message, setMessage] = useState('');
+  const [messageVisible, setMessageVisible] = useState(false);
   const [adding, setAdding] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [shake, setShake] = useState(false);
@@ -73,6 +75,16 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     scrollToIndex(next);
   }
 
+  useEffect(() => {
+    if (!message) return;
+    setMessageVisible(true);
+    const timer = setTimeout(() => {
+      setMessageVisible(false);
+      setTimeout(() => setMessage(''), 300);
+    }, 2200);
+    return () => clearTimeout(timer);
+  }, [message]);
+
   async function addToBag(action: 'cart' | 'book') {
     if (!sizes.length) return;
     if (!activeSize) {
@@ -93,10 +105,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') setLoginOpen(true);
       else if (error instanceof ApiError && error.status === 400) setMessage(error.message);
-      else setMessage('We couldn’t add this pair. Please try again.');
+      else setMessage("We couldn't add this pair. Please try again.");
     } finally {
       setAdding(false);
-      window.setTimeout(() => setMessage(''), 2600);
     }
   }
 
@@ -122,7 +133,6 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           ? 'Link copied — open Instagram to share it.'
           : 'Product link copied.',
       );
-      window.setTimeout(() => setMessage(''), 2200);
     }
   }
 
@@ -266,11 +276,13 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               {sizes.map((variant) => (
                 <button
                   key={variant.id}
-                  className={`w-[43px] h-[39px] border rounded-[8px] transition duration-200 ${activeSize === variant.size.label ? 'bg-accent text-white border-accent font-bold' : 'bg-white border-line hover:border-ink'}`}
+                  className={`px-[10px] h-[39px] border rounded-[8px] transition duration-200 text-[12px] ${activeSize === variant.size.label ? 'bg-accent text-white border-accent font-bold' : 'bg-white border-line hover:border-ink'}`}
                   onClick={() => setSize(variant.size.label)}
                   aria-label={`Choose size ${variant.size.label}`}
                 >
-                  {variant.size.label}
+                  {variant.size.conversion
+                    ? `${variant.size.label} - ${variant.size.conversion}`
+                    : variant.size.label}
                 </button>
               ))}
             </div>
@@ -345,14 +357,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           onSuccess={() => setMessage('Signed in — choose your size and add this pair.')}
         />
       )}
-      {message && (
-        <div
-          className="fixed z-30 left-1/2 bottom-[23px] bg-accent text-ink rounded-[10px] py-[13px] px-[17px] text-[11px] font-bold flex items-center gap-[8px] shadow-[0_10px_28px_rgba(0,0,0,0.28)] animate-[toast_0.25s_ease-out_both] [&_svg]:w-[16px] max-[800px]:w-max max-[800px]:max-w-[calc(100%-30px)]"
-          role="status"
-        >
-          <Icon name="bag" /> {message}
-        </div>
-      )}
+      <Toast message={message} visible={messageVisible} />
     </main>
   );
 }

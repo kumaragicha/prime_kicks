@@ -3,6 +3,7 @@
 import { Announcement } from '@/components/announcement';
 import { Icon } from '@/components/icon';
 import { SiteFooter } from '@/components/site-footer';
+import { Toast } from '@/components/toast';
 import { ApiError, api, type StoreCart } from '@/lib/api';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
@@ -608,14 +609,7 @@ export default function CartPage() {
         </section>
       )}
 
-      {toast && (
-        <div
-          className="fixed z-30 left-1/2 bottom-[23px] bg-accent text-ink rounded-[10px] py-[13px] px-[17px] text-[11px] font-bold flex items-center gap-[8px] shadow-[0_10px_28px_rgba(0,0,0,0.28)] animate-[toast_0.25s_ease-out_both] [&_svg]:w-[16px] max-[800px]:w-max max-[800px]:max-w-[calc(100%-30px)]"
-          role="status"
-        >
-          <Icon name="bag" /> {toast}
-        </div>
-      )}
+      <Toast message={toast} visible={!!toast} />
 
       <SiteFooter />
     </main>

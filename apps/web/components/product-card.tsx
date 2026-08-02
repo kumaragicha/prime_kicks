@@ -36,10 +36,12 @@ export function ProductCard({
   product,
   onAdd,
   priority = false,
+  isHomePage = false,
 }: {
   product: StoreProduct;
   onAdd: (product: StoreProduct, variantId: string, action: 'cart' | 'book') => void;
   priority?: boolean;
+  isHomePage?: boolean;
 }) {
   const [variantId, setVariantId] = useState('');
   const [shake, setShake] = useState(false);
@@ -81,7 +83,16 @@ export function ProductCard({
       <div className="pt-[13px] px-[1px] pb-0">
         <div className="flex justify-between gap-[8px] max-[800px]:block">
           <div>
-            <h3 className="text-[15px] tracking-[-.035em] leading-[1] max-[800px]:text-[14px]">
+            <h3
+              className={`lowercase [&::first-letter]:uppercase text-[15px] tracking-[-.035em] max-[800px]:text-[14px] ${
+                isHomePage ? 'leading-[14px] h-[28px] overflow-hidden' : 'leading-[1]'
+              }`}
+              style={
+                isHomePage
+                  ? { display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }
+                  : undefined
+              }
+            >
               {product.brand} {product.name}
             </h3>
           </div>
@@ -98,7 +109,7 @@ export function ProductCard({
           {product.sizes.map((variant) => (
             <button
               key={variant.id}
-              className={`w-[27px] h-[25px] rounded-[7px] text-[10px] border transition-colors duration-200 max-[800px]:w-[23px] max-[800px]:h-[23px] max-[800px]:text-[9px] ${variantId === variant.id ? 'bg-accent text-white border-accent font-bold' : 'bg-transparent border-line hover:border-ink'}`}
+              className={`w-[27px] h-[25px] rounded-[7px] text-[12px] border transition-colors duration-200 max-[800px]:w-[23px] max-[800px]:h-[23px] max-[800px]:text-[11px] ${variantId === variant.id ? 'bg-accent text-white border-accent font-bold' : 'bg-transparent border-line hover:border-ink'}`}
               onClick={() => setVariantId(variant.id)}
               aria-label={`Size UK ${variant.label}`}
             >
@@ -108,7 +119,7 @@ export function ProductCard({
         </div>
         <div className="grid grid-cols-2 gap-[5px]">
           <button
-            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[9px] font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-transparent hover:bg-[#e6e5e1] flex justify-center items-center gap-[4px] [&_svg]:w-[15px]"
+            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[0.55rem] font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-transparent hover:bg-[#e6e5e1] flex justify-center items-center gap-[4px] [&_svg]:w-[15px]"
             onClick={() => handleAdd('cart')}
             disabled={!product.sizes.length}
             aria-label="Add to cart"
@@ -119,7 +130,7 @@ export function ProductCard({
             Add to cart
           </button>
           <button
-            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[9px] font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-ink text-white flex justify-center gap-[4px] items-center hover:bg-[#383838] [&_svg]:w-[12px] max-[800px]:[&_svg]:w-[16px]"
+            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[0.55rem] font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-ink text-white flex justify-center gap-[4px] items-center hover:bg-[#383838] [&_svg]:w-[12px] max-[800px]:[&_svg]:w-[16px]"
             onClick={() => handleAdd('book')}
             disabled={!product.sizes.length}
             aria-label="Buy now"

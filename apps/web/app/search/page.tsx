@@ -59,7 +59,7 @@ function SearchResults() {
     <main className="min-h-screen">
       <Announcement />
       <SiteHeader />
-      <section className="pt-[70px] px-[5.25vw] pb-[100px]">
+      <section className="pt-[70px] max-[800px]:pt-[20px]  px-[5.25vw] pb-[100px]">
         <p className="m-0 mb-[11px] text-[10px] tracking-[.16em] uppercase font-bold">
           Product search
         </p>
@@ -150,6 +150,7 @@ function SearchResults() {
             return (
               <ProductCard
                 key={product.id}
+                isHomePage
                 product={displayProduct}
                 onAdd={(added) => window.location.assign(`/products/${added.id}`)}
               />
