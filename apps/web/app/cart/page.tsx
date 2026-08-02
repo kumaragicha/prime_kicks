@@ -462,8 +462,8 @@ export default function CartPage() {
                       </p>
                       <div className="p-[16px] bg-[#f9f8f6] rounded-[10px] border border-dashed border-[#d6d1c7]">
                         <p className="m-0 mb-[10px] text-[11px] text-[#666]">
-                          Paste the full address block here and click "Parse Address" to auto-fill
-                          all fields:
+                          {`Paste the full address block here and click "Parse Address" to auto-fill
+                          all fields:`}
                         </p>
                         <textarea
                           className="w-full border rounded-[8px] px-[13px] py-[11px] text-[13px] bg-white placeholder:text-[#aaa] outline-none transition-colors border-line focus:border-ink min-h-[100px] resize-y"
