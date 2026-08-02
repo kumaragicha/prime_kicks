@@ -119,7 +119,7 @@ export default function HomePage() {
         <h1 className="text-[clamp(48px,7.6vw,110px)] tracking-[-.09em] leading-[.82] m-0 mb-[33px] font-[900] max-[800px]:text-[57px]">
           Step into
           <br />
-          <em className="font-[Georgia,serif] font-normal tracking-[-.1em]">what's next.</em>
+          <em className="font-[Georgia,serif] font-normal tracking-[-.1em]">{`what's next.`}</em>
         </h1>
         <a
           className="text-white bg-ink border border-[rgba(255,255,255,0.3)] no-underline uppercase text-[11px] font-bold tracking-[.09em] py-[15px] px-[17px] inline-flex gap-[22px] items-center transition-[transform,background] duration-200 hover:translate-x-[5px] hover:bg-[#31302d] [&_svg]:w-[16px] [&_svg]:h-[16px]"
@@ -164,7 +164,7 @@ export default function HomePage() {
         )}
         {isError && (
           <div className="text-center text-[13px] text-[#666] pt-[40px] px-0 pb-[70px]">
-            <p>We couldn't load the catalogue. Check that the product API is running.</p>
+            <p>{`We couldn't load the catalogue. Check that the product API is running.`}</p>
             <button
               className="border-0 bg-ink text-white py-[11px] px-[14px] mt-[6px] text-[10px] font-bold uppercase tracking-[.08em] inline-flex items-center gap-[12px] [&_svg]:w-[13px]"
               onClick={() => refetch()}
