@@ -1,11 +1,30 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { ORDER_STATUS, ORDER_TYPE, PAYMENT_STATUS, type PaymentStatus } from '@prime-kicks/types';
+import {
+  ORDER_STATUS,
+  ORDER_TYPE,
+  PAYMENT_STATUS,
+  type OrderStatus,
+  type PaymentStatus,
+} from '@prime-kicks/types';
 import type {
   CreateOrderSchema,
   OrderQuerySchema,
   UpdateOrderStatusSchema,
 } from '@prime-kicks/validation';
 import { PrismaService } from '../prisma/prisma.service';
+
+/**
+ * Payment status implied by each order status. Payment is only ever RECEIVED
+ * once an order is approved-with-payment; every other status is PENDING. Keeping
+ * this derived (rather than set independently) is what makes the four statuses a
+ * clean, consistent state machine.
+ */
+const PAYMENT_FOR_STATUS: Record<OrderStatus, PaymentStatus> = {
+  [ORDER_STATUS.PENDING]: PAYMENT_STATUS.PENDING,
+  [ORDER_STATUS.APPROVED_PAYMENT_RECEIVED]: PAYMENT_STATUS.RECEIVED,
+  [ORDER_STATUS.APPROVED_PAYMENT_PENDING]: PAYMENT_STATUS.PENDING,
+  [ORDER_STATUS.REJECTED]: PAYMENT_STATUS.PENDING,
+};
 
 @Injectable()
 export class OrdersService {
@@ -26,7 +45,7 @@ export class OrdersService {
     // Validate user exists and is active (disabled users cannot place orders)
     const user = await this.prisma.user.findFirst({
       where: { id: actualUserId, deletedAt: null },
-      select: { id: true, name: true, isActive: true },
+      select: { id: true, name: true, isActive: true, role: true },
     });
     if (!user) throw new NotFoundException('User not found');
     if (!user.isActive) {
@@ -43,6 +62,9 @@ export class OrdersService {
       unitPrice: number;
       quantity: number;
     };
+
+    // Web orders from RESELLER accounts use the reseller price; everyone else pays the customer price.
+    const useResellerPrice = isAdminCreated || user.role === 'RESELLER';
 
     const itemsWithDetails: ItemWithDetails[] = await Promise.all(
       input.items.map(async (item) => {
@@ -81,7 +103,9 @@ export class OrdersService {
           title: variant.product.name,
           sku: variant.product.sku,
           sizeLabel: variant.size.label,
-          unitPrice: isAdminCreated ? variant.product.resellerPrice : variant.product.customerPrice,
+          unitPrice: useResellerPrice
+            ? variant.product.resellerPrice
+            : variant.product.customerPrice,
           quantity: item.quantity,
         };
       }),
@@ -308,6 +332,80 @@ export class OrdersService {
     };
   }
 
+  /**
+   * Outstanding receivables grouped by customer: one entry per user who has
+   * approved-but-unpaid orders (APPROVED_PAYMENT_PENDING), with their pending
+   * order count and total owed. Highest balance first.
+   */
+  async paymentPendingSummary() {
+    const grouped = await this.prisma.order.groupBy({
+      by: ['userId'],
+      where: { status: ORDER_STATUS.APPROVED_PAYMENT_PENDING },
+      _sum: { total: true },
+      _count: { _all: true },
+    });
+
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: grouped.map((g) => g.userId) } },
+      select: { id: true, name: true },
+    });
+    const nameById = new Map(users.map((u) => [u.id, u.name]));
+
+    return grouped
+      .map((g) => ({
+        userId: g.userId,
+        userName: nameById.get(g.userId) ?? 'Unknown',
+        orderCount: g._count._all,
+        totalPending: g._sum.total ?? 0,
+      }))
+      .sort((a, b) => b.totalPending - a.totalPending);
+  }
+
+  /** The approved-payment-pending orders for one user (the card's detail view). */
+  async paymentPendingForUser(userId: string) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { id: true, name: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const orders = await this.prisma.order.findMany({
+      where: { userId, status: ORDER_STATUS.APPROVED_PAYMENT_PENDING },
+      include: { items: { select: { id: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      userId: user.id,
+      userName: user.name,
+      totalPending: orders.reduce((sum, o) => sum + o.total, 0),
+      orders: orders.map((o) => ({
+        id: o.id,
+        orderNumber: o.orderNumber,
+        itemsCount: o.items.length,
+        total: o.total,
+        currency: o.currency,
+        createdAt: o.createdAt.toISOString(),
+      })),
+    };
+  }
+
+  /**
+   * Settle every approved-payment-pending order for a user in one shot — marks
+   * them APPROVED_PAYMENT_RECEIVED. No stock change (already approved, so stock
+   * stays reserved either way), so a single bulk update is safe.
+   */
+  async settlePaymentForUser(userId: string) {
+    const result = await this.prisma.order.updateMany({
+      where: { userId, status: ORDER_STATUS.APPROVED_PAYMENT_PENDING },
+      data: {
+        status: ORDER_STATUS.APPROVED_PAYMENT_RECEIVED,
+        paymentStatus: PAYMENT_STATUS.RECEIVED,
+      },
+    });
+    return { settled: result.count };
+  }
+
   async findOne(id: string) {
     const order = await this.prisma.order.findUnique({
       where: { id },
@@ -363,65 +461,78 @@ export class OrdersService {
     };
   }
 
-  async updateStatus(id: string, input: UpdateOrderStatusSchema) {
+  /**
+   * The single choke point for every order status change (manual update,
+   * approve, reject, undo). Admins can move an order to ANY status, back and
+   * forth; this method keeps the side effects consistent:
+   *
+   *  - Stock: every non-REJECTED status holds the order's reserved stock;
+   *    REJECTED releases it. So stock only moves when crossing the REJECTED
+   *    boundary — leaving REJECTED re-reserves it (validating availability),
+   *    entering REJECTED restores it to inventory.
+   *  - Payment: derived from the target status via {@link PAYMENT_FOR_STATUS}.
+   *
+   * Transitioning to the current status is a no-op (idempotent).
+   */
+  async transition(id: string, target: OrderStatus) {
     const order = await this.prisma.order.findUnique({
       where: { id },
-      select: { id: true, status: true },
+      include: { items: { include: { variant: true } } },
     });
     if (!order) throw new NotFoundException(`Order ${id} not found`);
 
-    const updated = await this.prisma.order.update({
-      where: { id },
-      data: { status: input.status as any },
-      include: {
-        user: { select: { id: true, name: true } },
-        items: {
-          include: { product: { select: { id: true, name: true, sku: true, photoUrls: true } } },
-          orderBy: { id: 'asc' },
-        },
-      },
+    const current = order.status as OrderStatus;
+    if (current === target) return this.findOne(id);
+
+    const leavingRejected = current === ORDER_STATUS.REJECTED;
+    const enteringRejected = target === ORDER_STATUS.REJECTED;
+
+    await this.prisma.$transaction(async (tx) => {
+      if (leavingRejected) {
+        // Re-reserve the stock the rejection released — only if still available.
+        for (const item of order.items) {
+          if (!item.variantId) continue;
+          const variant = await tx.productVariant.findUnique({
+            where: { id: item.variantId },
+            select: { stock: true },
+          });
+          if (!variant || variant.stock < item.quantity) {
+            throw new BadRequestException(
+              `Insufficient stock to restore "${item.title}" (size ${item.sizeLabel}). ` +
+                `Available: ${variant?.stock ?? 0}, needed: ${item.quantity}.`,
+            );
+          }
+        }
+        for (const item of order.items) {
+          if (!item.variantId) continue;
+          await tx.productVariant.update({
+            where: { id: item.variantId },
+            data: { stock: { decrement: item.quantity } },
+          });
+        }
+      } else if (enteringRejected) {
+        // Release the reserved stock back to inventory.
+        for (const item of order.items) {
+          if (!item.variantId) continue;
+          await tx.productVariant.update({
+            where: { id: item.variantId },
+            data: { stock: { increment: item.quantity } },
+          });
+        }
+      }
+
+      await tx.order.update({
+        where: { id },
+        data: { status: target, paymentStatus: PAYMENT_FOR_STATUS[target] },
+      });
     });
 
-    return {
-      id: updated.id,
-      orderNumber: updated.orderNumber,
-      userId: updated.userId,
-      userName: updated.user.name,
-      status: updated.status,
-      paymentStatus: updated.paymentStatus,
-      orderType: updated.orderType,
-      shippingStatus: updated.shippingStatus,
-      items: updated.items.map((item) => ({
-        id: item.id,
-        productId: item.productId,
-        title: item.title,
-        sku: item.sku,
-        sizeLabel: item.sizeLabel,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        product: {
-          photoUrls: item.product.photoUrls,
-        },
-      })),
-      subtotal: updated.subtotal,
-      shipping: updated.shipping,
-      total: updated.total,
-      currency: updated.currency,
-      address: {
-        name: updated.addressName,
-        email: updated.addressEmail,
-        altMobileNo: updated.addressAltMobileNo,
-        mobileNo: updated.addressMobileNo,
-        line1: updated.addressLine1,
-        line2: updated.addressLine2,
-        landmark: updated.landmark,
-        pincode: updated.pincode,
-        city: updated.city,
-        state: updated.state,
-      },
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-    };
+    return this.findOne(id);
+  }
+
+  /** Manual status change from the admin UI — delegates to {@link transition}. */
+  updateStatus(id: string, input: UpdateOrderStatusSchema) {
+    return this.transition(id, input.status as OrderStatus);
   }
 
   async remove(id: string) {
@@ -435,151 +546,23 @@ export class OrdersService {
     return { id, deleted: true };
   }
 
-  async approve(id: string, paymentStatus: PaymentStatus) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-      include: {
-        user: { select: { id: true, name: true } },
-        items: {
-          include: { product: { select: { id: true, name: true, sku: true, photoUrls: true } } },
-          orderBy: { id: 'asc' },
-        },
-      },
-    });
-    if (!order) throw new NotFoundException(`Order ${id} not found`);
-
-    const updated = await this.prisma.order.update({
-      where: { id },
-      data: {
-        status:
-          paymentStatus === PAYMENT_STATUS.RECEIVED
-            ? ORDER_STATUS.APPROVED_PAYMENT_RECEIVED
-            : ORDER_STATUS.APPROVED_PAYMENT_PENDING,
-        paymentStatus: paymentStatus,
-      },
-      include: {
-        user: { select: { id: true, name: true } },
-        items: {
-          include: { product: { select: { id: true, name: true, sku: true, photoUrls: true } } },
-          orderBy: { id: 'asc' },
-        },
-      },
-    });
-
-    return {
-      id: updated.id,
-      orderNumber: updated.orderNumber,
-      userId: updated.userId,
-      userName: updated.user.name,
-      status: updated.status,
-      paymentStatus: updated.paymentStatus,
-      orderType: updated.orderType,
-      shippingStatus: updated.shippingStatus,
-      items: updated.items.map((item) => ({
-        id: item.id,
-        productId: item.productId,
-        title: item.title,
-        sku: item.sku,
-        sizeLabel: item.sizeLabel,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        product: {
-          photoUrls: item.product.photoUrls,
-        },
-      })),
-      subtotal: updated.subtotal,
-      shipping: updated.shipping,
-      total: updated.total,
-      currency: updated.currency,
-      address: {
-        name: updated.addressName,
-        email: updated.addressEmail,
-        altMobileNo: updated.addressAltMobileNo,
-        mobileNo: updated.addressMobileNo,
-        line1: updated.addressLine1,
-        line2: updated.addressLine2,
-        landmark: updated.landmark,
-        pincode: updated.pincode,
-        city: updated.city,
-        state: updated.state,
-      },
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-    };
+  /** Approve an order; payment RECEIVED → complete, PENDING → dispatched on credit. */
+  approve(id: string, paymentStatus: PaymentStatus) {
+    return this.transition(
+      id,
+      paymentStatus === PAYMENT_STATUS.RECEIVED
+        ? ORDER_STATUS.APPROVED_PAYMENT_RECEIVED
+        : ORDER_STATUS.APPROVED_PAYMENT_PENDING,
+    );
   }
 
-  async reject(id: string) {
-    const order = await this.prisma.order.findUnique({
-      where: { id },
-      include: {
-        items: {
-          include: { variant: true },
-        },
-      },
-    });
-    if (!order) throw new NotFoundException(`Order ${id} not found`);
+  /** Revert an order back to PENDING (re-reserving stock if it was rejected). */
+  undo(id: string) {
+    return this.transition(id, ORDER_STATUS.PENDING);
+  }
 
-    // Restore stock for each item
-    await this.prisma.$transaction(
-      order.items.map((item) =>
-        this.prisma.productVariant.update({
-          where: { id: item.variantId ?? '' },
-          data: { stock: { increment: item.quantity } },
-        }),
-      ),
-    );
-
-    const updated = await this.prisma.order.update({
-      where: { id },
-      data: { status: ORDER_STATUS.REJECTED },
-      include: {
-        user: { select: { id: true, name: true } },
-        items: {
-          include: { product: { select: { id: true, name: true, sku: true, photoUrls: true } } },
-          orderBy: { id: 'asc' },
-        },
-      },
-    });
-
-    return {
-      id: updated.id,
-      orderNumber: updated.orderNumber,
-      userId: updated.userId,
-      userName: updated.user.name,
-      status: updated.status,
-      paymentStatus: updated.paymentStatus,
-      orderType: updated.orderType,
-      shippingStatus: updated.shippingStatus,
-      items: updated.items.map((item) => ({
-        id: item.id,
-        productId: item.productId,
-        title: item.title,
-        sku: item.sku,
-        sizeLabel: item.sizeLabel,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        product: {
-          photoUrls: item.product.photoUrls,
-        },
-      })),
-      subtotal: updated.subtotal,
-      shipping: updated.shipping,
-      total: updated.total,
-      currency: updated.currency,
-      address: {
-        name: updated.addressName,
-        email: updated.addressEmail,
-        altMobileNo: updated.addressAltMobileNo,
-        mobileNo: updated.addressMobileNo,
-        line1: updated.addressLine1,
-        line2: updated.addressLine2,
-        landmark: updated.landmark,
-        pincode: updated.pincode,
-        city: updated.city,
-        state: updated.state,
-      },
-      createdAt: updated.createdAt.toISOString(),
-      updatedAt: updated.updatedAt.toISOString(),
-    };
+  /** Reject an order and restore its stock to inventory. */
+  reject(id: string) {
+    return this.transition(id, ORDER_STATUS.REJECTED);
   }
 }

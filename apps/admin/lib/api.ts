@@ -178,6 +178,30 @@ export type OrderListParams = {
   sort?: 'newest' | 'oldest';
 };
 
+/** One customer's outstanding receivable (approved orders awaiting payment). */
+export type PaymentPendingUser = {
+  userId: string;
+  userName: string;
+  orderCount: number;
+  totalPending: number;
+};
+
+export type PaymentPendingRow = {
+  id: string;
+  orderNumber: string;
+  itemsCount: number;
+  total: number;
+  currency: string;
+  createdAt: string;
+};
+
+export type PaymentPendingDetail = {
+  userId: string;
+  userName: string;
+  totalPending: number;
+  orders: PaymentPendingRow[];
+};
+
 export const api = {
   listBrands: () => request<{ id: string; name: string; isActive: boolean }[]>('/brands'),
   listProductTypes: () =>
@@ -228,6 +252,7 @@ export const api = {
   listResellers: () => request<Paginated<AdminUserRow>>(`/users?role=RESELLER&pageSize=100`),
   disableUser: (id: string) => request<AdminUserRow>(`/users/${id}/disable`, { method: 'PATCH' }),
   enableUser: (id: string) => request<AdminUserRow>(`/users/${id}/enable`, { method: 'PATCH' }),
+  makeReseller: (id: string) => request<AdminUserRow>(`/users/${id}/reseller`, { method: 'PATCH' }),
   deleteUser: (id: string) =>
     request<{ id: string; deleted: boolean }>(`/users/${id}`, { method: 'DELETE' }),
 
@@ -262,6 +287,14 @@ export const api = {
       body: JSON.stringify({ paymentStatus }),
     }),
   rejectOrder: (id: string) => request<Order>(`/orders/${id}/reject`, { method: 'POST' }),
+  undoOrder: (id: string) => request<Order>(`/orders/${id}/undo`, { method: 'POST' }),
+
+  // Payment-pending receivables (approved orders awaiting payment), grouped by customer
+  listPaymentPending: () => request<PaymentPendingUser[]>('/orders/payment-pending'),
+  getPaymentPending: (userId: string) =>
+    request<PaymentPendingDetail>(`/orders/payment-pending/${userId}`),
+  settlePayment: (userId: string) =>
+    request<{ settled: number }>(`/orders/payment-pending/${userId}/settle`, { method: 'POST' }),
   createOrder: (body: CreateOrderSchema) =>
     request<Order>('/orders', { method: 'POST', body: JSON.stringify(body) }),
   deleteOrder: (id: string) =>

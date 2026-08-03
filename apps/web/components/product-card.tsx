@@ -2,7 +2,8 @@
 
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { AnimatedLabel } from './added-label';
 import { Icon } from './icon';
 
 export type StoreProduct = {
@@ -39,19 +40,39 @@ export function ProductCard({
   isHomePage = false,
 }: {
   product: StoreProduct;
-  onAdd: (product: StoreProduct, variantId: string, action: 'cart' | 'book') => void;
+  /**
+   * Returns whether the item was actually added — the caller resolves `true`
+   * only after a successful add-to-cart (not when it defers to login or just
+   * navigates), so the confirmation animation never lies.
+   */
+  onAdd: (
+    product: StoreProduct,
+    variantId: string,
+    action: 'cart' | 'book',
+  ) => void | boolean | Promise<void | boolean>;
   priority?: boolean;
   isHomePage?: boolean;
 }) {
   const [variantId, setVariantId] = useState('');
   const [shake, setShake] = useState(false);
+  // Confirmation state for the "Add to cart" button only — Buy now just redirects.
+  const [added, setAdded] = useState(false);
+  const doneTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  function handleAdd(action: 'cart' | 'book') {
+  useEffect(() => () => clearTimeout(doneTimer.current), []);
+
+  async function handleAdd(action: 'cart' | 'book') {
     if (!variantId) {
       setShake(true);
       return;
     }
-    onAdd(product, variantId, action);
+    const ok = await onAdd(product, variantId, action);
+    // Only confirm a real add-to-cart; Buy now redirects, so it gets no tick.
+    if (action === 'cart' && ok) {
+      setAdded(true);
+      clearTimeout(doneTimer.current);
+      doneTimer.current = setTimeout(() => setAdded(false), 1700);
+    }
   }
 
   return (
@@ -102,7 +123,7 @@ export function ProductCard({
         </div>
 
         <div
-          className={`my-[10px] gap-[4px] flex${shake ? ' animate-shake' : ''}`}
+          className={`my-[10px] flex-wrap gap-[4px] flex${shake ? ' animate-shake' : ''}`}
           onAnimationEnd={() => setShake(false)}
           aria-label={`Select size for ${product.name}`}
         >
@@ -119,18 +140,30 @@ export function ProductCard({
         </div>
         <div className="grid grid-cols-2 gap-[5px]">
           <button
-            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[0.55rem] font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-transparent hover:bg-[#e6e5e1] flex justify-center items-center gap-[4px] [&_svg]:w-[15px]"
+            className={`relative overflow-hidden h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[0.55rem] font-bold transition-[background-color,color,border-color,transform] duration-300 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border flex justify-center items-center gap-[4px] [&_svg]:w-[15px] ${
+              added
+                ? 'border-accent bg-accent text-white'
+                : 'border-ink bg-transparent hover:bg-[#e6e5e1]'
+            }`}
             onClick={() => handleAdd('cart')}
             disabled={!product.sizes.length}
             aria-label="Add to cart"
           >
-            <span className="inline-flex max-[800px]:hidden" aria-hidden="true">
-              <Icon name="bag" />
-            </span>{' '}
-            Add to cart
+            <AnimatedLabel
+              done={added}
+              label="Added"
+              idle={
+                <>
+                  <span className="inline-flex max-[800px]:hidden" aria-hidden="true">
+                    <Icon name="bag" />
+                  </span>{' '}
+                  Add to cart
+                </>
+              }
+            />
           </button>
           <button
-            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[0.55rem] font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-ink text-white flex justify-center gap-[4px] items-center hover:bg-[#383838] [&_svg]:w-[12px] max-[800px]:[&_svg]:w-[16px]"
+            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[0.55rem] font-bold transition duration-200 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-ink text-white flex justify-center gap-[4px] items-center hover:bg-[#383838] [&_svg]:w-[12px] max-[800px]:[&_svg]:w-[16px]"
             onClick={() => handleAdd('book')}
             disabled={!product.sizes.length}
             aria-label="Buy now"

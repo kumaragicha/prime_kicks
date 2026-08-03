@@ -39,7 +39,7 @@ export default function HomePage() {
             id: product.id,
             name: product.name,
             brand: product.brand,
-            price: product.customerPrice,
+            price: product.price,
             currency: product.currency,
             image: product.photoUrls[0] ?? '',
             color: product.totalStock > 0 ? `${product.totalStock} in stock` : 'Sold out',
@@ -84,23 +84,31 @@ export default function HomePage() {
     return () => clearTimeout(timer);
   }, [toast]);
 
-  async function addToCart(product: StoreProduct, variantId: string, action: 'cart' | 'book') {
+  // Returns true only when the item was actually added, so the card's
+  // confirmation animation reflects reality (not the login/redirect paths).
+  async function addToCart(
+    product: StoreProduct,
+    variantId: string,
+    action: 'cart' | 'book',
+  ): Promise<boolean> {
     if (!user) {
       setPendingAdd({ product, variantId, action });
       setLoginOpen(true);
-      return;
+      return false;
     }
     try {
       await api.addToCart(product.id, variantId);
       notifyStore();
       if (action === 'book') {
         router.push('/cart');
-        return;
+        return true;
       }
       setToast(`${product.name} added to your bag`);
+      return true;
     } catch (error) {
       if (error instanceof ApiError && error.status === 400) setToast(error.message);
       else setToast("We couldn't add this pair. Please try again.");
+      return false;
     }
   }
 
@@ -110,7 +118,7 @@ export default function HomePage() {
       <SiteHeader />
 
       <section
-        className="relative min-h-[492px] py-[82px] px-[7vw] overflow-hidden bg-[#d9d7d0] bg-[url('https://images.unsplash.com/photo-1552346154-21d32810aba3?auto=format&fit=crop&w=1800&q=90')] bg-[center_42%] bg-cover text-white isolate after:content-[''] after:absolute after:inset-0 after:bg-[linear-gradient(90deg,rgba(0,0,0,0.68),rgba(0,0,0,0.12)_72%)] after:-z-[1] max-[800px]:min-h-[370px] max-[800px]:py-[58px] max-[800px]:px-[21px] max-[800px]:bg-[58%_center]"
+        className="relative min-h-[492px] py-[82px] px-[7vw] overflow-hidden bg-[#d9d7d0] hero-bg bg-[center_42%] bg-cover text-white isolate after:content-[''] after:absolute after:inset-0 after:bg-[linear-gradient(90deg,rgba(0,0,0,0.68),rgba(0,0,0,0.12)_72%)] after:-z-[1] max-[800px]:min-h-[370px] max-[800px]:py-[58px] max-[800px]:px-[21px] max-[800px]:bg-[58%_center]"
         id="top"
       >
         <p className="m-0 mb-[11px] text-[10px] tracking-[.16em] uppercase font-bold">

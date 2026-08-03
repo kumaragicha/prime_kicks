@@ -116,6 +116,17 @@ export function useSetUserActive() {
   });
 }
 
+export function useMakeReseller() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.makeReseller(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['resellers'] });
+    },
+  });
+}
+
 export function useDeleteUser() {
   const qc = useQueryClient();
   return useMutation({
@@ -211,6 +222,35 @@ export function useDeleteOrder() {
   });
 }
 
+/* ------------------------------ Payment pending -------------------------------- */
+
+export function usePaymentPending() {
+  return useQuery({
+    queryKey: ['payment-pending'],
+    queryFn: () => api.listPaymentPending(),
+  });
+}
+
+export function usePaymentPendingUser(userId: string) {
+  return useQuery({
+    queryKey: ['payment-pending', userId],
+    queryFn: () => api.getPaymentPending(userId),
+    enabled: Boolean(userId),
+  });
+}
+
+export function useSettlePayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => api.settlePayment(userId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['payment-pending'] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['order'] });
+    },
+  });
+}
+
 export function useApproveOrder() {
   const qc = useQueryClient();
   return useMutation({
@@ -227,6 +267,17 @@ export function useRejectOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.rejectOrder(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['order'] });
+    },
+  });
+}
+
+export function useUndoOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.undoOrder(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['order'] });

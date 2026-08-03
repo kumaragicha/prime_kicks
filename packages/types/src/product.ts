@@ -24,9 +24,17 @@ export interface Product {
   videoUrl: string | null;
 
   // Pricing in whole Indian rupees.
-  inhouseCost: number;
-  resellerPrice: number;
-  customerPrice: number;
+  //
+  // `price` is the single, role-resolved selling price the API returns to every
+  // caller (reseller price for RESELLER tokens, customer price otherwise). The
+  // storefront renders this directly — it never branches on role itself.
+  price: number;
+  // The raw pricing breakdown below is ADMIN-only; storefront responses omit it
+  // so the frontend can never expose more than one price. These are optional
+  // because non-admin callers never receive them.
+  inhouseCost?: number;
+  resellerPrice?: number;
+  customerPrice?: number;
   currency: 'INR';
 
   releaseYear: number | null;

@@ -1,6 +1,6 @@
 'use client';
 
-import { DeleteIcon, EditIcon, IconButton } from '@/components/action-controls';
+import { DeleteIcon, EditIcon, IconButton, IconLink } from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { controlClass, Pagination } from '@/components/table-controls';
 import { useDeleteProduct, useProducts, useSizeTypes } from '@/lib/hooks';
@@ -73,31 +73,29 @@ export default function ProductsPage() {
       columnHelper.accessor('totalStock', { header: 'Stock' }),
       columnHelper.accessor('inhouseCost', {
         header: 'Cost',
-        cell: (c) => formatCurrency(c.getValue(), c.row.original.currency),
+        cell: (c) => formatCurrency(c.getValue() ?? 0, c.row.original.currency),
       }),
       columnHelper.accessor('resellerPrice', {
         header: 'Reseller',
-        cell: (c) => formatCurrency(c.getValue(), c.row.original.currency),
+        cell: (c) => formatCurrency(c.getValue() ?? 0, c.row.original.currency),
       }),
       columnHelper.accessor('customerPrice', {
         header: 'Customer',
-        cell: (c) => formatCurrency(c.getValue(), c.row.original.currency),
+        cell: (c) => formatCurrency(c.getValue() ?? 0, c.row.original.currency),
       }),
       columnHelper.display({
         id: 'actions',
-        header: '',
+        header: () => <div className="text-right">Action</div>,
         cell: (c) => (
           <div className="flex justify-end gap-1 items-center">
-            <Link
+            <IconLink
               href={`/products/${c.row.original.id}/edit`}
-              aria-label={`Edit ${c.row.original.name}`}
-              title={`Edit ${c.row.original.name}`}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-900 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900"
+              label={`Edit ${c.row.original.name}`}
             >
               <EditIcon />
-            </Link>
+            </IconLink>
             <IconButton
-              label="Delete product"
+              label={`Delete ${c.row.original.name}`}
               tone="danger"
               onClick={() => setProductToDelete(c.row.original)}
             >

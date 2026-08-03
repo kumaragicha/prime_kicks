@@ -2,6 +2,7 @@
 
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
+import { api } from '@/lib/api';
 import { useMyOrders } from '@/lib/hooks';
 import { ORDER_STATUS, type Order } from '@prime-kicks/types';
 import Link from 'next/link';
@@ -80,9 +81,16 @@ export default function OrdersPage() {
   const { data: orders, isLoading: ordersLoading } = useMyOrders();
 
   useEffect(() => {
-    const saved = window.localStorage.getItem('prime-kicks-user');
-    if (saved) setUser(JSON.parse(saved) as User);
-    setHydrated(true);
+    if (!window.localStorage.getItem('prime-kicks-access-token')) {
+      setHydrated(true);
+      return;
+    }
+    // Fetch identity from the API rather than a cached localStorage copy.
+    api
+      .me()
+      .then((me) => setUser(me))
+      .catch(() => setUser(null))
+      .finally(() => setHydrated(true));
   }, []);
 
   if (!hydrated)

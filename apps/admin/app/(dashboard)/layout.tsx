@@ -91,6 +91,10 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
               <Link className={linkClass('/orders')} href="/orders" onClick={onClose}>
                 Orders
               </Link>
+
+              <Link className={linkClass('/payments')} href="/payments" onClick={onClose}>
+                Payment Pending
+              </Link>
             </>
           )}
         </nav>

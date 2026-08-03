@@ -4,7 +4,11 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from './api';
 
-export type SignedInUser = { name: string; email: string };
+export type SignedInUser = {
+  name: string;
+  email: string;
+  role: 'CUSTOMER' | 'RESELLER' | 'ADMIN';
+};
 
 const STORE_EVENT = 'pk:store';
 
@@ -24,11 +28,19 @@ export function useAuthCart() {
 
   const refresh = useCallback(async () => {
     if (typeof window === 'undefined') return;
-    const raw = window.localStorage.getItem('prime-kicks-user');
-    setUser(raw ? (JSON.parse(raw) as SignedInUser) : null);
     if (!window.localStorage.getItem('prime-kicks-access-token')) {
+      setUser(null);
       setCartCount(0);
       return;
+    }
+    // Identity (including role) comes fresh from the API on each load rather than
+    // a cached localStorage copy — so an admin-side role change takes effect here
+    // without the user having to log out and back in.
+    try {
+      const me = await api.me();
+      setUser({ name: me.name, email: me.email, role: me.role });
+    } catch {
+      setUser(null);
     }
     try {
       const current = await api.getCart();

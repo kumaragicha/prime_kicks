@@ -54,7 +54,7 @@ export function CreateOrderForm({ open, onClose }: { open: boolean; onClose: () 
   const inStockVariants = selectedProduct?.variants.filter((v) => v.stock > 0) ?? [];
 
   const selectedVariant = inStockVariants.find((v) => v.id === selectedVariantId);
-  const unitPrice = selectedVariant ? selectedProduct!.resellerPrice : 0;
+  const unitPrice = selectedVariant ? (selectedProduct!.resellerPrice ?? 0) : 0;
   const subtotal = unitPrice * quantity;
   const total = subtotal + shipping;
 

@@ -44,6 +44,21 @@ export class OrdersController {
     return this.orders.findAll(query);
   }
 
+  /** Outstanding receivables grouped by customer (admin only).
+   *  Declared before `:id` so "payment-pending" isn't captured as an order id. */
+  @Roles('ADMIN')
+  @Get('payment-pending')
+  paymentPending() {
+    return this.orders.paymentPendingSummary();
+  }
+
+  /** A single customer's approved-payment-pending orders (admin only). */
+  @Roles('ADMIN')
+  @Get('payment-pending/:userId')
+  paymentPendingForUser(@Param('userId') userId: string) {
+    return this.orders.paymentPendingForUser(userId);
+  }
+
   /** Get order details (admin only). */
   @Roles('ADMIN')
   @Get(':id')
@@ -80,5 +95,19 @@ export class OrdersController {
   @Post(':id/reject')
   reject(@Param('id') id: string) {
     return this.orders.reject(id);
+  }
+
+  /** Undo an approved/rejected order back to PENDING (admin only). */
+  @Roles('ADMIN')
+  @Post(':id/undo')
+  undo(@Param('id') id: string) {
+    return this.orders.undo(id);
+  }
+
+  /** Settle all approved-payment-pending orders for a customer (admin only). */
+  @Roles('ADMIN')
+  @Post('payment-pending/:userId/settle')
+  settlePayment(@Param('userId') userId: string) {
+    return this.orders.settlePaymentForUser(userId);
   }
 }
