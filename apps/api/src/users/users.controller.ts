@@ -31,6 +31,11 @@ export class UsersController {
     return this.users.setActive(id, true, actor.id);
   }
 
+  @Patch(':id/reseller')
+  makeReseller(@Param('id') id: string) {
+    return this.users.makeReseller(id);
+  }
+
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() actor: AuthenticatedUser) {
     return this.users.remove(id, actor.id);

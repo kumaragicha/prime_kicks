@@ -211,4 +211,129 @@ Number:9362097675`;
     // Landmark should be fully retained including commas
     expect(result.landmark).toBe('Plot No 17 ,behind RAGHULEELA MALL, Sector 30');
   });
+
+  it('should parse block 11 - labeled template with emojis, parenthetical labels & instructions', () => {
+    const addressBlock = `*📦 Order Details (Please Fill Below):
+
+Full Name: Ginson Haokip
+Complete Address: Hno D-3/6 Vinod puri, Vijay enclave
+Landmark (if any): Near Dashrath puri metro station gate no.3
+City: New Delhi
+State: Delhi
+Pincode: 110045
+Contact Number:+91 9612911545
+Alternate Number (optional): 9612911545
+Email ID: (if available)
+
+🔸 Please make sure all details are correct to avoid delivery delays.
+🔸 Once you receive your parcel, kindly record a short unboxing video — it helps us verify.`;
+
+    const result = service.parseAddressBlock(addressBlock);
+
+    expect(result.name).toBe('Ginson Haokip');
+    expect(result.line1).toBe('Hno D-3/6 Vinod puri, Vijay enclave');
+    expect(result.landmark).toBe('Near Dashrath puri metro station gate no.3');
+    expect(result.city).toBe('New Delhi');
+    expect(result.state).toBe('Delhi');
+    expect(result.pincode).toBe('110045');
+    expect(result.mobileNo).toBe('9612911545');
+    expect(result.altMobileNo).toBe('9612911545');
+    expect(result.email).toBe('');
+    // Instruction lines must not leak into any field
+    expect(JSON.stringify(result)).not.toMatch(/unboxing|order details/i);
+  });
+
+  it('should parse block 12 - To/From with sender block excluded & two contact numbers', () => {
+    const addressBlock = `To,
+R.Lalzarzovi(Tetei)
+
+House no. CH/S-III/11-F
+Locality - Near Primary Field,Ṭhuampui
+City - Aizawl
+Pincode - 796017
+State - Mizoram
+
+Contact - 7630045535, 9862783534
+
+From
+SwankStore
+6290443622`;
+
+    const result = service.parseAddressBlock(addressBlock);
+
+    expect(result.name).toBe('R.Lalzarzovi(Tetei)');
+    expect(result.line1).toBe('House no. CH/S-III/11-F');
+    expect(result.line2).toBe('Near Primary Field,Ṭhuampui');
+    expect(result.city).toBe('Aizawl');
+    expect(result.state).toBe('Mizoram');
+    expect(result.pincode).toBe('796017');
+    expect(result.mobileNo).toBe('7630045535');
+    expect(result.altMobileNo).toBe('9862783534');
+    // Sender details must never appear
+    expect(JSON.stringify(result)).not.toMatch(/swankstore|6290443622/i);
+  });
+
+  it('should parse block 13 - trailing periods & trailing product spec lines', () => {
+    const addressBlock = `Name : Vanlalhriati Pachuau
+Address : PUC GIRLS HOSTEL, College veng, Aizawl.
+City : Aizawl.
+State : Mizoram.
+Pincode : 796001
+9863228338
+
+Size 35
+Colour black
+Hightops `;
+
+    const result = service.parseAddressBlock(addressBlock);
+
+    expect(result.name).toBe('Vanlalhriati Pachuau');
+    expect(result.line1).toBe('PUC GIRLS HOSTEL, College veng, Aizawl');
+    expect(result.city).toBe('Aizawl');
+    expect(result.state).toBe('Mizoram');
+    expect(result.pincode).toBe('796001');
+    expect(result.mobileNo).toBe('9863228338');
+    // Product specs must not leak in
+    expect(JSON.stringify(result)).not.toMatch(/size|colour|hightops/i);
+  });
+
+  it('should parse block 14 - header prompt lines with dash separators', () => {
+    const addressBlock = `Fill this 👇
+Adress details
+
+Name-aaliya
+Address-sattva opus,tumkur road,Tower B 16th floor 1604
+City-bengaluru
+State-karnataka
+Pincode-560057
+Phone number-7022685086`;
+
+    const result = service.parseAddressBlock(addressBlock);
+
+    expect(result.name).toBe('aaliya');
+    expect(result.line1).toBe('sattva opus,tumkur road,Tower B 16th floor 1604');
+    expect(result.city).toBe('bengaluru');
+    expect(result.state).toBe('karnataka');
+    expect(result.pincode).toBe('560057');
+    expect(result.mobileNo).toBe('7022685086');
+  });
+
+  it('should parse block 15 - no city label, city derived from pincode', () => {
+    const addressBlock = `Name- Aju Ahmed Laskar
+Address-khatla peter street
+State-Mizoram
+Landmark-NBE tata motors
+Phone-8132993081
+Pin-796001`;
+
+    const result = service.parseAddressBlock(addressBlock);
+
+    expect(result.name).toBe('Aju Ahmed Laskar');
+    expect(result.line1).toBe('khatla peter street');
+    expect(result.state).toBe('Mizoram');
+    expect(result.landmark).toBe('NBE tata motors');
+    expect(result.mobileNo).toBe('8132993081');
+    expect(result.pincode).toBe('796001');
+    expect(result.city).toContain('Aizawl');
+  });
 });

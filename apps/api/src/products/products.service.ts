@@ -5,6 +5,7 @@ import type {
   UpdateProductSchema,
 } from '@prime-kicks/validation';
 import { Prisma } from '@prisma/client';
+import type { AuthenticatedUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 
 const productInclude = {
@@ -40,11 +41,36 @@ function withTotalStock(product: ProductWithRelations) {
   };
 }
 
+/**
+ * Shape a product for the caller based on their role (derived from the JWT).
+ *
+ * The single `price` key is what the storefront renders — there is no
+ * role branching on the frontend:
+ *   - RESELLER            → reseller price
+ *   - CUSTOMER / anonymous → customer price
+ *
+ * Non-admin callers never receive the raw pricing breakdown
+ * (`inhouseCost` / `resellerPrice` / `customerPrice`); those are stripped so
+ * the storefront can never expose more than one price. ADMIN keeps the full
+ * breakdown for the admin dashboard, plus `price` for consistency.
+ */
+function shapeProduct(product: ProductWithRelations, user?: AuthenticatedUser) {
+  const base = withTotalStock(product);
+  const price = user?.role === 'RESELLER' ? product.resellerPrice : product.customerPrice;
+
+  if (user?.role === 'ADMIN') {
+    return { ...base, price };
+  }
+
+  const { inhouseCost, resellerPrice, customerPrice, ...rest } = base;
+  return { ...rest, price };
+}
+
 @Injectable()
 export class ProductsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(query: ProductQuerySchema) {
+  async findAll(query: ProductQuerySchema, user?: AuthenticatedUser) {
     const { page, pageSize, brandId, categoryId, sizeTypeId, search } = query;
 
     const buildWhere = (withSearch: boolean): Prisma.ProductWhereInput => ({
@@ -91,7 +117,7 @@ export class ProductsService {
         this.prisma.product.count({ where }),
       ]);
       return {
-        data: fallbackRows.map(withTotalStock),
+        data: fallbackRows.map((row) => shapeProduct(row, user)),
         meta: {
           page,
           pageSize,
@@ -102,12 +128,12 @@ export class ProductsService {
     }
 
     return {
-      data: rows.map(withTotalStock),
+      data: rows.map((row) => shapeProduct(row, user)),
       meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user?: AuthenticatedUser) {
     const product = await this.prisma.product.findFirst({
       where: { id, deletedAt: null },
       include: storefrontInclude,
@@ -115,7 +141,7 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException(`Product ${id} not found`);
     }
-    return withTotalStock(product);
+    return shapeProduct(product, user);
   }
 
   async create(input: CreateProductSchema) {

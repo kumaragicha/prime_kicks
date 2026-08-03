@@ -135,13 +135,13 @@ function SearchResults() {
           {data?.data.map((product) => {
             const sizes = product.variants
               .filter((variant) => variant.stock > 0)
-              .map((variant) => ({ id: variant.id, label: variant.size.label }))
-              .slice(0, 4);
+              .map((variant) => ({ id: variant.id, label: variant.size.label }));
+
             const displayProduct: StoreProduct = {
               id: product.id,
               name: product.name,
               brand: product.brand,
-              price: product.customerPrice,
+              price: product.price,
               currency: product.currency,
               image: product.photoUrls[0] ?? '',
               color: product.totalStock > 0 ? `${product.totalStock} in stock` : 'Sold out',

@@ -1,6 +1,7 @@
 'use client';
 
 import { SiteHeader } from '@/components/site-header';
+import { api } from '@/lib/api';
 import { useEffect, useState } from 'react';
 
 type User = { name: string; email: string; mobileNo?: string; city?: string; state?: string };
@@ -10,13 +11,19 @@ export default function ProfilePage() {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem('prime-kicks-user');
-    if (saved) setUser(JSON.parse(saved) as User);
-    setHydrated(true);
+    if (!window.localStorage.getItem('prime-kicks-access-token')) {
+      setHydrated(true);
+      return;
+    }
+    // Profile details come from the API, not a cached localStorage copy.
+    api
+      .me()
+      .then((me) => setUser(me))
+      .catch(() => setUser(null))
+      .finally(() => setHydrated(true));
   }, []);
 
   function signOut() {
-    window.localStorage.removeItem('prime-kicks-user');
     window.localStorage.removeItem('prime-kicks-access-token');
     window.localStorage.removeItem('prime-kicks-refresh-token');
     window.location.assign('/');

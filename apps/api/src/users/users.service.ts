@@ -91,6 +91,22 @@ export class UsersService {
     });
   }
 
+  /** Convert a CUSTOMER account to a RESELLER. */
+  async makeReseller(id: string) {
+    const user = await this.findOne(id);
+    if (user.role === 'RESELLER') {
+      throw new BadRequestException('User is already a reseller');
+    }
+    if (user.role === 'ADMIN') {
+      throw new BadRequestException('Cannot convert an admin account to a reseller');
+    }
+    return this.prisma.user.update({
+      where: { id },
+      data: { role: 'RESELLER' },
+      select: userSelect,
+    });
+  }
+
   /** Permanently delete the user record. */
   async remove(id: string, actorId?: string) {
     await this.findOne(id);

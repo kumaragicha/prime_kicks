@@ -4,22 +4,24 @@ import { DeleteIcon, IconButton, Toggle } from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { controlClass, Pagination } from '@/components/table-controls';
 import { useAuth } from '@/lib/auth';
-import { useDeleteUser, useSetUserActive, useUsers } from '@/lib/hooks';
+import { useDeleteUser, useMakeReseller, useSetUserActive, useUsers } from '@/lib/hooks';
+import { useToast } from '@/lib/toast';
 import type { AdminUserRow } from '@prime-kicks/types';
-import { Badge } from '@prime-kicks/ui';
+import { Badge, Button } from '@prime-kicks/ui';
 import {
   createColumnHelper,
   flexRender,
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 const columnHelper = createColumnHelper<AdminUserRow>();
 const PAGE_SIZE = 10;
 
 export default function UsersPage() {
   const { user: currentUser } = useAuth();
+  const toast = useToast();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [role, setRole] = useState('');
@@ -35,6 +37,15 @@ export default function UsersPage() {
   });
   const setActive = useSetUserActive();
   const deleteUser = useDeleteUser();
+  const makeReseller = useMakeReseller();
+  const handleMakeReseller = useCallback(
+    (id: string, name: string) =>
+      makeReseller.mutate(id, {
+        onSuccess: () => toast.success(`${name} is now a reseller`),
+        onError: (error: Error) => toast.error(error.message),
+      }),
+    [makeReseller, toast],
+  );
 
   const resetTo =
     <T,>(setter: (v: T) => void) =>
@@ -66,7 +77,7 @@ export default function UsersPage() {
       }),
       columnHelper.display({
         id: 'actions',
-        header: '',
+        header: () => <div className="text-right">Action</div>,
         cell: (c) => {
           const user = c.row.original;
           const isSelf = currentUser?.id === user.id;
@@ -79,6 +90,17 @@ export default function UsersPage() {
           }
           return (
             <div className="flex justify-end gap-1 items-center">
+              {user.role === 'CUSTOMER' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  disabled={makeReseller.isPending}
+                  onClick={() => handleMakeReseller(user.id, user.name)}
+                >
+                  Reseller
+                </Button>
+              )}
               <Toggle
                 checked={user.isActive}
                 label={`${user.isActive ? 'Disable' : 'Enable'} ${user.name}`}
@@ -97,7 +119,7 @@ export default function UsersPage() {
         },
       }),
     ],
-    [setActive, currentUser?.id],
+    [handleMakeReseller, setActive, currentUser?.id],
   );
 
   const table = useReactTable({

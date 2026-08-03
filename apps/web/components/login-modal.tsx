@@ -1,6 +1,7 @@
 'use client';
 
 import { ApiError, api } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
 const emptyRegister = {
@@ -27,6 +28,7 @@ export function LoginModal({
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const queryClient = useQueryClient();
 
   function updateForm(field: keyof typeof emptyRegister, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -42,9 +44,14 @@ export function LoginModal({
     refreshToken: string;
     user: unknown;
   }) {
+    // Persist only the tokens — the user's profile (and role) is always fetched
+    // fresh from /auth/me, never cached here, so it can't go stale.
     window.localStorage.setItem('prime-kicks-access-token', result.accessToken);
     window.localStorage.setItem('prime-kicks-refresh-token', result.refreshToken);
-    window.localStorage.setItem('prime-kicks-user', JSON.stringify(result.user));
+    // Prices are resolved server-side from the token, so the catalogue must be
+    // refetched under the new identity (a reseller now sees reseller prices).
+    void queryClient.invalidateQueries({ queryKey: ['products'] });
+    void queryClient.invalidateQueries({ queryKey: ['product'] });
     setIsSuccess(true);
     onSuccess?.();
     setTimeout(() => {

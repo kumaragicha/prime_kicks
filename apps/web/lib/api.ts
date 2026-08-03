@@ -7,7 +7,7 @@ export type StoreCart = { id: string; items: StoreCartItem[] };
 export type StoreCartItem = {
   id: string;
   quantity: number;
-  product: Pick<Product, 'id' | 'name' | 'brand' | 'photoUrls' | 'customerPrice' | 'currency'>;
+  product: Pick<Product, 'id' | 'name' | 'brand' | 'photoUrls' | 'price' | 'currency'>;
   variant: { id: string; size: { label: string } };
 };
 
@@ -53,6 +53,22 @@ function rawFetch(path: string, init?: RequestInit): Promise<Response> {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await rawFetch(path, init);
+  if (!res.ok) {
+    throw await toApiError(res);
+  }
+  return res.json() as Promise<T>;
+}
+
+// Like `request`, but attaches the stored access token when the visitor is
+// signed in. The API's optional-auth guard reads the token to decide which
+// price to return (reseller vs customer) and falls back to customer pricing
+// for anonymous visitors — so no token is required, but one is used if present.
+async function optionalAuthRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = readStored(ACCESS_TOKEN_KEY);
+  const res = await rawFetch(path, {
+    ...init,
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers },
+  });
   if (!res.ok) {
     throw await toApiError(res);
   }
@@ -128,6 +144,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
+  me: () => authenticatedRequest<AuthResponse['user']>('/auth/me'),
   register: (body: {
     firstName: string;
     lastName: string;
@@ -143,9 +160,9 @@ export const api = {
     }),
   listProducts: (params?: Record<string, string>) => {
     const qs = params ? `?${new URLSearchParams(params).toString()}` : '';
-    return request<Paginated<Product>>(`/products${qs}`);
+    return optionalAuthRequest<Paginated<Product>>(`/products${qs}`);
   },
-  getProduct: (id: string) => request<Product>(`/products/${id}`),
+  getProduct: (id: string) => optionalAuthRequest<Product>(`/products/${id}`),
   getFilters: () => request<StoreFilters>('/filters'),
   addToCart: (productId: string, variantId: string) =>
     authenticatedRequest('/cart/items', {
