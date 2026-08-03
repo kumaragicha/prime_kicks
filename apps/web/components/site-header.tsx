@@ -6,7 +6,7 @@ import { SearchPanel } from '@/components/search-panel';
 import { notifyStore, useAuthCart } from '@/lib/hooks';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 function getInitials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -18,7 +18,6 @@ const navLinks = [
   { href: '/#new', label: 'New arrivals' },
   { href: '/#shop', label: 'Shop' },
   { href: '/#brands', label: 'Brands' },
-  { href: '/#sale', label: 'Sale' },
 ];
 
 /** Canonical storefront header, shared across home, search, product, and profile pages. */
@@ -28,6 +27,22 @@ export function SiteHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const headerRef = useRef<HTMLElement>(null);
+  // Dropdowns (mobile menu + search) are anchored to the header's live bottom
+  // edge so they clear the announcement banner — whose presence and height vary
+  // by account and scroll offset — instead of assuming a fixed banner height.
+  const [overlayTop, setOverlayTop] = useState(0);
+
+  useEffect(() => {
+    if (!menuOpen && !searchOpen) return;
+    const update = () => {
+      const el = headerRef.current;
+      if (el) setOverlayTop(el.getBoundingClientRect().bottom);
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [menuOpen, searchOpen]);
 
   useEffect(() => {
     if (!menuOpen && !searchOpen) return;
@@ -48,6 +63,13 @@ export function SiteHeader() {
     return () => window.removeEventListener('keydown', onKey);
   }, [menuOpen]);
 
+  // Measure the header's bottom before an overlay renders, so it opens already
+  // anchored to the correct offset (no first-frame flash at the top).
+  function measureOverlayTop() {
+    const el = headerRef.current;
+    if (el) setOverlayTop(el.getBoundingClientRect().bottom);
+  }
+
   function goAccount() {
     if (user) router.push('/profile');
     else setLoginOpen(true);
@@ -60,7 +82,10 @@ export function SiteHeader() {
 
   return (
     <>
-      <header className="h-[73px] px-[5.25vw] flex items-center justify-between border-b border-line bg-[rgba(255,255,255,0.92)] backdrop-blur-[12px] sticky top-0 z-10 max-[800px]:h-[62px] max-[800px]:px-[15px]">
+      <header
+        ref={headerRef}
+        className="h-[73px] px-[5.25vw] flex items-center justify-between border-b border-line bg-[rgba(255,255,255,0.92)] backdrop-blur-[12px] sticky top-0 z-10 max-[800px]:h-[62px] max-[800px]:px-[15px]"
+      >
         <Link
           className="font-[900] tracking-[-.09em] text-ink no-underline text-[21px] [transform:skew(-9deg)] max-[800px]:text-[19px]"
           href="/"
@@ -101,7 +126,10 @@ export function SiteHeader() {
         <div className="flex gap-[7px] items-center max-[800px]:gap-[1px]">
           <button
             className="relative border-0 bg-transparent w-[34px] h-[38px] p-[8px] text-ink max-[800px]:w-[35px] [&_svg]:w-[19px] [&_svg]:h-[19px]"
-            onClick={() => setSearchOpen(true)}
+            onClick={() => {
+              measureOverlayTop();
+              setSearchOpen(true);
+            }}
             aria-label="Search"
           >
             <Icon name="search" />
@@ -133,7 +161,10 @@ export function SiteHeader() {
           </button>
           <button
             className="hidden max-[800px]:block relative border-0 bg-transparent w-[34px] h-[38px] p-[8px] text-ink max-[800px]:w-[35px] [&_svg]:w-[19px] [&_svg]:h-[19px]"
-            onClick={() => setMenuOpen(!menuOpen)}
+            onClick={() => {
+              if (!menuOpen) measureOverlayTop();
+              setMenuOpen(!menuOpen);
+            }}
             aria-label="Open menu"
             aria-expanded={menuOpen}
           >
@@ -151,7 +182,10 @@ export function SiteHeader() {
             className="fixed inset-0 z-[8] bg-black/30 animate-[fade_0.18s_ease-out] max-[800px]:block"
             onClick={() => setMenuOpen(false)}
           />
-          <nav className="fixed top-[34px] left-0 right-0 pt-[62px] px-[6vw] pb-[29px] z-[9] bg-paper border-b border-line grid gap-[20px] animate-[drop_0.22s_ease-out] max-[800px]:top-[30px] max-[800px]:pt-[62px]">
+          <nav
+            style={{ top: overlayTop }}
+            className="fixed left-0 right-0 pt-[26px] px-[6vw] pb-[29px] z-[9] bg-paper border-b border-line grid gap-[20px] animate-[drop_0.22s_ease-out]"
+          >
             {navLinks.map((link) => (
               <Link
                 key={link.href}
@@ -193,7 +227,7 @@ export function SiteHeader() {
             className="fixed inset-0 z-[8] bg-black/30 animate-[fade_0.18s_ease-out]"
             onClick={() => setSearchOpen(false)}
           />
-          <SearchPanel onClose={() => setSearchOpen(false)} />
+          <SearchPanel onClose={() => setSearchOpen(false)} top={overlayTop} />
         </>
       )}
       {loginOpen && (

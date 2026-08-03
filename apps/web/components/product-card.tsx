@@ -117,9 +117,14 @@ export function ProductCard({
               {product.brand} {product.name}
             </h3>
           </div>
-          <strong className="text-[13px] whitespace-nowrap max-[800px]:block max-[800px]:mt-[7px] max-[800px]:text-[13px]">
-            {formatCurrency(product.price, product.currency)}
-          </strong>
+          <span className="flex items-baseline gap-[6px] whitespace-nowrap max-[800px]:mt-[7px]">
+            <s className="text-[12px] text-[#9a9a9a] max-[800px]:text-[12px]">
+              {formatCurrency(product.price * 2, product.currency)}
+            </s>
+            <strong className="text-[13px] max-[800px]:text-[13px]">
+              {formatCurrency(product.price, product.currency)}
+            </strong>
+          </span>
         </div>
 
         <div

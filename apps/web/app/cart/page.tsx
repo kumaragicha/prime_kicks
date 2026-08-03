@@ -101,8 +101,7 @@ export default function CartPage() {
   }
 
   const subtotal = useMemo(
-    () =>
-      cart?.items.reduce((total, item) => total + item.product.price * item.quantity, 0) ?? 0,
+    () => cart?.items.reduce((total, item) => total + item.product.price * item.quantity, 0) ?? 0,
     [cart],
   );
 
@@ -251,12 +250,6 @@ export default function CartPage() {
           >
             Brands
           </Link>
-          <Link
-            className="text-ink no-underline uppercase text-[11px] tracking-[.08em] font-bold"
-            href="/#sale"
-          >
-            Sale
-          </Link>
         </nav>
         <div className="flex gap-[7px] items-center max-[800px]:gap-[1px]">
           <button
@@ -292,13 +285,7 @@ export default function CartPage() {
           >
             Brands
           </Link>
-          <Link
-            className="text-ink no-underline uppercase tracking-[.08em] font-bold text-[14px]"
-            href="/#sale"
-            onClick={() => setMenuOpen(false)}
-          >
-            Sale
-          </Link>
+
           <Link
             className="text-ink no-underline uppercase tracking-[.08em] font-bold text-[14px]"
             href="/profile"
