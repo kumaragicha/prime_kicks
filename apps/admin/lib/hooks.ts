@@ -11,7 +11,30 @@ import type {
   UpdateSizeTypeSchema,
 } from '@prime-kicks/validation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type OrderListParams, type ProductListParams, type UserListParams } from './api';
+import { useEffect, useState } from 'react';
+import {
+  api,
+  type AuditLogListParams,
+  type OrderListParams,
+  type ProductListParams,
+  type UserListParams,
+} from './api';
+
+/* ---------------------------------- Utilities --------------------------------- */
+
+/**
+ * Debounce a rapidly-changing value (e.g. a search box). The input stays
+ * responsive while the returned value only settles `delay`ms after the last
+ * change — so list queries fire once the user pauses, not on every keystroke.
+ */
+export function useDebouncedValue<T>(value: T, delay = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
 
 /* ---------------------------------- Products ---------------------------------- */
 
@@ -116,6 +139,17 @@ export function useSetUserActive() {
   });
 }
 
+export function useMakeReseller() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.makeReseller(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['users'] });
+      qc.invalidateQueries({ queryKey: ['resellers'] });
+    },
+  });
+}
+
 export function useDeleteUser() {
   const qc = useQueryClient();
   return useMutation({
@@ -211,6 +245,45 @@ export function useDeleteOrder() {
   });
 }
 
+/* ------------------------------ Payment pending -------------------------------- */
+
+export function usePaymentPending() {
+  return useQuery({
+    queryKey: ['payment-pending'],
+    queryFn: () => api.listPaymentPending(),
+  });
+}
+
+export function usePaymentPendingUser(userId: string) {
+  return useQuery({
+    queryKey: ['payment-pending', userId],
+    queryFn: () => api.getPaymentPending(userId),
+    enabled: Boolean(userId),
+  });
+}
+
+export function useSettlePayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId: string) => api.settlePayment(userId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['payment-pending'] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['order'] });
+    },
+  });
+}
+
+/* ---------------------------------- Audit log --------------------------------- */
+
+export function useAuditLogs(params?: AuditLogListParams) {
+  return useQuery({
+    queryKey: ['audit-logs', params ?? {}],
+    queryFn: () => api.listAuditLogs(params),
+    placeholderData: (prev) => prev,
+  });
+}
+
 export function useApproveOrder() {
   const qc = useQueryClient();
   return useMutation({
@@ -227,6 +300,17 @@ export function useRejectOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.rejectOrder(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['order'] });
+    },
+  });
+}
+
+export function useUndoOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.undoOrder(id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['order'] });

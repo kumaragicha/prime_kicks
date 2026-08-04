@@ -28,7 +28,7 @@ export class OrdersController {
     @CurrentUser() user: AuthenticatedUser,
     @Body(new ZodValidationPipe(createOrderSchema)) body: CreateOrderSchema,
   ) {
-    return this.orders.create(user.id, body);
+    return this.orders.create(user.id, body, user.role, user.email);
   }
 
   /** Get orders for the currently authenticated user (web profile). */
@@ -44,6 +44,21 @@ export class OrdersController {
     return this.orders.findAll(query);
   }
 
+  /** Outstanding receivables grouped by customer (admin only).
+   *  Declared before `:id` so "payment-pending" isn't captured as an order id. */
+  @Roles('ADMIN')
+  @Get('payment-pending')
+  paymentPending() {
+    return this.orders.paymentPendingSummary();
+  }
+
+  /** A single customer's approved-payment-pending orders (admin only). */
+  @Roles('ADMIN')
+  @Get('payment-pending/:userId')
+  paymentPendingForUser(@Param('userId') userId: string) {
+    return this.orders.paymentPendingForUser(userId);
+  }
+
   /** Get order details (admin only). */
   @Roles('ADMIN')
   @Get(':id')
@@ -57,28 +72,47 @@ export class OrdersController {
   updateStatus(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(updateOrderStatusSchema)) body: UpdateOrderStatusSchema,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.orders.updateStatus(id, body);
+    return this.orders.updateStatus(id, body, user.email);
   }
 
   /** Delete an order (admin only). */
   @Roles('ADMIN')
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.orders.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.orders.remove(id, user.email);
   }
 
   /** Approve order and set payment status (admin only). */
   @Roles('ADMIN')
   @Post(':id/approve')
-  approve(@Param('id') id: string, @Body('paymentStatus') paymentStatus: PaymentStatus) {
-    return this.orders.approve(id, paymentStatus);
+  approve(
+    @Param('id') id: string,
+    @Body('paymentStatus') paymentStatus: PaymentStatus,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.orders.approve(id, paymentStatus, user.email);
   }
 
   /** Reject order and restore stock (admin only). */
   @Roles('ADMIN')
   @Post(':id/reject')
-  reject(@Param('id') id: string) {
-    return this.orders.reject(id);
+  reject(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.orders.reject(id, user.email);
+  }
+
+  /** Undo an approved/rejected order back to PENDING (admin only). */
+  @Roles('ADMIN')
+  @Post(':id/undo')
+  undo(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.orders.undo(id, user.email);
+  }
+
+  /** Settle all approved-payment-pending orders for a customer (admin only). */
+  @Roles('ADMIN')
+  @Post('payment-pending/:userId/settle')
+  settlePayment(@Param('userId') userId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.orders.settlePaymentForUser(userId, user.email);
   }
 }

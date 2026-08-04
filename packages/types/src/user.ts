@@ -34,6 +34,7 @@ export type PublicUser = Pick<
   | 'state'
   | 'role'
   | 'isEmailVerified'
+  | 'createdAt'
 >;
 
 export interface AuthTokens {

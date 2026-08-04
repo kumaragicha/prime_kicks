@@ -1,22 +1,12 @@
 'use client';
 
 import { SiteHeader } from '@/components/site-header';
-import { useEffect, useState } from 'react';
-
-type User = { name: string; email: string; mobileNo?: string; city?: string; state?: string };
+import { useCurrentUser } from '@/lib/hooks';
 
 export default function ProfilePage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    const saved = window.localStorage.getItem('prime-kicks-user');
-    if (saved) setUser(JSON.parse(saved) as User);
-    setHydrated(true);
-  }, []);
+  const { user, hydrated } = useCurrentUser();
 
   function signOut() {
-    window.localStorage.removeItem('prime-kicks-user');
     window.localStorage.removeItem('prime-kicks-access-token');
     window.localStorage.removeItem('prime-kicks-refresh-token');
     window.location.assign('/');
@@ -116,7 +106,12 @@ export default function ProfilePage() {
                 <dt className="text-[9px] uppercase font-bold tracking-[.08em] text-[#777] mb-[4px]">
                   Member since
                 </dt>
-                <dd className="m-0 text-[14px]">July 2026</dd>
+                <dd className="m-0 text-[14px]">
+                  {new Date(user.createdAt).toLocaleDateString('en-IN', {
+                    month: 'long',
+                    year: 'numeric',
+                  })}
+                </dd>
               </div>
             </dl>
           </section>

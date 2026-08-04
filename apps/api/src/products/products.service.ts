@@ -4,7 +4,9 @@ import type {
   ProductQuerySchema,
   UpdateProductSchema,
 } from '@prime-kicks/validation';
-import { Prisma } from '@prisma/client';
+import { AuditEvent, AuditModule, Prisma } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service';
+import type { AuthenticatedUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 
 const productInclude = {
@@ -40,11 +42,39 @@ function withTotalStock(product: ProductWithRelations) {
   };
 }
 
+/**
+ * Shape a product for the caller based on their role (derived from the JWT).
+ *
+ * The single `price` key is what the storefront renders — there is no
+ * role branching on the frontend:
+ *   - RESELLER            → reseller price
+ *   - CUSTOMER / anonymous → customer price
+ *
+ * Non-admin callers never receive the raw pricing breakdown
+ * (`inhouseCost` / `resellerPrice` / `customerPrice`); those are stripped so
+ * the storefront can never expose more than one price. ADMIN keeps the full
+ * breakdown for the admin dashboard, plus `price` for consistency.
+ */
+function shapeProduct(product: ProductWithRelations, user?: AuthenticatedUser) {
+  const base = withTotalStock(product);
+  const price = user?.role === 'RESELLER' ? product.resellerPrice : product.customerPrice;
+
+  if (user?.role === 'ADMIN') {
+    return { ...base, price };
+  }
+
+  const { inhouseCost, resellerPrice, customerPrice, ...rest } = base;
+  return { ...rest, price };
+}
+
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditLogService,
+  ) {}
 
-  async findAll(query: ProductQuerySchema) {
+  async findAll(query: ProductQuerySchema, user?: AuthenticatedUser) {
     const { page, pageSize, brandId, categoryId, sizeTypeId, search } = query;
 
     const buildWhere = (withSearch: boolean): Prisma.ProductWhereInput => ({
@@ -91,7 +121,7 @@ export class ProductsService {
         this.prisma.product.count({ where }),
       ]);
       return {
-        data: fallbackRows.map(withTotalStock),
+        data: fallbackRows.map((row) => shapeProduct(row, user)),
         meta: {
           page,
           pageSize,
@@ -102,12 +132,12 @@ export class ProductsService {
     }
 
     return {
-      data: rows.map(withTotalStock),
+      data: rows.map((row) => shapeProduct(row, user)),
       meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, user?: AuthenticatedUser) {
     const product = await this.prisma.product.findFirst({
       where: { id, deletedAt: null },
       include: storefrontInclude,
@@ -115,10 +145,10 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException(`Product ${id} not found`);
     }
-    return withTotalStock(product);
+    return shapeProduct(product, user);
   }
 
-  async create(input: CreateProductSchema) {
+  async create(input: CreateProductSchema, auditedBy?: string) {
     const { variants, brandId, productTypeIds, categoryIds, ...data } = input;
     const brand = await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } });
 
@@ -144,6 +174,15 @@ export class ProductsService {
         },
         include: productInclude,
       });
+      this.audit.log({
+        module: AuditModule.PRODUCTS,
+        event: AuditEvent.CREATION,
+        moduleId: product.id,
+        referenceNumber: product.sku,
+        action: `Product "${product.name}" created`,
+        formData: { ...product },
+        auditedBy,
+      });
       return withTotalStock(product);
     } catch (error) {
       if (
@@ -157,7 +196,7 @@ export class ProductsService {
     }
   }
 
-  async update(id: string, input: UpdateProductSchema) {
+  async update(id: string, input: UpdateProductSchema, auditedBy?: string) {
     await this.ensureExists(id);
     const { variants, brandId, productTypeIds, categoryIds, ...data } = input;
     const brand = brandId
@@ -196,6 +235,16 @@ export class ProductsService {
       return tx.product.findUniqueOrThrow({ where: { id }, include: productInclude });
     });
 
+    this.audit.log({
+      module: AuditModule.PRODUCTS,
+      event: AuditEvent.UPDATION,
+      moduleId: product.id,
+      referenceNumber: product.sku,
+      action: `Product "${product.name}" updated`,
+      formData: { ...product },
+      auditedBy,
+    });
+
     return withTotalStock(product);
   }
 
@@ -204,10 +253,10 @@ export class ProductsService {
    * (all reads filter `deletedAt: null`) while the row stays intact so any
    * orders that reference it keep working. Always succeeds.
    */
-  async remove(id: string) {
+  async remove(id: string, auditedBy?: string) {
     const product = await this.prisma.product.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, sku: true },
+      select: { id: true, sku: true, name: true },
     });
     if (!product) throw new NotFoundException(`Product ${id} not found`);
     // Free the SKU (it's unique) so a new product can reuse it, while keeping
@@ -215,6 +264,15 @@ export class ProductsService {
     await this.prisma.product.update({
       where: { id },
       data: { deletedAt: new Date(), sku: `${product.sku}::deleted::${id}` },
+    });
+    this.audit.log({
+      module: AuditModule.PRODUCTS,
+      event: AuditEvent.DELETION,
+      moduleId: product.id,
+      referenceNumber: product.sku,
+      action: `Product "${product.name}" deleted`,
+      formData: { ...product },
+      auditedBy,
     });
     return { id, deleted: true };
   }

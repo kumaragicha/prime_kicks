@@ -1,8 +1,10 @@
 'use client';
 
+import type { Product } from '@prime-kicks/types';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { AnimatedLabel } from './added-label';
 import { Icon } from './icon';
 
 export type StoreProduct = {
@@ -15,6 +17,26 @@ export type StoreProduct = {
   color: string;
   sizes: { id: string; label: string }[];
 };
+
+/**
+ * Project a full API `Product` down to the storefront card view-model: only
+ * in-stock sizes are offered, and the stock line reads "N in stock" / "Sold out".
+ * Shared by the home and search grids so the mapping lives in one place.
+ */
+export function toStoreProduct(product: Product): StoreProduct {
+  return {
+    id: product.id,
+    name: product.name,
+    brand: product.brand,
+    price: product.price,
+    currency: product.currency,
+    image: product.photoUrls[0] ?? '',
+    color: product.totalStock > 0 ? `${product.totalStock} in stock` : 'Sold out',
+    sizes: product.variants
+      .filter((variant) => variant.stock > 0)
+      .map((variant) => ({ id: variant.id, label: variant.size.label })),
+  };
+}
 
 function Arrow() {
   return (
@@ -39,19 +61,39 @@ export function ProductCard({
   isHomePage = false,
 }: {
   product: StoreProduct;
-  onAdd: (product: StoreProduct, variantId: string, action: 'cart' | 'book') => void;
+  /**
+   * Returns whether the item was actually added — the caller resolves `true`
+   * only after a successful add-to-cart (not when it defers to login or just
+   * navigates), so the confirmation animation never lies.
+   */
+  onAdd: (
+    product: StoreProduct,
+    variantId: string,
+    action: 'cart' | 'book',
+  ) => void | boolean | Promise<void | boolean>;
   priority?: boolean;
   isHomePage?: boolean;
 }) {
   const [variantId, setVariantId] = useState('');
   const [shake, setShake] = useState(false);
+  // Confirmation state for the "Add to cart" button only — Buy now just redirects.
+  const [added, setAdded] = useState(false);
+  const doneTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  function handleAdd(action: 'cart' | 'book') {
+  useEffect(() => () => clearTimeout(doneTimer.current), []);
+
+  async function handleAdd(action: 'cart' | 'book') {
     if (!variantId) {
       setShake(true);
       return;
     }
-    onAdd(product, variantId, action);
+    const ok = await onAdd(product, variantId, action);
+    // Only confirm a real add-to-cart; Buy now redirects, so it gets no tick.
+    if (action === 'cart' && ok) {
+      setAdded(true);
+      clearTimeout(doneTimer.current);
+      doneTimer.current = setTimeout(() => setAdded(false), 1700);
+    }
   }
 
   return (
@@ -96,13 +138,18 @@ export function ProductCard({
               {product.brand} {product.name}
             </h3>
           </div>
-          <strong className="text-[13px] whitespace-nowrap max-[800px]:block max-[800px]:mt-[7px] max-[800px]:text-[13px]">
-            {formatCurrency(product.price, product.currency)}
-          </strong>
+          <span className="flex items-baseline gap-[6px] whitespace-nowrap max-[800px]:mt-[7px]">
+            <s className="text-[12px] text-[#9a9a9a] max-[800px]:text-[12px]">
+              {formatCurrency(product.price * 2, product.currency)}
+            </s>
+            <strong className="text-[13px] max-[800px]:text-[13px]">
+              {formatCurrency(product.price, product.currency)}
+            </strong>
+          </span>
         </div>
 
         <div
-          className={`my-[10px] gap-[4px] flex${shake ? ' animate-shake' : ''}`}
+          className={`my-[10px] flex-wrap gap-[4px] flex${shake ? ' animate-shake' : ''}`}
           onAnimationEnd={() => setShake(false)}
           aria-label={`Select size for ${product.name}`}
         >
@@ -119,18 +166,30 @@ export function ProductCard({
         </div>
         <div className="grid grid-cols-2 gap-[5px]">
           <button
-            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[0.55rem] font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-transparent hover:bg-[#e6e5e1] flex justify-center items-center gap-[4px] [&_svg]:w-[15px]"
+            className={`relative overflow-hidden h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[0.55rem] font-bold transition-[background-color,color,border-color,transform] duration-300 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border flex justify-center items-center gap-[4px] [&_svg]:w-[15px] ${
+              added
+                ? 'border-accent bg-accent text-white'
+                : 'border-ink bg-transparent hover:bg-[#e6e5e1]'
+            }`}
             onClick={() => handleAdd('cart')}
             disabled={!product.sizes.length}
             aria-label="Add to cart"
           >
-            <span className="inline-flex max-[800px]:hidden" aria-hidden="true">
-              <Icon name="bag" />
-            </span>{' '}
-            Add to cart
+            <AnimatedLabel
+              done={added}
+              label="Added"
+              idle={
+                <>
+                  <span className="inline-flex max-[800px]:hidden" aria-hidden="true">
+                    <Icon name="bag" />
+                  </span>{' '}
+                  Add to cart
+                </>
+              }
+            />
           </button>
           <button
-            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[0.55rem] font-bold transition duration-200 disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-ink text-white flex justify-center gap-[4px] items-center hover:bg-[#383838] [&_svg]:w-[12px] max-[800px]:[&_svg]:w-[16px]"
+            className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[0.55rem] font-bold transition duration-200 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-ink text-white flex justify-center gap-[4px] items-center hover:bg-[#383838] [&_svg]:w-[12px] max-[800px]:[&_svg]:w-[16px]"
             onClick={() => handleAdd('book')}
             disabled={!product.sizes.length}
             aria-label="Buy now"

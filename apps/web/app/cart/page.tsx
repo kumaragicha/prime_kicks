@@ -49,8 +49,6 @@ export default function CartPage() {
   const [errors, setErrors] = useState<Partial<Record<keyof AddressForm, string>>>({});
   const [errKey, setErrKey] = useState(0);
   const [placing, setPlacing] = useState(false);
-  const [placed, setPlaced] = useState(false);
-  const [orderNumber, setOrderNumber] = useState('');
   const [addressBlock, setAddressBlock] = useState('');
   const [parsing, setParsing] = useState(false);
 
@@ -85,8 +83,7 @@ export default function CartPage() {
     try {
       setCart(await api.updateCartItem(itemId, quantity));
     } catch (error) {
-      if (error instanceof ApiError && error.status === 400) notify(error.message);
-      else notify("We couldn't update this item.");
+      notify(error instanceof ApiError ? error.message : "We couldn't update this item.");
     } finally {
       setPending(null);
     }
@@ -95,17 +92,15 @@ export default function CartPage() {
     setPending(itemId);
     try {
       setCart(await api.removeCartItem(itemId));
-    } catch {
-      notify("We couldn't remove this item.");
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : "We couldn't remove this item.");
     } finally {
       setPending(null);
     }
   }
 
   const subtotal = useMemo(
-    () =>
-      cart?.items.reduce((total, item) => total + item.product.customerPrice * item.quantity, 0) ??
-      0,
+    () => cart?.items.reduce((total, item) => total + item.product.price * item.quantity, 0) ?? 0,
     [cart],
   );
 
@@ -214,9 +209,9 @@ export default function CartPage() {
         })),
         address,
       });
-      setOrderNumber(result.orderNumber);
-      setPlaced(true);
-      setCart(null);
+      // Redirect to a dedicated confirmation route so the success screen has its
+      // own URL — a refresh keeps showing it instead of falling back to the cart.
+      router.replace(`/order-confirmed?order=${encodeURIComponent(result.orderNumber)}`);
     } catch (error) {
       if (error instanceof ApiError) notify(error.message);
       else notify('Something went wrong. Please try again.');
@@ -254,12 +249,6 @@ export default function CartPage() {
           >
             Brands
           </Link>
-          <Link
-            className="text-ink no-underline uppercase text-[11px] tracking-[.08em] font-bold"
-            href="/#sale"
-          >
-            Sale
-          </Link>
         </nav>
         <div className="flex gap-[7px] items-center max-[800px]:gap-[1px]">
           <button
@@ -295,13 +284,7 @@ export default function CartPage() {
           >
             Brands
           </Link>
-          <Link
-            className="text-ink no-underline uppercase tracking-[.08em] font-bold text-[14px]"
-            href="/#sale"
-            onClick={() => setMenuOpen(false)}
-          >
-            Sale
-          </Link>
+
           <Link
             className="text-ink no-underline uppercase tracking-[.08em] font-bold text-[14px]"
             href="/profile"
@@ -312,37 +295,7 @@ export default function CartPage() {
         </nav>
       )}
 
-      {placed ? (
-        <section className="max-w-[600px] mx-auto pt-[100px] px-[5.25vw] pb-[100px] text-center">
-          <div className="mb-[30px]">
-            <span className="inline-flex items-center justify-center w-[60px] h-[60px] rounded-full bg-green-100 text-green-700 mb-[20px]">
-              <svg
-                viewBox="0 0 24 24"
-                className="w-[30px] h-[30px]"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-              >
-                <path d="M20 6L9 17l-5-5" />
-              </svg>
-            </span>
-            <h1 className="text-[clamp(36px,5vw,56px)] leading-[.8] tracking-[-.09em] m-0 mb-[15px]">
-              Order <em className="font-[Georgia,serif] font-normal">placed.</em>
-            </h1>
-            <p className="text-[#666] text-[13px] mb-[5px]">Your order number is</p>
-            <p className="text-[18px] font-bold tracking-[-.02em]">{orderNumber}</p>
-            <p className="text-[#666] text-[12px] mt-[15px]">
-              We&apos;ll send you a confirmation once it ships.
-            </p>
-          </div>
-          <Link
-            className="inline-flex items-center gap-[15px] bg-ink text-white px-[20px] py-[13px] no-underline uppercase tracking-[.08em] text-[10px] font-bold rounded-[8px] [&_svg]:w-[14px]"
-            href="/"
-          >
-            Continue shopping <Icon name="arrow" />
-          </Link>
-        </section>
-      ) : (
+      {
         <section className="max-w-[1280px] mx-auto pt-[68px] px-[5.25vw] pb-[100px] max-[760px]:pt-[43px] max-[760px]:px-[15px] max-[760px]:pb-[58px]">
           <div className="flex items-end justify-between border-b border-line pb-[30px] mb-[30px] max-[760px]:block max-[760px]:pb-[24px] max-[760px]:mb-[22px]">
             <h1 className="text-[clamp(46px,6vw,76px)] leading-[.8] tracking-[-.09em] m-0 max-[760px]:text-[53px] max-[760px]:mb-[25px]">
@@ -417,7 +370,7 @@ export default function CartPage() {
                           Size {item.variant.size.label}
                         </span>
                         <strong className="text-[14px]">
-                          {formatCurrency(item.product.customerPrice, item.product.currency)}
+                          {formatCurrency(item.product.price, item.product.currency)}
                         </strong>
                         <div className="flex items-center gap-[11px] mt-[17px] max-[760px]:mt-[12px] [&_svg]:w-[13px]">
                           <button
@@ -473,7 +426,7 @@ export default function CartPage() {
                           onChange={(e) => setAddressBlock(e.target.value)}
                         />
                         <button
-                          className="mt-[10px] w-full h-[42px] border-0 rounded-[8px] bg-ink text-white uppercase tracking-[.08em] text-[10px] font-bold flex items-center justify-center gap-[8px] disabled:opacity-30 disabled:cursor-not-allowed [&_svg]:w-[14px]"
+                          className="mt-[10px] w-full h-[42px] border-0 rounded-[8px] bg-ink text-white uppercase tracking-[.08em] text-[10px] font-bold flex items-center justify-center gap-[8px] disabled:cursor-not-allowed [&_svg]:w-[14px]"
                           disabled={parsing || !addressBlock.trim()}
                           onClick={parseAddressBlock}
                         >
@@ -607,7 +560,7 @@ export default function CartPage() {
             </div>
           )}
         </section>
-      )}
+      }
 
       <Toast message={toast} visible={!!toast} />
 

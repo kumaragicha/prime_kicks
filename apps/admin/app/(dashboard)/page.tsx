@@ -1,19 +1,13 @@
 'use client';
 
-import { DeleteIcon, EditIcon, IconButton } from '@/components/action-controls';
+import { DeleteIcon, EditIcon, IconButton, IconLink } from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
-import { controlClass, Pagination } from '@/components/table-controls';
-import { useDeleteProduct, useProducts, useSizeTypes } from '@/lib/hooks';
+import { controlClass, DataTable, Pagination } from '@/components/table-controls';
+import { useDebouncedValue, useDeleteProduct, useProducts, useSizeTypes } from '@/lib/hooks';
 import type { Product } from '@prime-kicks/types';
 import { Button } from '@prime-kicks/ui';
 import { formatCurrency } from '@prime-kicks/utils';
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
@@ -27,11 +21,12 @@ export default function ProductsPage() {
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [deleteError, setDeleteError] = useState('');
 
+  const debouncedSearch = useDebouncedValue(search);
   const { data: sizeTypes } = useSizeTypes();
   const { data, isLoading, isError, isFetching } = useProducts({
     page,
     pageSize: PAGE_SIZE,
-    search: search || undefined,
+    search: debouncedSearch || undefined,
     sizeTypeId: sizeTypeId || undefined,
   });
   const deleteProduct = useDeleteProduct();
@@ -73,31 +68,29 @@ export default function ProductsPage() {
       columnHelper.accessor('totalStock', { header: 'Stock' }),
       columnHelper.accessor('inhouseCost', {
         header: 'Cost',
-        cell: (c) => formatCurrency(c.getValue(), c.row.original.currency),
+        cell: (c) => formatCurrency(c.getValue() ?? 0, c.row.original.currency),
       }),
       columnHelper.accessor('resellerPrice', {
         header: 'Reseller',
-        cell: (c) => formatCurrency(c.getValue(), c.row.original.currency),
+        cell: (c) => formatCurrency(c.getValue() ?? 0, c.row.original.currency),
       }),
       columnHelper.accessor('customerPrice', {
         header: 'Customer',
-        cell: (c) => formatCurrency(c.getValue(), c.row.original.currency),
+        cell: (c) => formatCurrency(c.getValue() ?? 0, c.row.original.currency),
       }),
       columnHelper.display({
         id: 'actions',
-        header: '',
+        header: () => <div className="text-right">Action</div>,
         cell: (c) => (
           <div className="flex justify-end gap-1 items-center">
-            <Link
+            <IconLink
               href={`/products/${c.row.original.id}/edit`}
-              aria-label={`Edit ${c.row.original.name}`}
-              title={`Edit ${c.row.original.name}`}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-md text-neutral-900 transition-colors hover:bg-neutral-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-900"
+              label={`Edit ${c.row.original.name}`}
             >
               <EditIcon />
-            </Link>
+            </IconLink>
             <IconButton
-              label="Delete product"
+              label={`Delete ${c.row.original.name}`}
               tone="danger"
               onClick={() => setProductToDelete(c.row.original)}
             >
@@ -114,7 +107,6 @@ export default function ProductsPage() {
     data: data?.data ?? [],
     columns,
     getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
   });
 
   return (
@@ -152,42 +144,11 @@ export default function ProductsPage() {
 
       {data && (
         <>
-          <div
-            className="overflow-x-auto rounded-lg border border-neutral-200 bg-white"
-            style={{ opacity: isFetching ? 0.6 : 1 }}
-          >
-            <table className="min-w-[760px] w-full text-sm">
-              <thead className="border-b border-neutral-200 bg-neutral-50 text-left">
-                {table.getHeaderGroups().map((hg) => (
-                  <tr key={hg.id}>
-                    {hg.headers.map((header) => (
-                      <th key={header.id} className="px-4 py-3 font-medium text-neutral-600">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                      </th>
-                    ))}
-                  </tr>
-                ))}
-              </thead>
-              <tbody>
-                {table.getRowModel().rows.map((row) => (
-                  <tr key={row.id} className="border-b border-neutral-100 last:border-0">
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-4 py-3">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-                {data.data.length === 0 && (
-                  <tr>
-                    <td colSpan={columns.length} className="px-4 py-8 text-center text-neutral-500">
-                      No products match your filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            table={table}
+            isFetching={isFetching}
+            emptyMessage="No products match your filters."
+          />
 
           <Pagination
             page={data.meta.page}

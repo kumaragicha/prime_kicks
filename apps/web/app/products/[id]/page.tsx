@@ -1,5 +1,6 @@
 'use client';
 
+import { AnimatedLabel } from '@/components/added-label';
 import { Announcement } from '@/components/announcement';
 import { Icon } from '@/components/icon';
 import { LoginModal } from '@/components/login-modal';
@@ -25,7 +26,12 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const [adding, setAdding] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [shake, setShake] = useState(false);
+  // Confirmation state for "Add to cart" only — Buy now just redirects.
+  const [done, setDone] = useState(false);
+  const doneTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const carousel = useRef<HTMLDivElement>(null);
+
+  useEffect(() => () => clearTimeout(doneTimer.current), []);
 
   function scrollToIndex(index: number) {
     const el = carousel.current;
@@ -58,14 +64,14 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const activeSize = size;
   const media = product
     ? [
+        ...(product.videoUrl
+          ? [{ type: 'video' as const, src: product.videoUrl, label: 'Video' }]
+          : []),
         ...product.photoUrls.map((src, index) => ({
           type: 'image' as const,
           src,
           label: `View ${index + 1}`,
         })),
-        ...(product.videoUrl
-          ? [{ type: 'video' as const, src: product.videoUrl, label: 'Video' }]
-          : []),
       ]
     : [];
 
@@ -98,13 +104,18 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       await api.addToCart(id, selectedVariant.id);
       notifyStore();
       if (action === 'book') {
+        // Buy now just redirects to the cart — no confirmation animation needed.
         router.push('/cart');
         return;
       }
+      // Confirm a real add-to-cart with the on-brand tick animation.
+      setDone(true);
+      clearTimeout(doneTimer.current);
+      doneTimer.current = setTimeout(() => setDone(false), 1700);
       setMessage('Added to your bag.');
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') setLoginOpen(true);
-      else if (error instanceof ApiError && error.status === 400) setMessage(error.message);
+      else if (error instanceof ApiError) setMessage(error.message);
       else setMessage("We couldn't add this pair. Please try again.");
     } finally {
       setAdding(false);
@@ -261,8 +272,16 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           <h1 className="text-[clamp(37px,4vw,64px)] tracking-[-.085em] leading-[.88] m-0 max-w-[550px] max-[760px]:text-[42px]">
             {product.brand} {product.name}
           </h1>
-          <p className="text-[21px] font-bold mt-[20px] mb-[7px]">
-            {formatCurrency(product.customerPrice, product.currency)}
+          <p className="flex items-baseline gap-[10px] mt-[20px] mb-[7px]">
+            <s className="text-[16px] text-[#9a9a9a]">
+              {formatCurrency(product.price * 2, product.currency)}
+            </s>
+            <span className="text-[21px] font-bold">
+              {formatCurrency(product.price, product.currency)}
+            </span>
+            <span className="text-[11px] font-bold uppercase tracking-[.06em] text-accent">
+              50% off
+            </span>
           </p>
 
           <div className="border-t border-line py-[20px]">
@@ -289,17 +308,33 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           </div>
           <div className="grid grid-cols-2 gap-[7px] max-[760px]:grid-cols-1">
             <button
-              className="h-[49px] rounded-[9px] uppercase tracking-[.08em] text-[10px] font-bold transition-[transform,background] duration-200 enabled:hover:-translate-y-[2px] disabled:cursor-not-allowed disabled:opacity-[.42] bg-white border border-ink enabled:hover:bg-[#f3f1ec] flex items-center justify-center gap-[10px] [&_svg]:w-[15px]"
+              className={`relative overflow-hidden h-[49px] rounded-[9px] uppercase tracking-[.08em] text-[10px] font-bold transition-[transform,background-color,color,border-color] duration-300 enabled:hover:-translate-y-[2px] enabled:active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-[.42] border flex items-center justify-center gap-[10px] [&_svg]:w-[15px] ${
+                done
+                  ? 'border-accent bg-accent text-white'
+                  : 'bg-white border-ink enabled:hover:bg-[#f3f1ec]'
+              }`}
               disabled={!sizes.length || adding}
               onClick={() => addToBag('cart')}
             >
-              <span className="inline-flex max-[760px]:hidden" aria-hidden="true">
-                <Icon name="bag" />
-              </span>
-              {adding ? 'Adding…' : 'Add to cart'}
+              {adding ? (
+                'Adding…'
+              ) : (
+                <AnimatedLabel
+                  done={done}
+                  label="Added"
+                  idle={
+                    <>
+                      <span className="inline-flex max-[760px]:hidden" aria-hidden="true">
+                        <Icon name="bag" />
+                      </span>
+                      Add to cart
+                    </>
+                  }
+                />
+              )}
             </button>
             <button
-              className="h-[49px] rounded-[9px] uppercase tracking-[.08em] text-[10px] font-bold transition-[transform,background] duration-200 enabled:hover:-translate-y-[2px] disabled:cursor-not-allowed disabled:opacity-[.42] bg-ink text-white border-0 flex items-center justify-center gap-[12px] shadow-[0_8px_17px_#17171620] enabled:hover:bg-[#393834] [&_svg]:w-[15px]"
+              className="h-[49px] rounded-[9px] uppercase tracking-[.08em] text-[10px] font-bold transition-[transform,background] duration-200 enabled:hover:-translate-y-[2px] enabled:active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-[.42] bg-ink text-white border-0 flex items-center justify-center gap-[12px] shadow-[0_8px_17px_#17171620] enabled:hover:bg-[#393834] [&_svg]:w-[15px]"
               disabled={!sizes.length || adding}
               onClick={() => addToBag('book')}
             >

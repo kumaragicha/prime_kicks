@@ -28,7 +28,7 @@ export default function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<LoginSchema>({
     resolver: zodResolver(loginSchema),
-    defaultValues: { email: '', password: '' },
+    defaultValues: { identifier: '', password: '' },
   });
 
   const onSubmit = handleSubmit(async (values) => {
@@ -51,9 +51,16 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={onSubmit} className="flex flex-col gap-4">
             <label className="flex flex-col gap-1">
-              <span className="text-sm font-medium text-neutral-700">Email</span>
-              <input className={fieldClass} type="email" autoComplete="email" {...register('email')} />
-              {errors.email && <span className="text-xs text-red-600">{errors.email.message}</span>}
+              <span className="text-sm font-medium text-neutral-700">Email or mobile number</span>
+              <input
+                className={fieldClass}
+                type="text"
+                autoComplete="username"
+                {...register('identifier')}
+              />
+              {errors.identifier && (
+                <span className="text-xs text-red-600">{errors.identifier.message}</span>
+              )}
             </label>
 
             <label className="flex flex-col gap-1">
@@ -83,7 +90,7 @@ export default function LoginPage() {
 
 /** Turn a raw `API 401: {...}` message into something friendlier. */
 function cleanError(message: string): string {
-  if (message.includes('401')) return 'Invalid email or password.';
+  if (message.includes('401')) return 'Invalid credentials. Check your email/mobile and password.';
   if (message.toLowerCase().includes('not permitted')) return message;
   return 'Login failed. Please try again.';
 }

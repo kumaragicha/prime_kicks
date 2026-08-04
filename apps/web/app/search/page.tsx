@@ -3,7 +3,7 @@
 import { Announcement } from '@/components/announcement';
 import { FilterDrawer } from '@/components/filter-drawer';
 import { Icon } from '@/components/icon';
-import { ProductCard, type StoreProduct } from '@/components/product-card';
+import { ProductCard, toStoreProduct } from '@/components/product-card';
 import { SiteHeader } from '@/components/site-header';
 import { useFilters, useProducts } from '@/lib/hooks';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -132,30 +132,14 @@ function SearchResults() {
           </div>
         )}
         <div className="grid grid-cols-4 gap-x-[16px] gap-y-[27px] max-[800px]:grid-cols-2 max-[800px]:gap-x-[10px] max-[800px]:gap-y-[28px] min-[801px]:max-[1100px]:grid-cols-3 pt-[3px]">
-          {data?.data.map((product) => {
-            const sizes = product.variants
-              .filter((variant) => variant.stock > 0)
-              .map((variant) => ({ id: variant.id, label: variant.size.label }))
-              .slice(0, 4);
-            const displayProduct: StoreProduct = {
-              id: product.id,
-              name: product.name,
-              brand: product.brand,
-              price: product.customerPrice,
-              currency: product.currency,
-              image: product.photoUrls[0] ?? '',
-              color: product.totalStock > 0 ? `${product.totalStock} in stock` : 'Sold out',
-              sizes,
-            };
-            return (
-              <ProductCard
-                key={product.id}
-                isHomePage
-                product={displayProduct}
-                onAdd={(added) => window.location.assign(`/products/${added.id}`)}
-              />
-            );
-          })}
+          {data?.data.map((product) => (
+            <ProductCard
+              key={product.id}
+              isHomePage
+              product={toStoreProduct(product)}
+              onAdd={(selected) => router.push(`/products/${selected.id}`)}
+            />
+          ))}
         </div>
       </section>
       <FilterDrawer />

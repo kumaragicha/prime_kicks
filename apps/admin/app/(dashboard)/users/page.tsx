@@ -2,39 +2,52 @@
 
 import { DeleteIcon, IconButton, Toggle } from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
-import { controlClass, Pagination } from '@/components/table-controls';
+import { controlClass, DataTable, Pagination } from '@/components/table-controls';
 import { useAuth } from '@/lib/auth';
-import { useDeleteUser, useSetUserActive, useUsers } from '@/lib/hooks';
-import type { AdminUserRow } from '@prime-kicks/types';
-import { Badge } from '@prime-kicks/ui';
 import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import { useMemo, useState } from 'react';
+  useDebouncedValue,
+  useDeleteUser,
+  useMakeReseller,
+  useSetUserActive,
+  useUsers,
+} from '@/lib/hooks';
+import { useToast } from '@/lib/toast';
+import type { AdminUserRow } from '@prime-kicks/types';
+import { Badge, Button } from '@prime-kicks/ui';
+import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
+import { useCallback, useMemo, useState } from 'react';
 
 const columnHelper = createColumnHelper<AdminUserRow>();
 const PAGE_SIZE = 10;
 
 export default function UsersPage() {
   const { user: currentUser } = useAuth();
+  const toast = useToast();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [role, setRole] = useState('');
   const [status, setStatus] = useState('');
   const [userToDelete, setUserToDelete] = useState<AdminUserRow | null>(null);
 
+  const debouncedSearch = useDebouncedValue(search);
   const { data, isLoading, isError, isFetching } = useUsers({
     page,
     pageSize: PAGE_SIZE,
-    search: search || undefined,
+    search: debouncedSearch || undefined,
     role: role || undefined,
     status: status || undefined,
   });
   const setActive = useSetUserActive();
   const deleteUser = useDeleteUser();
+  const makeReseller = useMakeReseller();
+  const handleMakeReseller = useCallback(
+    (id: string, name: string) =>
+      makeReseller.mutate(id, {
+        onSuccess: () => toast.success(`${name} is now a reseller`),
+        onError: (error: Error) => toast.error(error.message),
+      }),
+    [makeReseller, toast],
+  );
 
   const resetTo =
     <T,>(setter: (v: T) => void) =>
@@ -66,7 +79,7 @@ export default function UsersPage() {
       }),
       columnHelper.display({
         id: 'actions',
-        header: '',
+        header: () => <div className="text-right">Action</div>,
         cell: (c) => {
           const user = c.row.original;
           const isSelf = currentUser?.id === user.id;
@@ -79,11 +92,27 @@ export default function UsersPage() {
           }
           return (
             <div className="flex justify-end gap-1 items-center">
+              {user.role === 'CUSTOMER' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  disabled={makeReseller.isPending}
+                  onClick={() => handleMakeReseller(user.id, user.name)}
+                >
+                  Reseller
+                </Button>
+              )}
               <Toggle
                 checked={user.isActive}
                 label={`${user.isActive ? 'Disable' : 'Enable'} ${user.name}`}
                 disabled={setActive.isPending}
-                onCheckedChange={(isActive) => setActive.mutate({ id: user.id, isActive })}
+                onCheckedChange={(isActive) =>
+                  setActive.mutate(
+                    { id: user.id, isActive },
+                    { onError: (e: Error) => toast.error(e.message) },
+                  )
+                }
               />
               <IconButton
                 label={`Delete ${user.name}`}
@@ -97,7 +126,7 @@ export default function UsersPage() {
         },
       }),
     ],
-    [setActive, currentUser?.id],
+    [handleMakeReseller, setActive, toast, currentUser?.id],
   );
 
   const table = useReactTable({
@@ -147,42 +176,11 @@ export default function UsersPage() {
 
       {data && (
         <>
-          <div
-            className="overflow-x-auto rounded-lg border border-neutral-200 bg-white"
-            style={{ opacity: isFetching ? 0.6 : 1 }}
-          >
-            <table className="min-w-[760px] w-full text-sm">
-              <thead className="border-b border-neutral-200 bg-neutral-50 text-left">
-                {table.getHeaderGroups().map((hg) => (
-                  <tr key={hg.id}>
-                    {hg.headers.map((header) => (
-                      <th key={header.id} className="px-4 py-3 font-medium text-neutral-600">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                      </th>
-                    ))}
-                  </tr>
-                ))}
-              </thead>
-              <tbody>
-                {table.getRowModel().rows.map((row) => (
-                  <tr key={row.id} className="border-b border-neutral-100 last:border-0">
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-4 py-3">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-                {data.data.length === 0 && (
-                  <tr>
-                    <td colSpan={columns.length} className="px-4 py-8 text-center text-neutral-500">
-                      No users match your filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            table={table}
+            isFetching={isFetching}
+            emptyMessage="No users match your filters."
+          />
 
           <Pagination
             page={data.meta.page}
@@ -201,10 +199,16 @@ export default function UsersPage() {
             ? `“${userToDelete.name}” will be permanently deleted. This cannot be undone.`
             : ''
         }
+        error={deleteUser.error instanceof Error ? deleteUser.error.message : undefined}
         isConfirming={deleteUser.isPending}
-        onClose={() => setUserToDelete(null)}
+        onClose={() => {
+          setUserToDelete(null);
+          deleteUser.reset();
+        }}
         onConfirm={() => {
           if (userToDelete) {
+            // On error the dialog stays open and surfaces the API message
+            // (e.g. "Cannot delete a user that has orders").
             deleteUser.mutate(userToDelete.id, { onSuccess: () => setUserToDelete(null) });
           }
         }}

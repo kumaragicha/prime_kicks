@@ -1,23 +1,18 @@
 'use client';
 
+import { DeleteIcon, IconButton } from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CreateOrderForm } from '@/components/create-order-form';
-import { controlClass, Pagination } from '@/components/table-controls';
 import {
-  useApproveOrder,
-  useDeleteOrder,
-  useOrders,
-  useRejectOrder,
-  useUpdateOrderStatus,
-} from '@/lib/hooks';
-import { ORDER_STATUS, PAYMENT_STATUS, type AdminOrderRow } from '@prime-kicks/types';
+  OrderStatusActions,
+  type OrderStatusAction,
+} from '@/components/order-status-actions';
+import { controlClass, DataTable, Pagination } from '@/components/table-controls';
+import { useDebouncedValue, useDeleteOrder, useOrders, useUpdateOrderStatus } from '@/lib/hooks';
+import { ORDER_STATUS, type AdminOrderRow, type OrderStatus } from '@prime-kicks/types';
 import { Badge } from '@prime-kicks/ui';
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { formatCurrency } from '@prime-kicks/utils';
+import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
@@ -42,23 +37,21 @@ export default function OrdersPage() {
   const [status, setStatus] = useState('');
   const [showCreateOrder, setShowCreateOrder] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<AdminOrderRow | null>(null);
-  const [orderToUpdateStatus, setOrderToUpdateStatus] = useState<AdminOrderRow | null>(null);
-  const [statusAction, setStatusAction] = useState('');
-  const [orderToApproveReceived, setOrderToApproveReceived] = useState<AdminOrderRow | null>(null);
-  const [orderToApprovePending, setOrderToApprovePending] = useState<AdminOrderRow | null>(null);
-  const [orderToReject, setOrderToReject] = useState<AdminOrderRow | null>(null);
+  const [statusChange, setStatusChange] = useState<{
+    order: AdminOrderRow;
+    action: OrderStatusAction;
+  } | null>(null);
 
+  const debouncedSearch = useDebouncedValue(search);
   const { data, isLoading, isError, isFetching } = useOrders({
     page,
     pageSize: PAGE_SIZE,
-    search: search || undefined,
+    search: debouncedSearch || undefined,
     status: status || undefined,
   });
 
   const updateStatus = useUpdateOrderStatus();
   const deleteOrder = useDeleteOrder();
-  const approveOrder = useApproveOrder();
-  const rejectOrder = useRejectOrder();
 
   const resetTo =
     <T,>(setter: (v: T) => void) =>
@@ -93,7 +86,7 @@ export default function OrdersPage() {
       columnHelper.accessor('itemsCount', { header: 'Items' }),
       columnHelper.accessor('total', {
         header: 'Total',
-        cell: (c) => `₹${c.getValue().toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        cell: (c) => formatCurrency(c.getValue(), c.row.original.currency),
       }),
       columnHelper.accessor('createdAt', {
         header: 'Date',
@@ -106,7 +99,7 @@ export default function OrdersPage() {
       }),
       columnHelper.display({
         id: 'actions',
-        header: '',
+        header: () => <div className="text-right">Action</div>,
         cell: (c) => {
           const order = c.row.original;
           return (
@@ -114,74 +107,21 @@ export default function OrdersPage() {
               className="flex justify-end gap-1 items-center"
               onClick={(e) => e.stopPropagation()}
             >
-              {order.status === ORDER_STATUS.PENDING && (
-                <>
-                  <button
-                    type="button"
-                    className="text-green-600 hover:text-green-800 p-1 bg-green-100 rounded cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOrderToApproveReceived(order);
-                    }}
-                    title="Approve & Payment Received"
-                  >
-                    <span className="">Approved ₹</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="text-orange-600 hover:text-orange-800 p-1 bg-red-100 rounded cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOrderToApprovePending(order);
-                    }}
-                    title="Approve & Payment Pending"
-                  >
-                    <span className="">Approve ₹</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="text-red-600 hover:text-red-800 p-1 bg-red-100 rounded cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setOrderToReject(order);
-                    }}
-                    title="Reject"
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      viewBox="0 0 24 24"
-                    >
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </>
-              )}
-              <button
-                type="button"
-                className="text-red-600 hover:text-red-800 p-1 bg-red-100 rounded cursor-pointer"
+              <OrderStatusActions
+                current={order.status as OrderStatus}
+                stopPropagation
+                onSelect={(action) => setStatusChange({ order, action })}
+              />
+              <IconButton
+                label="Delete"
+                tone="danger"
                 onClick={(e) => {
                   e.stopPropagation();
                   setOrderToDelete(order);
                 }}
-                title="Delete"
               >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.061-.94-1.75-1.816-1.618l-1.588.32a1.875 1.875 0 01-1.7-1.7l.32-1.588c.132-.876.56-1.476 1.618-1.816l.916-.916c1.125-.84 1.8-2.1 1.8-3.423 0-1.323-.675-2.583-1.8-3.423l-.916-.916c-.876-.132-1.476-.56-1.816-1.618l-.32-1.588a1.875 1.875 0 00-1.7-1.7l-1.588.32c-.876.132-1.476.56-1.618 1.616l-.916.916c-.84 1.125-2.1 1.8-3.423 1.8s-2.583-.675-3.423-1.8l-.916-.916c-.132-.876-.56-1.476-1.616-1.618l-1.588-.32a1.875 1.875 0 00-1.7 1.7l.32 1.588c.132.876.56 1.476 1.616 1.618l.916.916c1.125.84 1.8 2.1 1.8 3.423 0 1.323.675 2.583 1.8 3.423l.916.916c.876.132 1.476.56 1.616 1.616l.32 1.588a1.875 1.875 0 001.7 1.7l1.588-.32c.876-.132 1.476-.56 1.616-1.616l.916-.916c.84-1.125 2.1-1.8 3.423-1.8s2.583.675 3.423 1.8l.916.916c.132.876.56 1.476 1.616 1.616l.32 1.588a1.875 1.875 0 001.7 1.7l-1.588.32c-.876.132-1.476.56-1.616 1.616l-.916.916z"
-                  />
-                </svg>
-              </button>
+                <DeleteIcon />
+              </IconButton>
             </div>
           );
         },
@@ -240,48 +180,11 @@ export default function OrdersPage() {
 
       {data && (
         <>
-          <div
-            className="overflow-x-auto rounded-lg border border-neutral-200 bg-white"
-            style={{ opacity: isFetching ? 0.6 : 1 }}
-          >
-            <table className="min-w-[760px] w-full text-sm">
-              <thead className="border-b border-neutral-200 bg-neutral-50 text-left">
-                {table.getHeaderGroups().map((hg) => (
-                  <tr key={hg.id}>
-                    {hg.headers.map((header) => (
-                      <th key={header.id} className="px-4 py-3 font-medium text-neutral-600">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                      </th>
-                    ))}
-                  </tr>
-                ))}
-              </thead>
-              <tbody>
-                {table.getRowModel().rows.map((row) => (
-                  <tr key={row.id} className="border-b border-neutral-100 last:border-0">
-                    {row.getVisibleCells().map((cell) => (
-                      <td
-                        key={cell.id}
-                        className="px-4 py-3"
-                        onClick={
-                          cell.column.id === 'actions' ? (e) => e.stopPropagation() : undefined
-                        }
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-                {data.data.length === 0 && (
-                  <tr>
-                    <td colSpan={columns.length} className="px-4 py-8 text-center text-neutral-500">
-                      No orders match your filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            table={table}
+            isFetching={isFetching}
+            emptyMessage="No orders match your filters."
+          />
 
           <Pagination
             page={data.meta.page}
@@ -292,8 +195,11 @@ export default function OrdersPage() {
         </>
       )}
 
-      {/* Create Order modal */}
-      <CreateOrderForm open={showCreateOrder} onClose={() => setShowCreateOrder(false)} />
+      {/* Create Order modal — only mounted while open, so its reseller/product
+          queries don't run in the background behind the orders list. */}
+      {showCreateOrder && (
+        <CreateOrderForm open onClose={() => setShowCreateOrder(false)} />
+      )}
 
       {/* Delete confirmation */}
       <ConfirmDialog
@@ -304,11 +210,15 @@ export default function OrdersPage() {
             ? `"${orderToDelete.orderNumber}" will be permanently deleted. This cannot be undone.`
             : ''
         }
+        error={deleteOrder.error instanceof Error ? deleteOrder.error.message : undefined}
         isConfirming={deleteOrder.isPending}
         confirmLabel="Delete"
         confirmPendingLabel="Deleting…"
         confirmTone="danger"
-        onClose={() => setOrderToDelete(null)}
+        onClose={() => {
+          setOrderToDelete(null);
+          deleteOrder.reset();
+        }}
         onConfirm={() => {
           if (orderToDelete) {
             deleteOrder.mutate(orderToDelete.id, { onSuccess: () => setOrderToDelete(null) });
@@ -316,71 +226,32 @@ export default function OrdersPage() {
         }}
       />
 
-      {/* Approve & Payment Received confirmation */}
+      {/* Status change confirmation — one dialog for every transition */}
       <ConfirmDialog
-        open={orderToApproveReceived !== null}
-        title="Approve order?"
+        open={statusChange !== null}
+        title="Change order status?"
         description={
-          orderToApproveReceived
-            ? `Approve "${orderToApproveReceived.orderNumber}"? Payment: RECEIVED. Inventory will be reduced.`
+          statusChange
+            ? `"${statusChange.order.orderNumber}" — this will ${statusChange.action.effect}.`
             : ''
         }
-        isConfirming={approveOrder.isPending}
-        confirmLabel="Approve"
-        confirmPendingLabel="Approving…"
-        confirmTone="success"
-        onClose={() => setOrderToApproveReceived(null)}
-        onConfirm={() => {
-          if (orderToApproveReceived) {
-            approveOrder.mutate(
-              { id: orderToApproveReceived.id, paymentStatus: PAYMENT_STATUS.RECEIVED },
-              { onSuccess: () => setOrderToApproveReceived(null) },
-            );
-          }
+        error={updateStatus.error instanceof Error ? updateStatus.error.message : undefined}
+        isConfirming={updateStatus.isPending}
+        confirmLabel="Confirm"
+        confirmPendingLabel="Updating…"
+        confirmTone={statusChange?.action.tone === 'default' ? 'neutral' : statusChange?.action.tone}
+        onClose={() => {
+          setStatusChange(null);
+          updateStatus.reset();
         }}
-      />
-
-      {/* Approve & Payment Pending confirmation */}
-      <ConfirmDialog
-        open={orderToApprovePending !== null}
-        title="Approve order?"
-        description={
-          orderToApprovePending
-            ? `Approve "${orderToApprovePending.orderNumber}"? Payment: PENDING. Inventory will be reduced.`
-            : ''
-        }
-        isConfirming={approveOrder.isPending}
-        confirmLabel="Approve"
-        confirmPendingLabel="Approving…"
-        confirmTone="warning"
-        onClose={() => setOrderToApprovePending(null)}
         onConfirm={() => {
-          if (orderToApprovePending) {
-            approveOrder.mutate(
-              { id: orderToApprovePending.id, paymentStatus: PAYMENT_STATUS.PENDING },
-              { onSuccess: () => setOrderToApprovePending(null) },
+          if (statusChange) {
+            // On error the dialog stays open and shows the API message
+            // (e.g. insufficient stock when un-rejecting an order).
+            updateStatus.mutate(
+              { id: statusChange.order.id, status: statusChange.action.status },
+              { onSuccess: () => setStatusChange(null) },
             );
-          }
-        }}
-      />
-
-      {/* Reject confirmation */}
-      <ConfirmDialog
-        open={orderToReject !== null}
-        title="Reject order?"
-        description={
-          orderToReject
-            ? `Reject "${orderToReject.orderNumber}"? Stock will be restored to inventory.`
-            : ''
-        }
-        isConfirming={rejectOrder.isPending}
-        confirmLabel="Reject"
-        confirmPendingLabel="Rejecting…"
-        confirmTone="danger"
-        onClose={() => setOrderToReject(null)}
-        onConfirm={() => {
-          if (orderToReject) {
-            rejectOrder.mutate(orderToReject.id, { onSuccess: () => setOrderToReject(null) });
           }
         }}
       />

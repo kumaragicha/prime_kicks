@@ -7,7 +7,7 @@ export type StoreCart = { id: string; items: StoreCartItem[] };
 export type StoreCartItem = {
   id: string;
   quantity: number;
-  product: Pick<Product, 'id' | 'name' | 'brand' | 'photoUrls' | 'customerPrice' | 'currency'>;
+  product: Pick<Product, 'id' | 'name' | 'brand' | 'photoUrls' | 'price' | 'currency'>;
   variant: { id: string; size: { label: string } };
 };
 
@@ -24,11 +24,32 @@ export class ApiError extends Error {
   }
 }
 
-/** Pull the message out of a NestJS error body ({ message, error, statusCode }); fall back to raw text. */
+/** Zod's `flatten()` shape, as returned by the API's validation pipe. */
+type ValidationErrors = { formErrors?: string[]; fieldErrors?: Record<string, string[]> };
+
+/** Join specific Zod field/form messages into one readable string (or null). */
+function collectValidationMessages(errors?: ValidationErrors): string | null {
+  if (!errors) return null;
+  const parts: string[] = [];
+  if (errors.formErrors?.length) parts.push(...errors.formErrors);
+  for (const msgs of Object.values(errors.fieldErrors ?? {})) {
+    if (msgs?.length) parts.push(...msgs);
+  }
+  return parts.length ? parts.join(', ') : null;
+}
+
+/**
+ * Pull a human-readable message out of a NestJS error body
+ * (`{ message, error, statusCode, errors? }`). Validation failures carry the
+ * useful text inside `errors` (Zod field errors) while `message` is just the
+ * generic "Validation failed" — so those specific messages take priority.
+ */
 async function toApiError(res: Response): Promise<ApiError> {
   const text = await res.text();
   try {
-    const body = JSON.parse(text) as { message?: string | string[] };
+    const body = JSON.parse(text) as { message?: string | string[]; errors?: ValidationErrors };
+    const fieldMessages = collectValidationMessages(body.errors);
+    if (fieldMessages) return new ApiError(res.status, fieldMessages);
     const message = Array.isArray(body.message) ? body.message.join(', ') : body.message;
     if (message) return new ApiError(res.status, message);
   } catch {
@@ -53,6 +74,22 @@ function rawFetch(path: string, init?: RequestInit): Promise<Response> {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await rawFetch(path, init);
+  if (!res.ok) {
+    throw await toApiError(res);
+  }
+  return res.json() as Promise<T>;
+}
+
+// Like `request`, but attaches the stored access token when the visitor is
+// signed in. The API's optional-auth guard reads the token to decide which
+// price to return (reseller vs customer) and falls back to customer pricing
+// for anonymous visitors — so no token is required, but one is used if present.
+async function optionalAuthRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = readStored(ACCESS_TOKEN_KEY);
+  const res = await rawFetch(path, {
+    ...init,
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...init?.headers },
+  });
   if (!res.ok) {
     throw await toApiError(res);
   }
@@ -123,12 +160,15 @@ async function authenticatedRequest<T>(path: string, init?: RequestInit): Promis
 }
 
 export const api = {
-  login: (email: string, password: string) =>
+  /** `identifier` may be an email address or a mobile number. */
+  login: (identifier: string, password: string) =>
     request<AuthResponse>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ identifier, password }),
     }),
-  register: (body: {
+  me: () => authenticatedRequest<AuthResponse['user']>('/auth/me'),
+  /** Step 1 of registration: submit details, triggers an OTP email. No tokens yet. */
+  registerStart: (body: {
     firstName: string;
     lastName: string;
     email: string;
@@ -137,15 +177,39 @@ export const api = {
     state: string;
     password: string;
   }) =>
-    request<AuthResponse>('/auth/register', {
+    request<{ email: string; expiresInMinutes: number }>('/auth/register/start', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  /** Step 2: confirm the emailed code; returns tokens for the new verified account. */
+  registerVerify: (email: string, code: string) =>
+    request<AuthResponse>('/auth/register/verify', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    }),
+  /** Ask for a fresh OTP for a pending registration. */
+  registerResend: (email: string) =>
+    request<{ email: string; expiresInMinutes: number }>('/auth/register/resend', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  /** Request a password-reset link. Always resolves (never reveals if the email exists). */
+  forgotPassword: (email: string) =>
+    request<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  /** Set a new password using the token from the emailed reset link. */
+  resetPassword: (token: string, password: string) =>
+    request<{ success: boolean }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    }),
   listProducts: (params?: Record<string, string>) => {
     const qs = params ? `?${new URLSearchParams(params).toString()}` : '';
-    return request<Paginated<Product>>(`/products${qs}`);
+    return optionalAuthRequest<Paginated<Product>>(`/products${qs}`);
   },
-  getProduct: (id: string) => request<Product>(`/products/${id}`),
+  getProduct: (id: string) => optionalAuthRequest<Product>(`/products/${id}`),
   getFilters: () => request<StoreFilters>('/filters'),
   addToCart: (productId: string, variantId: string) =>
     authenticatedRequest('/cart/items', {
