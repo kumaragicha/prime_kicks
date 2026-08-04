@@ -2,13 +2,10 @@
 
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
-import { api } from '@/lib/api';
-import { useMyOrders } from '@/lib/hooks';
+import { useCurrentUser, useMyOrders } from '@/lib/hooks';
 import { ORDER_STATUS, type Order } from '@prime-kicks/types';
+import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
-
-type User = { name: string; email: string };
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'Pending',
@@ -68,7 +65,7 @@ function OrderCard({ order }: { order: Order }) {
           {order.items.length} item{order.items.length > 1 ? 's' : ''}
         </span>
         <span className="text-[13px] font-bold">
-          ₹{order.total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+          {formatCurrency(order.total, order.currency)}
         </span>
       </div>
     </div>
@@ -76,22 +73,8 @@ function OrderCard({ order }: { order: Order }) {
 }
 
 export default function OrdersPage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [hydrated, setHydrated] = useState(false);
+  const { user, hydrated } = useCurrentUser();
   const { data: orders, isLoading: ordersLoading } = useMyOrders();
-
-  useEffect(() => {
-    if (!window.localStorage.getItem('prime-kicks-access-token')) {
-      setHydrated(true);
-      return;
-    }
-    // Fetch identity from the API rather than a cached localStorage copy.
-    api
-      .me()
-      .then((me) => setUser(me))
-      .catch(() => setUser(null))
-      .finally(() => setHydrated(true));
-  }, []);
 
   if (!hydrated)
     return (

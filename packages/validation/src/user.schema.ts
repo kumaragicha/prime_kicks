@@ -50,6 +50,17 @@ export const refreshSchema = z.object({
   refreshToken: z.string().min(1, 'refreshToken is required'),
 });
 
+/** Request a password-reset link by email. */
+export const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+/** Complete a password reset with the token from the emailed link. */
+export const resetPasswordSchema = z.object({
+  token: z.string().min(1, 'Reset token is required'),
+  password: z.string().min(8, 'Password must be at least 8 characters'),
+});
+
 export const updateUserSchema = registerSchema
   .omit({ password: true, role: true })
   .partial();
@@ -70,5 +81,7 @@ export type VerifyEmailOtpSchema = z.infer<typeof verifyEmailOtpSchema>;
 export type ResendEmailOtpSchema = z.infer<typeof resendEmailOtpSchema>;
 export type LoginSchema = z.infer<typeof loginSchema>;
 export type RefreshSchema = z.infer<typeof refreshSchema>;
+export type ForgotPasswordSchema = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordSchema = z.infer<typeof resetPasswordSchema>;
 export type UpdateUserSchema = z.infer<typeof updateUserSchema>;
 export type UserQuerySchema = z.infer<typeof userQuerySchema>;

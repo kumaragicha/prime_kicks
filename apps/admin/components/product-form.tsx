@@ -83,38 +83,17 @@ export function ProductForm({
 
   const totalStock = Object.values(stockBySize).reduce((sum, n) => sum + (n || 0), 0);
 
-  const submit = handleSubmit(
-    async (values) => {
-      console.log('🚀 Form submitted with values:', values);
-      console.log('📦 Brand data:', brands);
-      console.log('📏 Selected type:', selectedType);
-      console.log('📊 Stock by size:', stockBySize);
+  const submit = handleSubmit(async (values) => {
+    const variants = (selectedType?.sizes ?? [])
+      .map((s) => ({ sizeId: s.id, stock: stockBySize[s.id] ?? 0, sku: null }))
+      .filter((v) => v.stock > 0);
 
-      try {
-        const variants = (selectedType?.sizes ?? [])
-          .map((s) => ({ sizeId: s.id, stock: stockBySize[s.id] ?? 0, sku: null }))
-          .filter((v) => v.stock > 0);
-        console.log('🔧 Variants to create:', variants);
+    // SKU is auto-generated for new products; existing products keep theirs.
+    const brandName = brands?.find((b) => b.id === values.brandId)?.name;
+    const sku = values.sku?.trim() || generateSku(brandName);
 
-        // SKU is auto-generated for new products; existing products keep theirs.
-        const brandName = brands?.find((b) => b.id === values.brandId)?.name;
-        console.log('🏷️ Brand name:', brandName);
-        const sku = values.sku?.trim() || generateSku(brandName);
-        console.log('🏷️ Final SKU:', sku);
-
-        const result = await onSubmit({ ...values, sku, variants });
-        console.log('✅ onSubmit completed:', result);
-        return result;
-      } catch (error) {
-        console.error('❌ Error in submit handler:', error);
-        throw error;
-      }
-    },
-    (errors) => {
-      // Log validation errors
-      console.error('❌ Form validation errors:', errors);
-    },
-  );
+    return onSubmit({ ...values, sku, variants });
+  });
 
   return (
     <form onSubmit={submit} className="flex w-full max-w-lg flex-col gap-4">

@@ -1,5 +1,6 @@
 'use client';
 
+import type { Product } from '@prime-kicks/types';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
@@ -16,6 +17,26 @@ export type StoreProduct = {
   color: string;
   sizes: { id: string; label: string }[];
 };
+
+/**
+ * Project a full API `Product` down to the storefront card view-model: only
+ * in-stock sizes are offered, and the stock line reads "N in stock" / "Sold out".
+ * Shared by the home and search grids so the mapping lives in one place.
+ */
+export function toStoreProduct(product: Product): StoreProduct {
+  return {
+    id: product.id,
+    name: product.name,
+    brand: product.brand,
+    price: product.price,
+    currency: product.currency,
+    image: product.photoUrls[0] ?? '',
+    color: product.totalStock > 0 ? `${product.totalStock} in stock` : 'Sold out',
+    sizes: product.variants
+      .filter((variant) => variant.stock > 0)
+      .map((variant) => ({ id: variant.id, label: variant.size.label })),
+  };
+}
 
 function Arrow() {
   return (

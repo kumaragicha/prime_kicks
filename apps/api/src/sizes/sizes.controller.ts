@@ -19,6 +19,8 @@ import {
   type UpdateSizeTypeSchema,
 } from '@prime-kicks/validation';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
+import type { AuthenticatedUser } from '../auth/auth.types';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { SizesService } from './sizes.service';
@@ -43,8 +45,11 @@ export class SizesController {
 
   @Roles('ADMIN')
   @Post('size-types')
-  createType(@Body(new ZodValidationPipe(createSizeTypeSchema)) body: CreateSizeTypeSchema) {
-    return this.sizes.createType(body);
+  createType(
+    @Body(new ZodValidationPipe(createSizeTypeSchema)) body: CreateSizeTypeSchema,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.sizes.createType(body, user.email);
   }
 
   @Roles('ADMIN')
@@ -52,14 +57,15 @@ export class SizesController {
   updateType(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(updateSizeTypeSchema)) body: UpdateSizeTypeSchema,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.sizes.updateType(id, body);
+    return this.sizes.updateType(id, body, user.email);
   }
 
   @Roles('ADMIN')
   @Delete('size-types/:id')
-  removeType(@Param('id') id: string) {
-    return this.sizes.removeType(id);
+  removeType(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.sizes.removeType(id, user.email);
   }
 
   /* ----------------------------------- Sizes ------------------------------------ */
@@ -69,8 +75,9 @@ export class SizesController {
   addSize(
     @Param('id') sizeTypeId: string,
     @Body(new ZodValidationPipe(createSizeSchema)) body: CreateSizeSchema,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.sizes.addSize(sizeTypeId, body);
+    return this.sizes.addSize(sizeTypeId, body, user.email);
   }
 
   @Roles('ADMIN')
@@ -78,13 +85,14 @@ export class SizesController {
   updateSize(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(updateSizeSchema)) body: UpdateSizeSchema,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.sizes.updateSize(id, body);
+    return this.sizes.updateSize(id, body, user.email);
   }
 
   @Roles('ADMIN')
   @Delete('sizes/:id')
-  removeSize(@Param('id') id: string) {
-    return this.sizes.removeSize(id);
+  removeSize(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.sizes.removeSize(id, user.email);
   }
 }

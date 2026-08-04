@@ -21,13 +21,15 @@ export function LoginModal({
   onClose: () => void;
   onSuccess?: () => void;
 }) {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [form, setForm] = useState(emptyRegister);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  // Password-reset ("forgot") step: flips true once the reset email has been requested.
+  const [forgotSent, setForgotSent] = useState(false);
   // OTP step: set once registerStart succeeds and we're waiting on the emailed code.
   const [awaitingOtp, setAwaitingOtp] = useState(false);
   const [code, setCode] = useState('');
@@ -44,6 +46,32 @@ export function LoginModal({
     setAwaitingOtp(false);
     setCode('');
     setResendNotice('');
+  }
+
+  function openForgot() {
+    setMode('forgot');
+    setError('');
+    setForgotSent(false);
+  }
+
+  function backToLogin() {
+    setMode('login');
+    setError('');
+    setForgotSent(false);
+  }
+
+  async function submitForgot(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    setError('');
+    try {
+      await api.forgotPassword(email);
+      setForgotSent(true);
+    } catch {
+      setError('Something went wrong. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function verifyOtp(event: React.FormEvent<HTMLFormElement>) {
@@ -258,6 +286,95 @@ export function LoginModal({
       </div>
     );
   }
+  if (mode === 'forgot') {
+    return (
+      <div
+        className="fixed inset-0 z-50 grid place-items-center p-[20px] bg-[rgba(10,10,10,0.48)] animate-fade max-[700px]:items-end max-[700px]:p-0"
+        onMouseDown={onClose}
+      >
+        <section
+          className="relative w-[min(100%,430px)] px-[39px] pt-[44px] pb-[33px] bg-paper shadow-[0_20px_60px_#0004] animate-panel max-[700px]:w-full max-[700px]:px-[22px] max-[700px]:pt-[36px] max-[700px]:pb-[29px] max-[700px]:rounded-t-[18px]"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="forgot-title"
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          <button
+            className="absolute right-[15px] top-[13px] w-[34px] h-[34px] border-0 bg-transparent text-[25px] font-[300]"
+            onClick={onClose}
+            aria-label="Close"
+          >
+            ×
+          </button>
+          <p className="m-0 mb-[11px] text-[10px] tracking-[.16em] uppercase font-bold">
+            Password help
+          </p>
+          <h2
+            id="forgot-title"
+            className="m-0 text-[43px] leading-[.95] tracking-[-.08em] max-[700px]:text-[37px]"
+          >
+            {forgotSent ? 'Check your email.' : 'Reset password.'}
+          </h2>
+
+          {forgotSent ? (
+            <>
+              <p className="mt-[14px] mb-[25px] text-[13px] leading-[1.5] text-[#686868]">
+                If an account exists for{' '}
+                <span className="font-bold text-ink">{email}</span>, we&apos;ve sent a link to reset
+                your password. It expires in 30 minutes.
+              </p>
+              <button
+                type="button"
+                onClick={backToLogin}
+                className="h-[46px] w-full border-0 bg-ink text-white uppercase text-[10px] font-bold tracking-[.1em]"
+              >
+                Back to sign in <span className="ml-[23px] text-[16px]">→</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="mt-[14px] mb-[25px] text-[13px] leading-[1.5] text-[#686868]">
+                Enter your email and we&apos;ll send you a link to set a new password.
+              </p>
+              <form onSubmit={submitForgot} className="grid gap-[15px]">
+                <label className="grid gap-[7px] text-[10px] font-bold tracking-[.08em] uppercase">
+                  Email address
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    autoComplete="email"
+                    required
+                    placeholder="you@example.com"
+                    className="h-[44px] border border-[#c9c8c3] px-[12px] font-[14px_Arial] text-ink focus:outline-2 focus:outline-ink focus:outline-offset-1"
+                  />
+                </label>
+                {error && <p className="m-0 text-[11px] text-[#ae2222]">{error}</p>}
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="h-[46px] border-0 bg-ink text-white uppercase text-[10px] font-bold tracking-[.1em] disabled:opacity-60"
+                >
+                  {submitting ? 'Sending…' : 'Send reset link'}{' '}
+                  <span className="ml-[23px] text-[16px]">→</span>
+                </button>
+              </form>
+            </>
+          )}
+          <p className="mt-[18px] text-[12px] text-[#686868] text-center">
+            Remembered it?{' '}
+            <button
+              type="button"
+              onClick={backToLogin}
+              className="font-bold text-ink underline underline-offset-2"
+            >
+              Sign in
+            </button>
+          </p>
+        </section>
+      </div>
+    );
+  }
   return (
     <div
       className="fixed inset-0 z-50 grid place-items-center p-[20px] bg-[rgba(10,10,10,0.48)] animate-fade max-[700px]:items-end max-[700px]:p-0"
@@ -386,6 +503,15 @@ export function LoginModal({
               className="h-[44px] border border-[#c9c8c3] px-[12px] font-[14px_Arial] text-ink focus:outline-2 focus:outline-ink focus:outline-offset-1"
             />
           </label>
+          {mode === 'login' && (
+            <button
+              type="button"
+              onClick={openForgot}
+              className="justify-self-end -mt-[6px] text-[11px] text-[#686868] hover:text-ink underline underline-offset-2"
+            >
+              Forgot password?
+            </button>
+          )}
           {error && <p className="m-0 text-[11px] text-[#ae2222]">{error}</p>}
           <button
             type="submit"

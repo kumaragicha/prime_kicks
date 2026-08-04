@@ -48,8 +48,11 @@ export class ProductsController {
 
   @Roles('ADMIN', 'RESELLER')
   @Post()
-  create(@Body(new ZodValidationPipe(createProductSchema)) body: CreateProductSchema) {
-    return this.products.create(body);
+  create(
+    @Body(new ZodValidationPipe(createProductSchema)) body: CreateProductSchema,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.products.create(body, user.email);
   }
 
   @Roles('ADMIN', 'RESELLER')
@@ -57,13 +60,14 @@ export class ProductsController {
   update(
     @Param('id') id: string,
     @Body(new ZodValidationPipe(updateProductSchema)) body: UpdateProductSchema,
+    @CurrentUser() user: AuthenticatedUser,
   ) {
-    return this.products.update(id, body);
+    return this.products.update(id, body, user.email);
   }
 
   @Roles('ADMIN')
   @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.products.remove(id);
+  remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.products.remove(id, user.email);
   }
 }

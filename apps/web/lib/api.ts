@@ -171,6 +171,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email }),
     }),
+  /** Request a password-reset link. Always resolves (never reveals if the email exists). */
+  forgotPassword: (email: string) =>
+    request<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    }),
+  /** Set a new password using the token from the emailed reset link. */
+  resetPassword: (token: string, password: string) =>
+    request<{ success: boolean }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, password }),
+    }),
   listProducts: (params?: Record<string, string>) => {
     const qs = params ? `?${new URLSearchParams(params).toString()}` : '';
     return optionalAuthRequest<Paginated<Product>>(`/products${qs}`);

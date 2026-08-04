@@ -1,16 +1,20 @@
 import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
 import {
+  forgotPasswordSchema,
   loginSchema,
   refreshSchema,
   registerSchema,
   registerStartSchema,
   resendEmailOtpSchema,
+  resetPasswordSchema,
   verifyEmailOtpSchema,
+  type ForgotPasswordSchema,
   type LoginSchema,
   type RefreshSchema,
   type RegisterSchema,
   type RegisterStartSchema,
   type ResendEmailOtpSchema,
+  type ResetPasswordSchema,
   type VerifyEmailOtpSchema,
 } from '@prime-kicks/validation';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
@@ -71,6 +75,22 @@ export class AuthController {
   @Post('refresh')
   refresh(@Body(new ZodValidationPipe(refreshSchema)) body: RefreshSchema) {
     return this.auth.refresh(body.refreshToken);
+  }
+
+  /** Request a password-reset link by email. Always 200 (no account enumeration). */
+  @Public()
+  @HttpCode(200)
+  @Post('forgot-password')
+  forgotPassword(@Body(new ZodValidationPipe(forgotPasswordSchema)) body: ForgotPasswordSchema) {
+    return this.auth.forgotPassword(body.email);
+  }
+
+  /** Complete a password reset using the token from the emailed link. */
+  @Public()
+  @HttpCode(200)
+  @Post('reset-password')
+  resetPassword(@Body(new ZodValidationPipe(resetPasswordSchema)) body: ResetPasswordSchema) {
+    return this.auth.resetPassword(body.token, body.password);
   }
 
   @HttpCode(200)

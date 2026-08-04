@@ -7,16 +7,12 @@ import {
   OrderStatusActions,
   type OrderStatusAction,
 } from '@/components/order-status-actions';
-import { controlClass, Pagination } from '@/components/table-controls';
-import { useDeleteOrder, useOrders, useUpdateOrderStatus } from '@/lib/hooks';
+import { controlClass, DataTable, Pagination } from '@/components/table-controls';
+import { useDebouncedValue, useDeleteOrder, useOrders, useUpdateOrderStatus } from '@/lib/hooks';
 import { ORDER_STATUS, type AdminOrderRow, type OrderStatus } from '@prime-kicks/types';
 import { Badge } from '@prime-kicks/ui';
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { formatCurrency } from '@prime-kicks/utils';
+import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
@@ -46,10 +42,11 @@ export default function OrdersPage() {
     action: OrderStatusAction;
   } | null>(null);
 
+  const debouncedSearch = useDebouncedValue(search);
   const { data, isLoading, isError, isFetching } = useOrders({
     page,
     pageSize: PAGE_SIZE,
-    search: search || undefined,
+    search: debouncedSearch || undefined,
     status: status || undefined,
   });
 
@@ -89,7 +86,7 @@ export default function OrdersPage() {
       columnHelper.accessor('itemsCount', { header: 'Items' }),
       columnHelper.accessor('total', {
         header: 'Total',
-        cell: (c) => `₹${c.getValue().toLocaleString('en-IN', { minimumFractionDigits: 2 })}`,
+        cell: (c) => formatCurrency(c.getValue(), c.row.original.currency),
       }),
       columnHelper.accessor('createdAt', {
         header: 'Date',
@@ -183,48 +180,11 @@ export default function OrdersPage() {
 
       {data && (
         <>
-          <div
-            className="overflow-x-auto rounded-lg border border-neutral-200 bg-white"
-            style={{ opacity: isFetching ? 0.6 : 1 }}
-          >
-            <table className="min-w-[760px] w-full text-sm">
-              <thead className="border-b border-neutral-200 bg-neutral-50 text-left">
-                {table.getHeaderGroups().map((hg) => (
-                  <tr key={hg.id}>
-                    {hg.headers.map((header) => (
-                      <th key={header.id} className="px-4 py-3 font-medium text-neutral-600">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                      </th>
-                    ))}
-                  </tr>
-                ))}
-              </thead>
-              <tbody>
-                {table.getRowModel().rows.map((row) => (
-                  <tr key={row.id} className="border-b border-neutral-100 last:border-0">
-                    {row.getVisibleCells().map((cell) => (
-                      <td
-                        key={cell.id}
-                        className="px-4 py-3"
-                        onClick={
-                          cell.column.id === 'actions' ? (e) => e.stopPropagation() : undefined
-                        }
-                      >
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-                {data.data.length === 0 && (
-                  <tr>
-                    <td colSpan={columns.length} className="px-4 py-8 text-center text-neutral-500">
-                      No orders match your filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            table={table}
+            isFetching={isFetching}
+            emptyMessage="No orders match your filters."
+          />
 
           <Pagination
             page={data.meta.page}
@@ -235,8 +195,11 @@ export default function OrdersPage() {
         </>
       )}
 
-      {/* Create Order modal */}
-      <CreateOrderForm open={showCreateOrder} onClose={() => setShowCreateOrder(false)} />
+      {/* Create Order modal — only mounted while open, so its reseller/product
+          queries don't run in the background behind the orders list. */}
+      {showCreateOrder && (
+        <CreateOrderForm open onClose={() => setShowCreateOrder(false)} />
+      )}
 
       {/* Delete confirmation */}
       <ConfirmDialog
@@ -247,11 +210,15 @@ export default function OrdersPage() {
             ? `"${orderToDelete.orderNumber}" will be permanently deleted. This cannot be undone.`
             : ''
         }
+        error={deleteOrder.error instanceof Error ? deleteOrder.error.message : undefined}
         isConfirming={deleteOrder.isPending}
         confirmLabel="Delete"
         confirmPendingLabel="Deleting…"
         confirmTone="danger"
-        onClose={() => setOrderToDelete(null)}
+        onClose={() => {
+          setOrderToDelete(null);
+          deleteOrder.reset();
+        }}
         onConfirm={() => {
           if (orderToDelete) {
             deleteOrder.mutate(orderToDelete.id, { onSuccess: () => setOrderToDelete(null) });
@@ -268,13 +235,19 @@ export default function OrdersPage() {
             ? `"${statusChange.order.orderNumber}" — this will ${statusChange.action.effect}.`
             : ''
         }
+        error={updateStatus.error instanceof Error ? updateStatus.error.message : undefined}
         isConfirming={updateStatus.isPending}
         confirmLabel="Confirm"
         confirmPendingLabel="Updating…"
         confirmTone={statusChange?.action.tone === 'default' ? 'neutral' : statusChange?.action.tone}
-        onClose={() => setStatusChange(null)}
+        onClose={() => {
+          setStatusChange(null);
+          updateStatus.reset();
+        }}
         onConfirm={() => {
           if (statusChange) {
+            // On error the dialog stays open and shows the API message
+            // (e.g. insufficient stock when un-rejecting an order).
             updateStatus.mutate(
               { id: statusChange.order.id, status: statusChange.action.status },
               { onSuccess: () => setStatusChange(null) },

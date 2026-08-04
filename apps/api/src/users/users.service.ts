@@ -5,7 +5,8 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import type { UserQuerySchema } from '@prime-kicks/validation';
-import { Prisma } from '@prisma/client';
+import { AuditEvent, AuditModule, Prisma } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Fields safe to expose to the admin UI (never the password/refresh hashes). */
@@ -28,7 +29,10 @@ const userSelect = {
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditLogService,
+  ) {}
 
   async findAll(query: UserQuerySchema) {
     const { page, pageSize, search, role, status } = query;
@@ -79,42 +83,71 @@ export class UsersService {
   }
 
   /** Enable or disable a user. Disabling also revokes their refresh token. */
-  async setActive(id: string, isActive: boolean, actorId?: string) {
+  async setActive(id: string, isActive: boolean, actorId?: string, auditedBy?: string) {
     await this.findOne(id);
     if (actorId && id === actorId) {
       throw new BadRequestException('You cannot disable your own account');
     }
-    return this.prisma.user.update({
+    const user = await this.prisma.user.update({
       where: { id },
       data: { isActive, ...(isActive ? {} : { refreshTokenHash: null }) },
       select: userSelect,
     });
+    this.audit.log({
+      module: AuditModule.USERS,
+      event: AuditEvent.UPDATION,
+      moduleId: user.id,
+      referenceNumber: user.email,
+      action: `User "${user.email}" ${isActive ? 'enabled' : 'disabled'}`,
+      formData: { isActive },
+      auditedBy,
+    });
+    return user;
   }
 
   /** Convert a CUSTOMER account to a RESELLER. */
-  async makeReseller(id: string) {
-    const user = await this.findOne(id);
-    if (user.role === 'RESELLER') {
+  async makeReseller(id: string, auditedBy?: string) {
+    const existing = await this.findOne(id);
+    if (existing.role === 'RESELLER') {
       throw new BadRequestException('User is already a reseller');
     }
-    if (user.role === 'ADMIN') {
+    if (existing.role === 'ADMIN') {
       throw new BadRequestException('Cannot convert an admin account to a reseller');
     }
-    return this.prisma.user.update({
+    const user = await this.prisma.user.update({
       where: { id },
       data: { role: 'RESELLER' },
       select: userSelect,
     });
+    this.audit.log({
+      module: AuditModule.USERS,
+      event: AuditEvent.UPDATION,
+      moduleId: user.id,
+      referenceNumber: user.email,
+      action: `User "${user.email}" converted to RESELLER`,
+      formData: { role: 'RESELLER' },
+      auditedBy,
+    });
+    return user;
   }
 
   /** Permanently delete the user record. */
-  async remove(id: string, actorId?: string) {
-    await this.findOne(id);
+  async remove(id: string, actorId?: string, auditedBy?: string) {
+    const existing = await this.findOne(id);
     if (actorId && id === actorId) {
       throw new BadRequestException('You cannot delete your own account');
     }
     try {
       await this.prisma.user.delete({ where: { id } });
+      this.audit.log({
+        module: AuditModule.USERS,
+        event: AuditEvent.DELETION,
+        moduleId: existing.id,
+        referenceNumber: existing.email,
+        action: `User "${existing.email}" deleted`,
+        formData: { ...existing },
+        auditedBy,
+      });
       return { id, deleted: true };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2003') {

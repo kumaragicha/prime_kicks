@@ -1,6 +1,12 @@
 'use client';
 
-import { useCreateOrder, useProduct, useProducts, useResellers } from '@/lib/hooks';
+import {
+  useCreateOrder,
+  useDebouncedValue,
+  useProduct,
+  useProducts,
+  useResellers,
+} from '@/lib/hooks';
 import { useToast } from '@/lib/toast';
 import { formatSize, ORDER_TYPE, PAYMENT_STATUS } from '@prime-kicks/types';
 import { Button } from '@prime-kicks/ui';
@@ -44,8 +50,9 @@ export function CreateOrderForm({ open, onClose }: { open: boolean; onClose: () 
   const { success, error: toastError } = useToast();
 
   // --- Data ---
+  const debouncedProductSearch = useDebouncedValue(productSearch);
   const { data: productResults, isLoading: loadingProducts } = useProducts(
-    productSearch ? { search: productSearch, pageSize: 20 } : undefined,
+    debouncedProductSearch ? { search: debouncedProductSearch, pageSize: 20 } : undefined,
   );
   const { data: selectedProduct, isLoading: loadingProduct } = useProduct(selectedProductId);
   const { data: resellers, isLoading: loadingResellers } = useResellers();
@@ -54,7 +61,7 @@ export function CreateOrderForm({ open, onClose }: { open: boolean; onClose: () 
   const inStockVariants = selectedProduct?.variants.filter((v) => v.stock > 0) ?? [];
 
   const selectedVariant = inStockVariants.find((v) => v.id === selectedVariantId);
-  const unitPrice = selectedVariant ? (selectedProduct!.resellerPrice ?? 0) : 0;
+  const unitPrice = selectedVariant ? (selectedProduct?.resellerPrice ?? 0) : 0;
   const subtotal = unitPrice * quantity;
   const total = subtotal + shipping;
 

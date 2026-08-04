@@ -1,9 +1,70 @@
 'use client';
 
 import { Button } from '@prime-kicks/ui';
+import { flexRender, type Table as TanstackTable } from '@tanstack/react-table';
 
 export const controlClass =
   'rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:border-neutral-900 focus:outline-none';
+
+/**
+ * The shared admin data-table shell (header + rows + empty state), dimmed while
+ * a background refetch is in flight. Column definitions and row data live in the
+ * caller's `table` instance — this only owns the presentation the list pages
+ * (orders, users, products) previously each copied.
+ */
+export function DataTable<TData>({
+  table,
+  isFetching = false,
+  emptyMessage,
+  minWidthClass = 'min-w-[760px]',
+}: {
+  table: TanstackTable<TData>;
+  isFetching?: boolean;
+  emptyMessage: string;
+  minWidthClass?: string;
+}) {
+  const rows = table.getRowModel().rows;
+  const columnCount = table.getAllLeafColumns().length;
+
+  return (
+    <div
+      className="overflow-x-auto rounded-lg border border-neutral-200 bg-white"
+      style={{ opacity: isFetching ? 0.6 : 1 }}
+    >
+      <table className={`${minWidthClass} w-full text-sm`}>
+        <thead className="border-b border-neutral-200 bg-neutral-50 text-left">
+          {table.getHeaderGroups().map((hg) => (
+            <tr key={hg.id}>
+              {hg.headers.map((header) => (
+                <th key={header.id} className="px-4 py-3 font-medium text-neutral-600">
+                  {flexRender(header.column.columnDef.header, header.getContext())}
+                </th>
+              ))}
+            </tr>
+          ))}
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id} className="border-b border-neutral-100 last:border-0">
+              {row.getVisibleCells().map((cell) => (
+                <td key={cell.id} className="px-4 py-3">
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </td>
+              ))}
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={columnCount} className="px-4 py-8 text-center text-neutral-500">
+                {emptyMessage}
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 export function Pagination({
   page,

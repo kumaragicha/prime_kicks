@@ -11,7 +11,30 @@ import type {
   UpdateSizeTypeSchema,
 } from '@prime-kicks/validation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, type OrderListParams, type ProductListParams, type UserListParams } from './api';
+import { useEffect, useState } from 'react';
+import {
+  api,
+  type AuditLogListParams,
+  type OrderListParams,
+  type ProductListParams,
+  type UserListParams,
+} from './api';
+
+/* ---------------------------------- Utilities --------------------------------- */
+
+/**
+ * Debounce a rapidly-changing value (e.g. a search box). The input stays
+ * responsive while the returned value only settles `delay`ms after the last
+ * change — so list queries fire once the user pauses, not on every keystroke.
+ */
+export function useDebouncedValue<T>(value: T, delay = 300): T {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(timer);
+  }, [value, delay]);
+  return debounced;
+}
 
 /* ---------------------------------- Products ---------------------------------- */
 
@@ -248,6 +271,16 @@ export function useSettlePayment() {
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['order'] });
     },
+  });
+}
+
+/* ---------------------------------- Audit log --------------------------------- */
+
+export function useAuditLogs(params?: AuditLogListParams) {
+  return useQuery({
+    queryKey: ['audit-logs', params ?? {}],
+    queryFn: () => api.listAuditLogs(params),
+    placeholderData: (prev) => prev,
   });
 }
 

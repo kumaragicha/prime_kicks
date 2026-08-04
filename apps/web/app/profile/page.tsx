@@ -1,27 +1,10 @@
 'use client';
 
 import { SiteHeader } from '@/components/site-header';
-import { api } from '@/lib/api';
-import { useEffect, useState } from 'react';
-
-type User = { name: string; email: string; mobileNo?: string; city?: string; state?: string };
+import { useCurrentUser } from '@/lib/hooks';
 
 export default function ProfilePage() {
-  const [user, setUser] = useState<User | null>(null);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    if (!window.localStorage.getItem('prime-kicks-access-token')) {
-      setHydrated(true);
-      return;
-    }
-    // Profile details come from the API, not a cached localStorage copy.
-    api
-      .me()
-      .then((me) => setUser(me))
-      .catch(() => setUser(null))
-      .finally(() => setHydrated(true));
-  }, []);
+  const { user, hydrated } = useCurrentUser();
 
   function signOut() {
     window.localStorage.removeItem('prime-kicks-access-token');
@@ -123,7 +106,12 @@ export default function ProfilePage() {
                 <dt className="text-[9px] uppercase font-bold tracking-[.08em] text-[#777] mb-[4px]">
                   Member since
                 </dt>
-                <dd className="m-0 text-[14px]">July 2026</dd>
+                <dd className="m-0 text-[14px]">
+                  {new Date(user.createdAt).toLocaleDateString('en-IN', {
+                    month: 'long',
+                    year: 'numeric',
+                  })}
+                </dd>
               </div>
             </dl>
           </section>
