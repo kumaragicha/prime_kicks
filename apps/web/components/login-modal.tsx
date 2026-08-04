@@ -471,16 +471,16 @@ export function LoginModal({
             </>
           )}
           <label className="grid gap-[7px] text-[10px] font-bold tracking-[.08em] uppercase">
-            Email address
+            {mode === 'login' ? 'Email or mobile number' : 'Email address'}
             <input
-              type="email"
+              type={mode === 'login' ? 'text' : 'email'}
               value={mode === 'login' ? email : form.email}
               onChange={(event) =>
                 mode === 'login' ? setEmail(event.target.value) : updateForm('email', event.target.value)
               }
-              autoComplete="email"
+              autoComplete={mode === 'login' ? 'username' : 'email'}
               required
-              placeholder="you@example.com"
+              placeholder={mode === 'login' ? 'you@example.com or 9876543210' : 'you@example.com'}
               className="h-[44px] border border-[#c9c8c3] px-[12px] font-[14px_Arial] text-ink focus:outline-2 focus:outline-ink focus:outline-offset-1"
             />
           </label>

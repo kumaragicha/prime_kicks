@@ -18,8 +18,9 @@ export const registerSchema = z.object({
   role: userRoleSchema.default('CUSTOMER'),
 });
 
+/** Login accepts either an email address or a mobile number as the identifier. */
 export const loginSchema = z.object({
-  email: z.string().email(),
+  identifier: z.string().min(1, 'Enter your email or mobile number'),
   password: z.string().min(8),
 });
 
