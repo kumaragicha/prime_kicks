@@ -70,8 +70,7 @@ export default function HomePage() {
       setToast(`${product.name} added to your bag`);
       return true;
     } catch (error) {
-      if (error instanceof ApiError && error.status === 400) setToast(error.message);
-      else setToast("We couldn't add this pair. Please try again.");
+      setToast(error instanceof ApiError ? error.message : "We couldn't add this pair. Please try again.");
       return false;
     }
   }
@@ -183,8 +182,11 @@ export default function HomePage() {
                 }
                 setToast(`${pendingAdd.product.name} added to your bag`);
               } catch (error) {
-                if (error instanceof ApiError && error.status === 400) setToast(error.message);
-                else setToast("We couldn't add this pair. Please try again.");
+                setToast(
+                  error instanceof ApiError
+                    ? error.message
+                    : "We couldn't add this pair. Please try again.",
+                );
               }
               setPendingAdd(null);
             } else setToast('Welcome back.');

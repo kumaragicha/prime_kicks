@@ -24,11 +24,32 @@ export class ApiError extends Error {
   }
 }
 
-/** Pull the message out of a NestJS error body ({ message, error, statusCode }); fall back to raw text. */
+/** Zod's `flatten()` shape, as returned by the API's validation pipe. */
+type ValidationErrors = { formErrors?: string[]; fieldErrors?: Record<string, string[]> };
+
+/** Join specific Zod field/form messages into one readable string (or null). */
+function collectValidationMessages(errors?: ValidationErrors): string | null {
+  if (!errors) return null;
+  const parts: string[] = [];
+  if (errors.formErrors?.length) parts.push(...errors.formErrors);
+  for (const msgs of Object.values(errors.fieldErrors ?? {})) {
+    if (msgs?.length) parts.push(...msgs);
+  }
+  return parts.length ? parts.join(', ') : null;
+}
+
+/**
+ * Pull a human-readable message out of a NestJS error body
+ * (`{ message, error, statusCode, errors? }`). Validation failures carry the
+ * useful text inside `errors` (Zod field errors) while `message` is just the
+ * generic "Validation failed" — so those specific messages take priority.
+ */
 async function toApiError(res: Response): Promise<ApiError> {
   const text = await res.text();
   try {
-    const body = JSON.parse(text) as { message?: string | string[] };
+    const body = JSON.parse(text) as { message?: string | string[]; errors?: ValidationErrors };
+    const fieldMessages = collectValidationMessages(body.errors);
+    if (fieldMessages) return new ApiError(res.status, fieldMessages);
     const message = Array.isArray(body.message) ? body.message.join(', ') : body.message;
     if (message) return new ApiError(res.status, message);
   } catch {

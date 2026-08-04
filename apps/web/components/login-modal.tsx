@@ -67,8 +67,8 @@ export function LoginModal({
     try {
       await api.forgotPassword(email);
       setForgotSent(true);
-    } catch {
-      setError('Something went wrong. Please try again.');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -132,13 +132,11 @@ export function LoginModal({
         completeAuth(await api.login(email, password));
       }
     } catch (err) {
-      if (mode === 'register') {
-        setError(
-          err instanceof ApiError ? err.message : 'We couldn’t create your account. Please try again.',
-        );
-      } else {
-        setError('We couldn’t sign you in with those details.');
-      }
+      const fallback =
+        mode === 'register'
+          ? 'We couldn’t create your account. Please try again.'
+          : 'We couldn’t sign you in with those details.';
+      setError(err instanceof ApiError ? err.message : fallback);
     } finally {
       setSubmitting(false);
     }

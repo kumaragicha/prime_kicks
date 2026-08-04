@@ -115,7 +115,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       setMessage('Added to your bag.');
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') setLoginOpen(true);
-      else if (error instanceof ApiError && error.status === 400) setMessage(error.message);
+      else if (error instanceof ApiError) setMessage(error.message);
       else setMessage("We couldn't add this pair. Please try again.");
     } finally {
       setAdding(false);

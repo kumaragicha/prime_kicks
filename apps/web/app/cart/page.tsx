@@ -83,8 +83,7 @@ export default function CartPage() {
     try {
       setCart(await api.updateCartItem(itemId, quantity));
     } catch (error) {
-      if (error instanceof ApiError && error.status === 400) notify(error.message);
-      else notify("We couldn't update this item.");
+      notify(error instanceof ApiError ? error.message : "We couldn't update this item.");
     } finally {
       setPending(null);
     }
@@ -93,8 +92,8 @@ export default function CartPage() {
     setPending(itemId);
     try {
       setCart(await api.removeCartItem(itemId));
-    } catch {
-      notify("We couldn't remove this item.");
+    } catch (error) {
+      notify(error instanceof ApiError ? error.message : "We couldn't remove this item.");
     } finally {
       setPending(null);
     }
