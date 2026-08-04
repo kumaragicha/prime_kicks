@@ -145,7 +145,8 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => authenticatedRequest<AuthResponse['user']>('/auth/me'),
-  register: (body: {
+  /** Step 1 of registration: submit details, triggers an OTP email. No tokens yet. */
+  registerStart: (body: {
     firstName: string;
     lastName: string;
     email: string;
@@ -154,9 +155,21 @@ export const api = {
     state: string;
     password: string;
   }) =>
-    request<AuthResponse>('/auth/register', {
+    request<{ email: string; expiresInMinutes: number }>('/auth/register/start', {
       method: 'POST',
       body: JSON.stringify(body),
+    }),
+  /** Step 2: confirm the emailed code; returns tokens for the new verified account. */
+  registerVerify: (email: string, code: string) =>
+    request<AuthResponse>('/auth/register/verify', {
+      method: 'POST',
+      body: JSON.stringify({ email, code }),
+    }),
+  /** Ask for a fresh OTP for a pending registration. */
+  registerResend: (email: string) =>
+    request<{ email: string; expiresInMinutes: number }>('/auth/register/resend', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
     }),
   listProducts: (params?: Record<string, string>) => {
     const qs = params ? `?${new URLSearchParams(params).toString()}` : '';

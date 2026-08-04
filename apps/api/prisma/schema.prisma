@@ -60,6 +60,32 @@ model User {
   @@index([role])
 }
 
+/// A signup awaiting email-OTP confirmation. Holds the full (password-hashed)
+/// registration payload until the emailed code is verified, at which point the
+/// real `User` row is created and this record is deleted. One pending row per
+/// email — a repeat "start" overwrites the previous one (upsert).
+model PendingRegistration {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  firstName    String
+  lastName     String
+  mobileNo     String
+  city         String
+  state        String
+  role         UserRole @default(CUSTOMER)
+  passwordHash String
+
+  codeHash   String // sha256 of the 6-digit OTP (never stored in the clear)
+  expiresAt  DateTime // code is invalid after this instant
+  attempts   Int      @default(0) // wrong-code submissions, capped to throttle guessing
+  lastSentAt DateTime @default(now()) // gates how often a new code can be requested
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
 /// A size system (e.g. "Nike", "Adidas", "Crocs"). Groups the valid sizes.
 model SizeType {
   id       String @id @default(cuid())

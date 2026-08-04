@@ -23,6 +23,29 @@ export const loginSchema = z.object({
   password: z.string().min(8),
 });
 
+/**
+ * Step 1 of registration: the full signup payload. Identical to `registerSchema`
+ * — kept as a named alias so the OTP flow reads clearly at the call sites.
+ */
+export const registerStartSchema = registerSchema;
+
+/** A 6-digit numeric one-time code. */
+const otpCodeSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{6}$/, 'Enter the 6-digit code');
+
+/** Step 2 of registration: confirm the emailed OTP to create the account. */
+export const verifyEmailOtpSchema = z.object({
+  email: z.string().email(),
+  code: otpCodeSchema,
+});
+
+/** Request a fresh OTP for a pending registration. */
+export const resendEmailOtpSchema = z.object({
+  email: z.string().email(),
+});
+
 export const refreshSchema = z.object({
   refreshToken: z.string().min(1, 'refreshToken is required'),
 });
@@ -42,6 +65,9 @@ export const userQuerySchema = z.object({
 });
 
 export type RegisterSchema = z.infer<typeof registerSchema>;
+export type RegisterStartSchema = z.infer<typeof registerStartSchema>;
+export type VerifyEmailOtpSchema = z.infer<typeof verifyEmailOtpSchema>;
+export type ResendEmailOtpSchema = z.infer<typeof resendEmailOtpSchema>;
 export type LoginSchema = z.infer<typeof loginSchema>;
 export type RefreshSchema = z.infer<typeof refreshSchema>;
 export type UpdateUserSchema = z.infer<typeof updateUserSchema>;
