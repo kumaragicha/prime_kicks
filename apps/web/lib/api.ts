@@ -160,10 +160,11 @@ async function authenticatedRequest<T>(path: string, init?: RequestInit): Promis
 }
 
 export const api = {
-  login: (email: string, password: string) =>
+  /** `identifier` may be an email address or a mobile number. */
+  login: (identifier: string, password: string) =>
     request<AuthResponse>('/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ identifier, password }),
     }),
   me: () => authenticatedRequest<AuthResponse['user']>('/auth/me'),
   /** Step 1 of registration: submit details, triggers an OTP email. No tokens yet. */

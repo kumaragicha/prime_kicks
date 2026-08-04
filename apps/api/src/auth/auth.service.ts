@@ -362,10 +362,15 @@ export class AuthService {
   }
 
   async login(input: LoginSchema) {
+    // The identifier is either an email or a mobile number — both are unique, so
+    // an OR match returns at most one account.
     const user = await this.prisma.user.findFirst({
-      where: { email: input.email, deletedAt: null },
+      where: {
+        deletedAt: null,
+        OR: [{ email: input.identifier }, { mobileNo: input.identifier }],
+      },
     });
-    // Always run bcrypt (against a dummy hash when the email is unknown) so the
+    // Always run bcrypt (against a dummy hash when the account is unknown) so the
     // response time doesn't reveal whether the account exists.
     const passwordOk = await compare(input.password, user?.passwordHash ?? DUMMY_PASSWORD_HASH);
     if (!user || !passwordOk) {
