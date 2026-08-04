@@ -4,7 +4,7 @@ import { Announcement } from '@/components/announcement';
 import { FilterDrawer } from '@/components/filter-drawer';
 import { Icon } from '@/components/icon';
 import { LoginModal } from '@/components/login-modal';
-import { ProductCard, type StoreProduct } from '@/components/product-card';
+import { ProductCard, toStoreProduct, type StoreProduct } from '@/components/product-card';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
 import { Toast } from '@/components/toast';
@@ -12,11 +12,10 @@ import { ApiError, api } from '@/lib/api';
 import { notifyStore, useAuthCart, useInfiniteProducts } from '@/lib/hooks';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 export default function HomePage() {
-  const { data, isLoading, isError, hasNextPage, fetchNextPage, isFetchingNextPage, refetch } =
-    useInfiniteProducts();
+  const { data, isLoading, isError, refetch } = useInfiniteProducts();
   const { user, refresh } = useAuthCart();
   const router = useRouter();
   const [toast, setToast] = useState('');
@@ -27,45 +26,10 @@ export default function HomePage() {
     variantId: string;
     action: 'cart' | 'book';
   } | null>(null);
-  const loader = useRef<HTMLDivElement>(null);
   const products = useMemo<StoreProduct[]>(
-    () =>
-      data?.pages.flatMap((page) =>
-        page.data.map((product) => {
-          const sizes = product.variants
-            .filter((variant) => variant.stock > 0)
-            .map((variant) => ({ id: variant.id, label: variant.size.label }));
-          return {
-            id: product.id,
-            name: product.name,
-            brand: product.brand,
-            price: product.price,
-            currency: product.currency,
-            image: product.photoUrls[0] ?? '',
-            color: product.totalStock > 0 ? `${product.totalStock} in stock` : 'Sold out',
-            sizes,
-          };
-        }),
-      ) ?? [],
+    () => data?.pages.flatMap((page) => page.data.map(toStoreProduct)) ?? [],
     [data],
   );
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && hasNextPage && !isFetchingNextPage) fetchNextPage();
-      },
-      { rootMargin: '300px' },
-    );
-    if (loader.current) observer.observe(loader.current);
-    return () => observer.disconnect();
-  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
-
-  const [filterCount, setFilterCount] = useState(0);
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setFilterCount((params.get('brandId') ? 1 : 0) + (params.get('categoryId') ? 1 : 0));
-  }, []);
 
   useEffect(() => {
     if (window.localStorage.getItem('prime-kicks-open-login') === 'true') {
@@ -106,8 +70,7 @@ export default function HomePage() {
       setToast(`${product.name} added to your bag`);
       return true;
     } catch (error) {
-      if (error instanceof ApiError && error.status === 400) setToast(error.message);
-      else setToast("We couldn't add this pair. Please try again.");
+      setToast(error instanceof ApiError ? error.message : "We couldn't add this pair. Please try again.");
       return false;
     }
   }
@@ -219,8 +182,11 @@ export default function HomePage() {
                 }
                 setToast(`${pendingAdd.product.name} added to your bag`);
               } catch (error) {
-                if (error instanceof ApiError && error.status === 400) setToast(error.message);
-                else setToast("We couldn't add this pair. Please try again.");
+                setToast(
+                  error instanceof ApiError
+                    ? error.message
+                    : "We couldn't add this pair. Please try again.",
+                );
               }
               setPendingAdd(null);
             } else setToast('Welcome back.');

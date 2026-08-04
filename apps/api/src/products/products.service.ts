@@ -4,7 +4,8 @@ import type {
   ProductQuerySchema,
   UpdateProductSchema,
 } from '@prime-kicks/validation';
-import { Prisma } from '@prisma/client';
+import { AuditEvent, AuditModule, Prisma } from '@prisma/client';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -68,7 +69,10 @@ function shapeProduct(product: ProductWithRelations, user?: AuthenticatedUser) {
 
 @Injectable()
 export class ProductsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditLogService,
+  ) {}
 
   async findAll(query: ProductQuerySchema, user?: AuthenticatedUser) {
     const { page, pageSize, brandId, categoryId, sizeTypeId, search } = query;
@@ -144,7 +148,7 @@ export class ProductsService {
     return shapeProduct(product, user);
   }
 
-  async create(input: CreateProductSchema) {
+  async create(input: CreateProductSchema, auditedBy?: string) {
     const { variants, brandId, productTypeIds, categoryIds, ...data } = input;
     const brand = await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } });
 
@@ -170,6 +174,15 @@ export class ProductsService {
         },
         include: productInclude,
       });
+      this.audit.log({
+        module: AuditModule.PRODUCTS,
+        event: AuditEvent.CREATION,
+        moduleId: product.id,
+        referenceNumber: product.sku,
+        action: `Product "${product.name}" created`,
+        formData: { ...product },
+        auditedBy,
+      });
       return withTotalStock(product);
     } catch (error) {
       if (
@@ -183,7 +196,7 @@ export class ProductsService {
     }
   }
 
-  async update(id: string, input: UpdateProductSchema) {
+  async update(id: string, input: UpdateProductSchema, auditedBy?: string) {
     await this.ensureExists(id);
     const { variants, brandId, productTypeIds, categoryIds, ...data } = input;
     const brand = brandId
@@ -222,6 +235,16 @@ export class ProductsService {
       return tx.product.findUniqueOrThrow({ where: { id }, include: productInclude });
     });
 
+    this.audit.log({
+      module: AuditModule.PRODUCTS,
+      event: AuditEvent.UPDATION,
+      moduleId: product.id,
+      referenceNumber: product.sku,
+      action: `Product "${product.name}" updated`,
+      formData: { ...product },
+      auditedBy,
+    });
+
     return withTotalStock(product);
   }
 
@@ -230,10 +253,10 @@ export class ProductsService {
    * (all reads filter `deletedAt: null`) while the row stays intact so any
    * orders that reference it keep working. Always succeeds.
    */
-  async remove(id: string) {
+  async remove(id: string, auditedBy?: string) {
     const product = await this.prisma.product.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, sku: true },
+      select: { id: true, sku: true, name: true },
     });
     if (!product) throw new NotFoundException(`Product ${id} not found`);
     // Free the SKU (it's unique) so a new product can reuse it, while keeping
@@ -241,6 +264,15 @@ export class ProductsService {
     await this.prisma.product.update({
       where: { id },
       data: { deletedAt: new Date(), sku: `${product.sku}::deleted::${id}` },
+    });
+    this.audit.log({
+      module: AuditModule.PRODUCTS,
+      event: AuditEvent.DELETION,
+      moduleId: product.id,
+      referenceNumber: product.sku,
+      action: `Product "${product.name}" deleted`,
+      formData: { ...product },
+      auditedBy,
     });
     return { id, deleted: true };
   }

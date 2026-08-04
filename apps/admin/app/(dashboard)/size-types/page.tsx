@@ -12,6 +12,7 @@ import {
   useUpdateSize,
   useUpdateSizeType,
 } from '@/lib/hooks';
+import { useToast } from '@/lib/toast';
 import type { Size, SizeType } from '@prime-kicks/types';
 import { Badge, Button, Card, CardContent, CardHeader } from '@prime-kicks/ui';
 import { useState } from 'react';
@@ -19,12 +20,16 @@ import { useState } from 'react';
 export default function SizeTypesPage() {
   const { data: sizeTypes, isLoading, isError } = useSizeTypes(true);
   const createType = useCreateSizeType();
+  const { error: toastError } = useToast();
   const [newName, setNewName] = useState('');
 
   const addType = () => {
     const name = newName.trim();
     if (!name) return;
-    createType.mutate({ name, isActive: true, sizes: [] }, { onSuccess: () => setNewName('') });
+    createType.mutate(
+      { name, isActive: true, sizes: [] },
+      { onSuccess: () => setNewName(''), onError: (e: Error) => toastError(e.message) },
+    );
   };
 
   return (
@@ -67,6 +72,7 @@ function SizeTypeCard({ type }: { type: SizeType }) {
   const updateType = useUpdateSizeType();
   const deleteType = useDeleteSizeType();
   const addSize = useAddSize();
+  const { error: toastError } = useToast();
 
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(type.name);
@@ -74,10 +80,12 @@ function SizeTypeCard({ type }: { type: SizeType }) {
   const [conversion, setConversion] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
 
+  const onError = (e: Error) => toastError(e.message);
+
   const saveName = () => {
     const trimmed = name.trim();
     if (trimmed && trimmed !== type.name) {
-      updateType.mutate({ id: type.id, body: { name: trimmed } });
+      updateType.mutate({ id: type.id, body: { name: trimmed } }, { onError });
     }
     setRenaming(false);
   };
@@ -100,6 +108,7 @@ function SizeTypeCard({ type }: { type: SizeType }) {
           setLabel('');
           setConversion('');
         },
+        onError,
       },
     );
   };
@@ -149,7 +158,9 @@ function SizeTypeCard({ type }: { type: SizeType }) {
             checked={type.isActive}
             label={`${type.isActive ? 'Disable' : 'Enable'} ${type.name}`}
             disabled={updateType.isPending}
-            onCheckedChange={(isActive) => updateType.mutate({ id: type.id, body: { isActive } })}
+            onCheckedChange={(isActive) =>
+              updateType.mutate({ id: type.id, body: { isActive } }, { onError })
+            }
           />
           <IconButton
             label={`Delete ${type.name}`}
@@ -212,8 +223,12 @@ function SizeTypeCard({ type }: { type: SizeType }) {
         open={deleteDialogOpen}
         title="Delete size type?"
         description={`“${type.name}” and its sizes will be permanently deleted.`}
+        error={deleteType.error instanceof Error ? deleteType.error.message : undefined}
         isConfirming={deleteType.isPending}
-        onClose={() => setDeleteDialogOpen(false)}
+        onClose={() => {
+          setDeleteDialogOpen(false);
+          deleteType.reset();
+        }}
         onConfirm={() =>
           deleteType.mutate(type.id, { onSuccess: () => setDeleteDialogOpen(false) })
         }
@@ -225,6 +240,7 @@ function SizeTypeCard({ type }: { type: SizeType }) {
 function SizeRow({ size }: { size: Size }) {
   const updateSize = useUpdateSize();
   const deleteSize = useDeleteSize();
+  const { error: toastError } = useToast();
 
   const [editing, setEditing] = useState(false);
   const [label, setLabel] = useState(size.label);
@@ -242,7 +258,7 @@ function SizeRow({ size }: { size: Size }) {
           sortOrder: Number(sortOrder) || 0,
         },
       },
-      { onSuccess: () => setEditing(false) },
+      { onSuccess: () => setEditing(false), onError: (e: Error) => toastError(e.message) },
     );
   };
 
@@ -311,8 +327,12 @@ function SizeRow({ size }: { size: Size }) {
         open={deleteDialogOpen}
         title="Delete size?"
         description={`“${size.label}” will be permanently deleted.`}
+        error={deleteSize.error instanceof Error ? deleteSize.error.message : undefined}
         isConfirming={deleteSize.isPending}
-        onClose={() => setDeleteDialogOpen(false)}
+        onClose={() => {
+          setDeleteDialogOpen(false);
+          deleteSize.reset();
+        }}
         onConfirm={() =>
           deleteSize.mutate(size.id, { onSuccess: () => setDeleteDialogOpen(false) })
         }

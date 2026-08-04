@@ -96,7 +96,7 @@ export default function PaymentsPage() {
               toast.success(`Settled ${res.settled} order${res.settled === 1 ? '' : 's'}.`);
               setToSettle(null);
             },
-            onError: () => toast.error('Failed to settle payments.'),
+            onError: (e: Error) => toast.error(e.message || 'Failed to settle payments.'),
           });
         }}
       />

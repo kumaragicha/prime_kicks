@@ -2,18 +2,19 @@
 
 import { DeleteIcon, IconButton, Toggle } from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
-import { controlClass, Pagination } from '@/components/table-controls';
+import { controlClass, DataTable, Pagination } from '@/components/table-controls';
 import { useAuth } from '@/lib/auth';
-import { useDeleteUser, useMakeReseller, useSetUserActive, useUsers } from '@/lib/hooks';
+import {
+  useDebouncedValue,
+  useDeleteUser,
+  useMakeReseller,
+  useSetUserActive,
+  useUsers,
+} from '@/lib/hooks';
 import { useToast } from '@/lib/toast';
 import type { AdminUserRow } from '@prime-kicks/types';
 import { Badge, Button } from '@prime-kicks/ui';
-import {
-  createColumnHelper,
-  flexRender,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
+import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import { useCallback, useMemo, useState } from 'react';
 
 const columnHelper = createColumnHelper<AdminUserRow>();
@@ -28,10 +29,11 @@ export default function UsersPage() {
   const [status, setStatus] = useState('');
   const [userToDelete, setUserToDelete] = useState<AdminUserRow | null>(null);
 
+  const debouncedSearch = useDebouncedValue(search);
   const { data, isLoading, isError, isFetching } = useUsers({
     page,
     pageSize: PAGE_SIZE,
-    search: search || undefined,
+    search: debouncedSearch || undefined,
     role: role || undefined,
     status: status || undefined,
   });
@@ -105,7 +107,12 @@ export default function UsersPage() {
                 checked={user.isActive}
                 label={`${user.isActive ? 'Disable' : 'Enable'} ${user.name}`}
                 disabled={setActive.isPending}
-                onCheckedChange={(isActive) => setActive.mutate({ id: user.id, isActive })}
+                onCheckedChange={(isActive) =>
+                  setActive.mutate(
+                    { id: user.id, isActive },
+                    { onError: (e: Error) => toast.error(e.message) },
+                  )
+                }
               />
               <IconButton
                 label={`Delete ${user.name}`}
@@ -119,7 +126,7 @@ export default function UsersPage() {
         },
       }),
     ],
-    [handleMakeReseller, setActive, currentUser?.id],
+    [handleMakeReseller, setActive, toast, currentUser?.id],
   );
 
   const table = useReactTable({
@@ -169,42 +176,11 @@ export default function UsersPage() {
 
       {data && (
         <>
-          <div
-            className="overflow-x-auto rounded-lg border border-neutral-200 bg-white"
-            style={{ opacity: isFetching ? 0.6 : 1 }}
-          >
-            <table className="min-w-[760px] w-full text-sm">
-              <thead className="border-b border-neutral-200 bg-neutral-50 text-left">
-                {table.getHeaderGroups().map((hg) => (
-                  <tr key={hg.id}>
-                    {hg.headers.map((header) => (
-                      <th key={header.id} className="px-4 py-3 font-medium text-neutral-600">
-                        {flexRender(header.column.columnDef.header, header.getContext())}
-                      </th>
-                    ))}
-                  </tr>
-                ))}
-              </thead>
-              <tbody>
-                {table.getRowModel().rows.map((row) => (
-                  <tr key={row.id} className="border-b border-neutral-100 last:border-0">
-                    {row.getVisibleCells().map((cell) => (
-                      <td key={cell.id} className="px-4 py-3">
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-                {data.data.length === 0 && (
-                  <tr>
-                    <td colSpan={columns.length} className="px-4 py-8 text-center text-neutral-500">
-                      No users match your filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            table={table}
+            isFetching={isFetching}
+            emptyMessage="No users match your filters."
+          />
 
           <Pagination
             page={data.meta.page}
@@ -223,10 +199,16 @@ export default function UsersPage() {
             ? `“${userToDelete.name}” will be permanently deleted. This cannot be undone.`
             : ''
         }
+        error={deleteUser.error instanceof Error ? deleteUser.error.message : undefined}
         isConfirming={deleteUser.isPending}
-        onClose={() => setUserToDelete(null)}
+        onClose={() => {
+          setUserToDelete(null);
+          deleteUser.reset();
+        }}
         onConfirm={() => {
           if (userToDelete) {
+            // On error the dialog stays open and surfaces the API message
+            // (e.g. "Cannot delete a user that has orders").
             deleteUser.mutate(userToDelete.id, { onSuccess: () => setUserToDelete(null) });
           }
         }}

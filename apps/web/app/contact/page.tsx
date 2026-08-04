@@ -17,7 +17,7 @@ function WhatsAppIcon() {
 
 const STATS = [
   { value: 'Since 2014', label: 'Trusted sneaker source' },
-  { value: '100% Authentic', label: 'Every pair hand-checked' },
+  { value: 'UA Quality', label: 'Every pair hand-checked' },
   { value: 'Pan-India', label: 'Fast, tracked delivery' },
 ];
 
@@ -37,8 +37,14 @@ export default function ContactPage() {
             Let&apos;s talk <em className="font-[Georgia,serif] font-normal">kicks.</em>
           </h1>
           <p className="mt-[22px] max-w-[500px] text-[15px] leading-[1.7] text-[#555]">
-            Prime Kicks has dealt in premium sneakers since 2014 — curating authentic, hand-inspected
-            pairs for collectors and everyday wearers across India.
+            Since 2014, Prime Kicks has been India&apos;s trusted home for premium sneakers. Every pair is
+            carefully hand-checked for top UA quality — so what reaches you always looks, feels, and
+            wears exactly the way it should.
+          </p>
+          <p className="mt-[14px] max-w-[500px] text-[15px] leading-[1.7] text-[#555]">
+            And it arrives just as it should — complete with its original box and every accessory,
+            cradled within a protective outer safety box. Even the shoe box reaches you flawless,
+            untouched and as pristine as the day it was made.
           </p>
 
           <div className="mt-[34px] grid grid-cols-3 gap-[18px] max-w-[520px] max-[520px]:grid-cols-1">

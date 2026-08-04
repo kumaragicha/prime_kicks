@@ -115,7 +115,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
       setMessage('Added to your bag.');
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') setLoginOpen(true);
-      else if (error instanceof ApiError && error.status === 400) setMessage(error.message);
+      else if (error instanceof ApiError) setMessage(error.message);
       else setMessage("We couldn't add this pair. Please try again.");
     } finally {
       setAdding(false);
@@ -272,8 +272,16 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           <h1 className="text-[clamp(37px,4vw,64px)] tracking-[-.085em] leading-[.88] m-0 max-w-[550px] max-[760px]:text-[42px]">
             {product.brand} {product.name}
           </h1>
-          <p className="text-[21px] font-bold mt-[20px] mb-[7px]">
-            {formatCurrency(product.price, product.currency)}
+          <p className="flex items-baseline gap-[10px] mt-[20px] mb-[7px]">
+            <s className="text-[16px] text-[#9a9a9a]">
+              {formatCurrency(product.price * 2, product.currency)}
+            </s>
+            <span className="text-[21px] font-bold">
+              {formatCurrency(product.price, product.currency)}
+            </span>
+            <span className="text-[11px] font-bold uppercase tracking-[.06em] text-accent">
+              50% off
+            </span>
           </p>
 
           <div className="border-t border-line py-[20px]">

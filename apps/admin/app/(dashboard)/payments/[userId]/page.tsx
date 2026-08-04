@@ -109,7 +109,7 @@ export default function PaymentDetailPage() {
               setConfirm(false);
               router.push('/payments');
             },
-            onError: () => toast.error('Failed to settle payments.'),
+            onError: (e: Error) => toast.error(e.message || 'Failed to settle payments.'),
           });
         }}
       />

@@ -1,8 +1,11 @@
 'use client';
 
+import type { AuthResponse } from '@prime-kicks/types';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { api } from './api';
+
+const ACCESS_TOKEN_KEY = 'prime-kicks-access-token';
 
 export type SignedInUser = {
   name: string;
@@ -28,24 +31,27 @@ export function useAuthCart() {
 
   const refresh = useCallback(async () => {
     if (typeof window === 'undefined') return;
-    if (!window.localStorage.getItem('prime-kicks-access-token')) {
+    if (!window.localStorage.getItem(ACCESS_TOKEN_KEY)) {
       setUser(null);
       setCartCount(0);
       return;
     }
     // Identity (including role) comes fresh from the API on each load rather than
     // a cached localStorage copy — so an admin-side role change takes effect here
-    // without the user having to log out and back in.
-    try {
-      const me = await api.me();
+    // without the user having to log out and back in. The two reads are
+    // independent, so fetch them in parallel rather than one after the other.
+    const [meResult, cartResult] = await Promise.allSettled([api.me(), api.getCart()]);
+
+    if (meResult.status === 'fulfilled') {
+      const me = meResult.value;
       setUser({ name: me.name, email: me.email, role: me.role });
-    } catch {
+    } else {
       setUser(null);
     }
-    try {
-      const current = await api.getCart();
-      setCartCount(current.items.reduce((total, item) => total + item.quantity, 0));
-    } catch {
+
+    if (cartResult.status === 'fulfilled') {
+      setCartCount(cartResult.value.items.reduce((total, item) => total + item.quantity, 0));
+    } else {
       setCartCount(0);
     }
   }, []);
@@ -60,6 +66,32 @@ export function useAuthCart() {
   return { user, cartCount, refresh };
 }
 
+/**
+ * Load the signed-in user's full profile from the API (fresh, not a cached
+ * localStorage copy). `hydrated` flips true once the client-side check has run,
+ * so pages can distinguish "still loading" from "signed out". Shared by the
+ * profile and orders pages.
+ */
+export function useCurrentUser() {
+  const [user, setUser] = useState<AuthResponse['user'] | null>(null);
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (!window.localStorage.getItem(ACCESS_TOKEN_KEY)) {
+      setHydrated(true);
+      return;
+    }
+    api
+      .me()
+      .then((me) => setUser(me))
+      .catch(() => setUser(null))
+      .finally(() => setHydrated(true));
+  }, []);
+
+  return { user, hydrated };
+}
+
 export function useProducts(params?: Record<string, string>) {
   return useQuery({
     queryKey: ['products', params ?? {}],
@@ -67,7 +99,9 @@ export function useProducts(params?: Record<string, string>) {
   });
 }
 
-/** Live paginated catalogue for the storefront. Refreshes in the background as stock changes. */
+/** Live paginated catalogue for the storefront. Refreshes in the background as
+ *  stock changes — on window focus, plus a gentle poll (a 20s poll re-fetched
+ *  every loaded page far too aggressively for a shoe catalogue). */
 export function useInfiniteProducts() {
   return useInfiniteQuery({
     queryKey: ['products', 'storefront'],
@@ -75,7 +109,8 @@ export function useInfiniteProducts() {
     initialPageParam: 1,
     getNextPageParam: (lastPage) =>
       lastPage.meta.page < lastPage.meta.totalPages ? lastPage.meta.page + 1 : undefined,
-    refetchInterval: 20_000,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
     refetchOnWindowFocus: true,
   });
 }
@@ -103,7 +138,7 @@ export function useMyOrders() {
 
   useEffect(() => {
     setEnabled(
-      typeof window !== 'undefined' && !!window.localStorage.getItem('prime-kicks-access-token'),
+      typeof window !== 'undefined' && !!window.localStorage.getItem(ACCESS_TOKEN_KEY),
     );
   }, []);
 

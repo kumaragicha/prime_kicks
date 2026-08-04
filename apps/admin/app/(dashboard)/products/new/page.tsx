@@ -10,15 +10,8 @@ export default function NewProductPage() {
   const createProduct = useCreateProduct();
 
   const onSubmit = async (values: CreateProductSchema) => {
-    try {
-      console.log('Submitting product:', values);
-      await createProduct.mutateAsync(values);
-      console.log('Product created successfully');
-      router.push('/');
-    } catch (error) {
-      console.error('Failed to create product:', error);
-      throw error;
-    }
+    await createProduct.mutateAsync(values);
+    router.push('/');
   };
 
   return (
@@ -28,11 +21,11 @@ export default function NewProductPage() {
         submitLabel="Create product"
         onSubmit={onSubmit}
         errorMessage={
-          createProduct.isError
-            ? createProduct.error instanceof Error && createProduct.error.message.includes('409')
-              ? 'A product with this SKU already exists. Use a different SKU.'
-              : 'Something went wrong. Check the API is running.'
-            : undefined
+          createProduct.error instanceof Error
+            ? createProduct.error.message
+            : createProduct.isError
+              ? 'Something went wrong. Check the API is running.'
+              : undefined
         }
       />
     </div>

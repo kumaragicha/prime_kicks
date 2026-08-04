@@ -71,23 +71,39 @@ async function rawFetch(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
-/** Attempt a token refresh with the stored refresh token. Returns true on success. */
-async function tryRefresh(): Promise<boolean> {
-  const refreshToken = tokenStore.refresh();
-  if (!refreshToken) return false;
+// The API rotates the refresh token on every use, so two concurrent 401s must
+// not each fire their own refresh — the second would present an already-rotated
+// (now invalid) token and get the admin logged out. Concurrent callers share one
+// in-flight refresh.
+let refreshInFlight: Promise<boolean> | null = null;
 
-  const res = await fetch(`${API_URL}/auth/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken }),
-  });
-  if (!res.ok) {
-    tokenStore.clear();
-    return false;
+/** Attempt a token refresh with the stored refresh token. Returns true on success. */
+function tryRefresh(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      const refreshToken = tokenStore.refresh();
+      if (!refreshToken) return false;
+      try {
+        const res = await fetch(`${API_URL}/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refreshToken }),
+        });
+        if (!res.ok) {
+          tokenStore.clear();
+          return false;
+        }
+        const data = (await res.json()) as AuthResponse;
+        tokenStore.set(data.accessToken, data.refreshToken);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
   }
-  const data = (await res.json()) as AuthResponse;
-  tokenStore.set(data.accessToken, data.refreshToken);
-  return true;
+  return refreshInFlight;
 }
 
 async function request<T>(path: string, init?: RequestInit, allowRetry = true): Promise<T> {
@@ -202,6 +218,58 @@ export type PaymentPendingDetail = {
   orders: PaymentPendingRow[];
 };
 
+/* --------------------------------- Audit log ---------------------------------- */
+
+export const AUDIT_MODULES = [
+  'PRODUCTS',
+  'ORDERS',
+  'USERS',
+  'CART',
+  'SIZE_TYPES',
+  'SIZES',
+  'BRANDS',
+  'CATEGORIES',
+  'PRODUCT_TYPES',
+  'AUTH',
+] as const;
+export type AuditModule = (typeof AUDIT_MODULES)[number];
+
+export const AUDIT_EVENTS = ['CREATION', 'UPDATION', 'DELETION'] as const;
+export type AuditEvent = (typeof AUDIT_EVENTS)[number];
+
+export type AuditLogRow = {
+  id: string;
+  referenceNumber: string | null;
+  module: AuditModule;
+  moduleId: string | null;
+  subModule: string | null;
+  event: AuditEvent;
+  action: string;
+  formData: Record<string, unknown> | null;
+  auditedBy: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AuditLogList = {
+  data: AuditLogRow[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
+export type AuditLogListParams = {
+  page?: number;
+  limit?: number;
+  module?: string;
+  event?: string;
+  auditedBy?: string;
+  referenceNumber?: string;
+  from?: string;
+  to?: string;
+};
+
 export const api = {
   listBrands: () => request<{ id: string; name: string; isActive: boolean }[]>('/brands'),
   listProductTypes: () =>
@@ -299,4 +367,9 @@ export const api = {
     request<Order>('/orders', { method: 'POST', body: JSON.stringify(body) }),
   deleteOrder: (id: string) =>
     request<{ id: string; deleted: boolean }>(`/orders/${id}`, { method: 'DELETE' }),
+
+  // Audit log
+  listAuditLogs: (params?: AuditLogListParams) =>
+    request<AuditLogList>(`/audit-logs${toQuery(params)}`),
+  getAuditLog: (id: string) => request<AuditLogRow>(`/audit-logs/${id}`),
 };

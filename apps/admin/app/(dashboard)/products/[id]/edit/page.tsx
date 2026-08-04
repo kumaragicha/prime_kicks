@@ -46,7 +46,13 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         defaultValues={defaultValues}
         submitLabel="Save changes"
         onSubmit={onSubmit}
-        errorMessage={updateProduct.isError ? 'Update failed. Check the API is running.' : undefined}
+        errorMessage={
+          updateProduct.error instanceof Error
+            ? updateProduct.error.message
+            : updateProduct.isError
+              ? 'Update failed. Check the API is running.'
+              : undefined
+        }
       />
     </div>
   );

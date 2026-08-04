@@ -208,11 +208,15 @@ export default function OrderDetailPage() {
         description={
           pendingAction ? `This will ${pendingAction.effect}.` : ''
         }
+        error={updateStatus.error instanceof Error ? updateStatus.error.message : undefined}
         isConfirming={updateStatus.isPending}
         confirmLabel="Confirm"
         confirmPendingLabel="Updating…"
         confirmTone={pendingAction?.tone === 'default' ? 'neutral' : pendingAction?.tone}
-        onClose={() => setPendingAction(null)}
+        onClose={() => {
+          setPendingAction(null);
+          updateStatus.reset();
+        }}
         onConfirm={() => {
           if (pendingAction) {
             updateStatus.mutate(

@@ -40,17 +40,19 @@ export const createOrderSchema = z.object({
       z.object({
         productId: z.string().min(1),
         variantId: z.string().min(1),
-        quantity: z.number().int().positive(),
+        // Upper bound keeps a single line from overflowing the Int price columns.
+        quantity: z.number().int().positive().max(100_000),
       }),
     )
-    .min(1, 'An order needs at least one item'),
+    .min(1, 'An order needs at least one item')
+    .max(500, 'An order cannot contain more than 500 line items'),
   address: addressSchema,
   // --- Admin-only fields (optional; when omitted the web/customer flow is used) ---
   resellerId: z.string().min(1, 'Select a reseller').optional(),
   orderType: orderTypeSchema.optional().default('SINGLE'),
   paymentStatus: paymentStatusSchema.optional().default('PENDING'),
   shippingStatus: paymentStatusSchema.optional().default('PENDING'),
-  shipping: z.number().int().nonnegative().optional().default(0),
+  shipping: z.number().int().nonnegative().max(10_000_000).optional().default(0),
 });
 
 export const updateOrderStatusSchema = z.object({

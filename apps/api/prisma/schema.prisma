@@ -31,13 +31,58 @@ enum UserRole {
   ADMIN
 }
 
+/// Which part of the system an audit-log entry belongs to.
+enum AuditModule {
+  PRODUCTS
+  ORDERS
+  USERS
+  CART
+  SIZE_TYPES
+  SIZES
+  BRANDS
+  CATEGORIES
+  PRODUCT_TYPES
+  AUTH
+}
+
+/// The kind of change an audit-log entry records.
+enum AuditEvent {
+  CREATION
+  UPDATION
+  DELETION
+}
+
+/// Append-only trail of every create/update/delete performed through the API.
+/// Written non-blocking (a failed audit insert never fails the real operation),
+/// so it's a debugging/history aid, not a transactional guarantee.
+model AuditLog {
+  id              String      @id @default(cuid())
+  referenceNumber String? // human-facing ref for the affected row (e.g. order number, SKU)
+  module          AuditModule
+  moduleId        String? // id of the affected row (cuid); null for bulk/none
+  subModule       String?
+  event           AuditEvent
+  action          String // short human description ("Product created")
+  formData        Json? // snapshot of the payload/entity at the time of the change
+  auditedBy       String // email of the acting user (or "system")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([module, moduleId])
+  @@index([event])
+  @@index([auditedBy])
+  @@index([referenceNumber])
+  @@index([createdAt])
+}
+
 model User {
   id        String   @id @default(cuid())
   firstName String
   lastName  String
   name      String // full display name (firstName + lastName)
   email     String   @unique
-  mobileNo  String
+  mobileNo  String   @unique // one account per mobile number, like email
   city      String
   state     String
   role      UserRole @default(CUSTOMER)
@@ -49,15 +94,60 @@ model User {
   isEmailVerified  Boolean   @default(false)
   lastLoginAt      DateTime?
 
-  orders Order[]
-  cart   Cart?
+  orders        Order[]
+  cart          Cart?
+  passwordReset PasswordResetToken?
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime? // soft delete
 
-  @@index([deletedAt])
   @@index([role])
+  // Backs the admin user list: `where deletedAt IS NULL order by createdAt desc`.
+  @@index([deletedAt, createdAt])
+}
+
+/// A pending password-reset request. Holds only the sha256 hash of the emailed
+/// token (never the token itself). One active row per user — a new request
+/// overwrites the previous one (upsert). Consumed (deleted) on a successful
+/// reset or when it expires.
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String   @unique
+  tokenHash String   @unique // sha256 of the raw token from the emailed link
+  expiresAt DateTime // link is invalid after this instant
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
+/// A signup awaiting email-OTP confirmation. Holds the full (password-hashed)
+/// registration payload until the emailed code is verified, at which point the
+/// real `User` row is created and this record is deleted. One pending row per
+/// email — a repeat "start" overwrites the previous one (upsert).
+model PendingRegistration {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  firstName    String
+  lastName     String
+  mobileNo     String
+  city         String
+  state        String
+  role         UserRole @default(CUSTOMER)
+  passwordHash String
+
+  codeHash   String // sha256 of the 6-digit OTP (never stored in the clear)
+  expiresAt  DateTime // code is invalid after this instant
+  attempts   Int      @default(0) // wrong-code submissions, capped to throttle guessing
+  lastSentAt DateTime @default(now()) // gates how often a new code can be requested
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([expiresAt])
 }
 
 /// A size system (e.g. "Nike", "Adidas", "Crocs"). Groups the valid sizes.
@@ -134,7 +224,8 @@ model Product {
   @@index([brand])
   @@index([brandId])
   @@index([sizeTypeId])
-  @@index([deletedAt])
+  // Backs the storefront/admin catalog: `where deletedAt IS NULL order by createdAt desc`.
+  @@index([deletedAt, createdAt])
 }
 
 /// Product brand master, e.g. Adidas or Puma.
@@ -220,7 +311,11 @@ model Order {
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
-  @@index([userId])
+  // Backs "my orders" and the per-user receivables list (userId + createdAt sort).
+  @@index([userId, createdAt])
+  // Backs the admin order list filtered by status and sorted by date, plus the
+  // APPROVED_PAYMENT_PENDING receivables rollup.
+  @@index([status, createdAt])
 }
 
 model Cart {

@@ -4,7 +4,7 @@ import { Icon } from '@/components/icon';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-export function SearchPanel({ onClose }: { onClose: () => void }) {
+export function SearchPanel({ onClose, top }: { onClose: () => void; top: number }) {
   const [query, setQuery] = useState('');
   const router = useRouter();
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -14,7 +14,10 @@ export function SearchPanel({ onClose }: { onClose: () => void }) {
     onClose();
   }
   return (
-    <div className="fixed top-[107px] left-0 right-0 z-[11] bg-paper border-b border-line shadow-[0_14px_24px_rgba(0,0,0,0.08)] animate-[search-drop_0.25s_cubic-bezier(0.2,0.8,0.2,1)] max-[800px]:top-[92px]">
+    <div
+      style={{ top }}
+      className="fixed left-0 right-0 z-[11] bg-paper border-b border-line shadow-[0_14px_24px_rgba(0,0,0,0.08)] animate-[search-drop_0.25s_cubic-bezier(0.2,0.8,0.2,1)]"
+    >
       <section
         className="w-[min(760px,100%)] mx-auto pt-[25px] px-[5.25vw] pb-[28px] relative max-[800px]:pt-[20px] max-[800px]:px-[15px] max-[800px]:pb-[23px]"
         role="dialog"

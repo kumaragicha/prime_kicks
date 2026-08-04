@@ -137,6 +137,24 @@ const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
 const MOBILE_REGEX = /(?:\+?91[\s-]?)?[6-9]\d{9}/g;
 const PINCODE_REGEX = /\b(\d{6})\b/;
 
+/** Hard caps so a huge pasted block can't tie up the event loop (this endpoint
+ *  runs many regexes per line). Real addresses are far smaller than these. */
+const MAX_ADDRESS_LENGTH = 10_000;
+const MAX_LINES = 200;
+
+/** Memoized compiled label matchers — each label's RegExp is built once, not
+ *  per line per request. */
+const labelRegexCache = new Map<string, RegExp>();
+function labelRegex(label: string): RegExp {
+  let re = labelRegexCache.get(label);
+  if (!re) {
+    const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    re = new RegExp(`^\\s*${esc}\\b\\s*(?:\\([^)]*\\))?\\s*[:\\-–—]?\\s*(.*)$`, 'i');
+    labelRegexCache.set(label, re);
+  }
+  return re;
+}
+
 @Injectable()
 export class AddressService {
   /** Parse a raw, free-form address block into structured fields. */
@@ -156,8 +174,17 @@ export class AddressService {
 
     if (!addressBlock || typeof addressBlock !== 'string') return result;
 
+    // Bound the work: cap total size and line count before running any regexes.
+    const bounded =
+      addressBlock.length > MAX_ADDRESS_LENGTH
+        ? addressBlock.slice(0, MAX_ADDRESS_LENGTH)
+        : addressBlock;
+
     // Split on newlines / pipes only (commas are part of address lines).
-    const rawLines = addressBlock.split(/\r?\n|\|/).map((l) => l.trim());
+    const rawLines = bounded
+      .split(/\r?\n|\|/)
+      .slice(0, MAX_LINES)
+      .map((l) => l.trim());
 
     // Drop the sender block: everything from a standalone "From" marker onward
     // belongs to the shop, not the recipient.
@@ -380,9 +407,7 @@ function isNoise(line: string): boolean {
  */
 function matchLabel(line: string, labels: string[]): string | null {
   for (const label of labels) {
-    const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`^\\s*${esc}\\b\\s*(?:\\([^)]*\\))?\\s*[:\\-–—]?\\s*(.*)$`, 'i');
-    const m = line.match(re);
+    const m = line.match(labelRegex(label));
     if (m) return cleanValue(m[1] ?? '');
   }
   return null;
