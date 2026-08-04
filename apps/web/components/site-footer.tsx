@@ -1,6 +1,3 @@
-'use client';
-
-import { useAuthCart } from '@/lib/hooks';
 import Link from 'next/link';
 import { Icon } from './icon';
 
@@ -34,10 +31,6 @@ function InstagramIcon() {
 }
 
 export function SiteFooter() {
-  const { user } = useAuthCart();
-  // The WhatsApp community group is a customer channel — hidden for resellers.
-  const showCommunity = user?.role !== 'RESELLER';
-
   return (
     <footer
       className="bg-[#111] text-white pt-[72px] px-[5.25vw] pb-[21px] max-[800px]:pt-[48px] max-[800px]:px-[21px] max-[800px]:pb-[19px]"
@@ -60,9 +53,7 @@ export function SiteFooter() {
         </Link>
       </section>
       <div
-        className={`grid ${
-          showCommunity ? 'grid-cols-[1fr_1fr_1.7fr]' : 'grid-cols-[1fr_1fr]'
-        } gap-[30px] pt-[39px] px-0 pb-[53px] max-[800px]:grid-cols-2 max-[800px]:py-[31px] max-[800px]:px-0 max-[800px]:gap-x-[16px] max-[800px]:gap-y-[28px]`}
+        className="grid grid-cols-[1fr_1fr_1.7fr] gap-[30px] pt-[39px] px-0 pb-[53px] max-[800px]:grid-cols-2 max-[800px]:py-[31px] max-[800px]:px-0 max-[800px]:gap-x-[16px] max-[800px]:gap-y-[28px]"
       >
         <div className="grid content-start gap-[11px]">
           <p className="text-[10px] uppercase tracking-[.1em] font-bold text-[#aaa] m-0 mb-[5px]">
@@ -92,34 +83,32 @@ export function SiteFooter() {
             Shipping & returns
           </Link>
         </div>
-        {showCommunity && (
-          <div className="grid content-start gap-[11px] max-[800px]:col-[1/-1] max-[800px]:mt-[10px]">
-            <p className="text-[10px] uppercase tracking-[.1em] font-bold text-[#aaa] m-0 mb-[5px]">
-              Join the community
-            </p>
-            <span className="text-[12px] text-[#bbb] leading-[1.5] max-w-[300px]">
-              New drops, restocks, and early access — first on our WhatsApp group and Instagram.
-            </span>
-            <div className="mt-[8px] flex flex-wrap gap-[10px]">
-              <a
-                href={WHATSAPP_GROUP_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-[9px] rounded-[8px] bg-accent text-[#111] no-underline py-[11px] px-[15px] text-[11px] font-bold uppercase tracking-[.08em] transition-colors duration-200 hover:bg-[#c9a869] [&_svg]:w-[16px] [&_svg]:h-[16px]"
-              >
-                <WhatsAppIcon /> Join group
-              </a>
-              <a
-                href={INSTAGRAM_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-[9px] rounded-[8px] border border-[#555] text-white no-underline py-[11px] px-[15px] text-[11px] font-bold uppercase tracking-[.08em] transition-colors duration-200 hover:border-white hover:bg-white/5 [&_svg]:w-[16px] [&_svg]:h-[16px]"
-              >
-                <InstagramIcon /> Follow us
-              </a>
-            </div>
+        <div className="grid content-start gap-[11px] max-[800px]:col-[1/-1] max-[800px]:mt-[10px]">
+          <p className="text-[10px] uppercase tracking-[.1em] font-bold text-[#aaa] m-0 mb-[5px]">
+            Join the community
+          </p>
+          <span className="text-[12px] text-[#bbb] leading-[1.5] max-w-[300px]">
+            New drops, restocks, and early access — first on our WhatsApp group and Instagram.
+          </span>
+          <div className="mt-[8px] flex flex-wrap gap-[10px]">
+            <a
+              href={WHATSAPP_GROUP_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-[9px] rounded-[8px] bg-accent text-[#111] no-underline py-[11px] px-[15px] text-[11px] font-bold uppercase tracking-[.08em] transition-colors duration-200 hover:bg-[#c9a869] [&_svg]:w-[16px] [&_svg]:h-[16px]"
+            >
+              <WhatsAppIcon /> Join group
+            </a>
+            <a
+              href={INSTAGRAM_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-[9px] rounded-[8px] border border-[#555] text-white no-underline py-[11px] px-[15px] text-[11px] font-bold uppercase tracking-[.08em] transition-colors duration-200 hover:border-white hover:bg-white/5 [&_svg]:w-[16px] [&_svg]:h-[16px]"
+            >
+              <InstagramIcon /> Follow us
+            </a>
           </div>
-        )}
+        </div>
       </div>
       <div className="pt-[19px] border-t border-[#444] text-[#888] text-[9px] uppercase tracking-[.07em]">
         <span>© 2026 Prime Kicks. All rights reserved.</span>

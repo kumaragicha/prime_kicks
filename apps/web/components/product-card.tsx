@@ -97,7 +97,7 @@ export function ProductCard({
   }
 
   return (
-    <article className="group min-w-0 animate-[enter_0.5s_both] [&:nth-child(2n)]:[animation-delay:0.06s] [&:nth-child(3n)]:[animation-delay:0.12s]">
+    <article className="group flex h-full min-w-0 flex-col animate-[enter_0.5s_both] [&:nth-child(2n)]:[animation-delay:0.06s] [&:nth-child(3n)]:[animation-delay:0.12s]">
       <div className="relative aspect-[1/1.05] overflow-hidden bg-[#e8e6e0] rounded-[15px] shadow-[0_9px_24px_rgba(28,22,16,0.1)] max-[800px]:aspect-[1/1.16]">
         <Link href={`/products/${product.id}`} aria-label={`View ${product.name}`}>
           {product.image ? (
@@ -122,12 +122,12 @@ export function ProductCard({
           Quick view <Arrow />
         </Link>
       </div>
-      <div className="pt-[13px] px-[1px] pb-0">
+      <div className="flex flex-1 flex-col pt-[13px] px-[1px] pb-0">
         <div className="flex justify-between gap-[8px] max-[800px]:block">
           <div>
             <h3
               className={`lowercase [&::first-letter]:uppercase text-[15px] tracking-[-.035em] max-[800px]:text-[14px] ${
-                isHomePage ? 'leading-[14px] h-[28px] overflow-hidden' : 'leading-[1]'
+                isHomePage ? 'leading-[1.15] overflow-hidden' : 'leading-[1]'
               }`}
               style={
                 isHomePage
@@ -164,7 +164,7 @@ export function ProductCard({
             </button>
           ))}
         </div>
-        <div className="grid grid-cols-2 gap-[5px]">
+        <div className="mt-auto grid grid-cols-2 gap-[5px]">
           <button
             className={`relative overflow-hidden h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[0.55rem] font-bold transition-[background-color,color,border-color,transform] duration-300 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border flex justify-center items-center gap-[4px] [&_svg]:w-[15px] ${
               added
