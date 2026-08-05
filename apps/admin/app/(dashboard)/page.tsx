@@ -1,187 +1,235 @@
 'use client';
 
-import { DeleteIcon, EditIcon, IconButton, IconLink } from '@/components/action-controls';
+import { DeleteIcon, IconButton } from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
-import { controlClass, DataTable, Pagination } from '@/components/table-controls';
-import { useDebouncedValue, useDeleteProduct, useProducts, useSizeTypes } from '@/lib/hooks';
-import type { Product } from '@prime-kicks/types';
-import { Button } from '@prime-kicks/ui';
+import { compactCurrency, Panel, StatCard } from '@/components/dashboard-ui';
+import {
+  OrderStatusActions,
+  type OrderStatusAction,
+} from '@/components/order-status-actions';
+import { useAuth } from '@/lib/auth';
+import { useDashboard, useDeleteOrder, useUpdateOrderStatus } from '@/lib/hooks';
+import { useToast } from '@/lib/toast';
+import { type AdminOrderRow, type OrderStatus } from '@prime-kicks/types';
+import { Badge } from '@prime-kicks/ui';
 import { formatCurrency } from '@prime-kicks/utils';
-import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import Link from 'next/link';
-import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
-const columnHelper = createColumnHelper<Product>();
-const PAGE_SIZE = 10;
+const STATUS_COLORS: Record<string, 'neutral' | 'success' | 'warning' | 'danger'> = {
+  PENDING: 'warning',
+  APPROVED_PAYMENT_RECEIVED: 'success',
+  APPROVED_PAYMENT_PENDING: 'neutral',
+  REJECTED: 'danger',
+};
 
-export default function ProductsPage() {
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [sizeTypeId, setSizeTypeId] = useState('');
-  const [productToDelete, setProductToDelete] = useState<Product | null>(null);
-  const [deleteError, setDeleteError] = useState('');
+function StatusBadge({ status }: { status: string }) {
+  return <Badge tone={STATUS_COLORS[status] ?? 'neutral'}>{status}</Badge>;
+}
 
-  const debouncedSearch = useDebouncedValue(search);
-  const { data: sizeTypes } = useSizeTypes();
-  const { data, isLoading, isError, isFetching } = useProducts({
-    page,
-    pageSize: PAGE_SIZE,
-    search: debouncedSearch || undefined,
-    sizeTypeId: sizeTypeId || undefined,
-  });
-  const deleteProduct = useDeleteProduct();
+function timeLabel(iso: string) {
+  return new Date(iso).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+}
 
-  const resetTo =
-    <T,>(setter: (v: T) => void) =>
-    (v: T) => {
-      setter(v);
-      setPage(1);
-    };
+export default function DashboardPage() {
+  const router = useRouter();
+  const { user } = useAuth();
 
-  const columns = useMemo(
-    () => [
-      columnHelper.display({
-        id: 'cover',
-        header: '',
-        cell: (c) => {
-          const src = c.row.original.photoUrls?.[0];
-          return (
-            <div className="h-11 w-11 overflow-hidden rounded-md border border-neutral-200 bg-neutral-100">
-              {src ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={src} alt={c.row.original.name} className="h-full w-full object-cover" />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-[9px] font-medium text-neutral-400">
-                  No image
-                </span>
-              )}
-            </div>
-          );
-        },
-      }),
-      columnHelper.accessor('name', { header: 'Name' }),
-      columnHelper.accessor('brand', { header: 'Brand' }),
-      columnHelper.accessor((row) => row.sizeType?.name ?? '—', {
-        id: 'sizeType',
-        header: 'Size type',
-      }),
-      columnHelper.accessor('totalStock', { header: 'Stock' }),
-      columnHelper.accessor('inhouseCost', {
-        header: 'Cost',
-        cell: (c) => formatCurrency(c.getValue() ?? 0, c.row.original.currency),
-      }),
-      columnHelper.accessor('resellerPrice', {
-        header: 'Reseller',
-        cell: (c) => formatCurrency(c.getValue() ?? 0, c.row.original.currency),
-      }),
-      columnHelper.accessor('customerPrice', {
-        header: 'Customer',
-        cell: (c) => formatCurrency(c.getValue() ?? 0, c.row.original.currency),
-      }),
-      columnHelper.display({
-        id: 'actions',
-        header: () => <div className="text-right">Action</div>,
-        cell: (c) => (
-          <div className="flex justify-end gap-1 items-center">
-            <IconLink
-              href={`/products/${c.row.original.id}/edit`}
-              label={`Edit ${c.row.original.name}`}
-            >
-              <EditIcon />
-            </IconLink>
-            <IconButton
-              label={`Delete ${c.row.original.name}`}
-              tone="danger"
-              onClick={() => setProductToDelete(c.row.original)}
-            >
-              <DeleteIcon />
-            </IconButton>
-          </div>
-        ),
-      }),
-    ],
-    [],
-  );
+  // The dashboard is an ADMIN surface. Resellers land on the catalog instead.
+  useEffect(() => {
+    if (user && user.role !== 'ADMIN') router.replace('/products');
+  }, [user, router]);
 
-  const table = useReactTable({
-    data: data?.data ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
+  const { data, isLoading, isError } = useDashboard();
+  const updateStatus = useUpdateOrderStatus();
+  const deleteOrder = useDeleteOrder();
+  const toast = useToast();
+
+  const [statusChange, setStatusChange] = useState<{
+    order: AdminOrderRow;
+    action: OrderStatusAction;
+  } | null>(null);
+  const [orderToDelete, setOrderToDelete] = useState<AdminOrderRow | null>(null);
+
+  if (user && user.role !== 'ADMIN') return null;
 
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold">Products</h1>
-        <Link href="/products/new" className="w-full sm:w-auto">
-          <Button className="w-full sm:w-auto">+ Add product</Button>
-        </Link>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <p className="text-sm text-neutral-500">
+          {data ? `Today · ${new Date(`${data.today.date}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}` : 'Business at a glance.'}
+        </p>
       </div>
 
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-        <input
-          className={`${controlClass} w-full sm:min-w-56 sm:flex-1`}
-          placeholder="Search name or SKU…"
-          value={search}
-          onChange={(e) => resetTo(setSearch)(e.target.value)}
-        />
-        <select
-          className={`${controlClass} w-full sm:w-auto`}
-          value={sizeTypeId}
-          onChange={(e) => resetTo(setSizeTypeId)(e.target.value)}
-        >
-          <option value="">All size types</option>
-          {sizeTypes?.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {isLoading && <p className="text-neutral-500">Loading…</p>}
-      {isError && <p className="text-red-600">Failed to load. Is the API running on port 4000?</p>}
+      {isError && (
+        <p className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+          Failed to load dashboard. This section is restricted to ADMIN accounts and needs the API
+          running.
+        </p>
+      )}
+      {isLoading && !data && <p className="text-neutral-500">Loading…</p>}
 
       {data && (
-        <>
-          <DataTable
-            table={table}
-            isFetching={isFetching}
-            emptyMessage="No products match your filters."
-          />
+        <div className="flex flex-col gap-6">
+          {/* KPI tiles */}
+          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <StatCard
+              label="Today's orders"
+              value={data.today.count}
+              sub={`${formatCurrency(data.today.totalValue)} value`}
+            />
+            <StatCard
+              label="Today's profit"
+              value={compactCurrency(data.today.profit)}
+              sub="Sold price − inhouse cost"
+              tone="success"
+            />
+            <StatCard
+              label="Pending payment"
+              value={compactCurrency(data.pendingPayment.outstanding)}
+              sub={`${data.pendingPayment.orders} orders · ${data.pendingPayment.customers} customers`}
+              tone="warning"
+              href="/payments"
+            />
+            <StatCard
+              label="All-time revenue"
+              value={compactCurrency(data.totals.revenue)}
+              sub={`${data.totals.orders} orders · ${compactCurrency(data.totals.profit)} profit`}
+            />
+          </div>
 
-          <Pagination
-            page={data.meta.page}
-            totalPages={data.meta.totalPages}
-            total={data.meta.total}
-            onPage={setPage}
-          />
-        </>
+          {/* Today's orders — act without leaving the dashboard */}
+          <Panel
+            title="Today's orders"
+            action={
+              <button
+                type="button"
+                onClick={() => router.push('/orders')}
+                className="text-xs font-medium text-blue-600 hover:underline"
+              >
+                All orders →
+              </button>
+            }
+          >
+            {data.today.orders.length === 0 ? (
+              <p className="py-8 text-center text-sm text-neutral-400">No orders yet today.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] text-sm">
+                  <thead className="border-b border-neutral-200 text-left text-neutral-500">
+                    <tr>
+                      <th className="py-2 pr-3 font-medium">Order</th>
+                      <th className="py-2 pr-3 font-medium">Customer</th>
+                      <th className="py-2 pr-3 font-medium">Status</th>
+                      <th className="py-2 pr-3 font-medium">Items</th>
+                      <th className="py-2 pr-3 font-medium">Total</th>
+                      <th className="py-2 pr-3 font-medium">Time</th>
+                      <th className="py-2 pl-3 text-right font-medium">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.today.orders.map((order) => (
+                      <tr key={order.id} className="border-b border-neutral-100 last:border-0">
+                        <td className="py-2 pr-3">
+                          <button
+                            type="button"
+                            className="cursor-pointer text-blue-600 hover:underline"
+                            onClick={() => router.push(`/orders/${order.id}`)}
+                          >
+                            {order.orderNumber}
+                          </button>
+                        </td>
+                        <td className="py-2 pr-3">{order.userName}</td>
+                        <td className="py-2 pr-3">
+                          <StatusBadge status={order.status} />
+                        </td>
+                        <td className="py-2 pr-3">{order.itemsCount}</td>
+                        <td className="py-2 pr-3">
+                          {formatCurrency(order.total, order.currency)}
+                        </td>
+                        <td className="py-2 pr-3 text-neutral-500">{timeLabel(order.createdAt)}</td>
+                        <td className="py-2 pl-3">
+                          <div className="flex items-center justify-end gap-1">
+                            <OrderStatusActions
+                              current={order.status as OrderStatus}
+                              disabled={updateStatus.isPending}
+                              onSelect={(action) => setStatusChange({ order, action })}
+                            />
+                            <IconButton
+                              label="Delete"
+                              tone="danger"
+                              onClick={() => setOrderToDelete(order)}
+                            >
+                              <DeleteIcon />
+                            </IconButton>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        </div>
       )}
 
+      {/* Status change confirmation */}
       <ConfirmDialog
-        open={productToDelete !== null}
-        title="Delete product?"
+        open={statusChange !== null}
+        title="Change order status?"
         description={
-          productToDelete
-            ? `“${productToDelete.name}” will be removed from your store. Past orders that include it stay intact.`
+          statusChange
+            ? `"${statusChange.order.orderNumber}" — this will ${statusChange.action.effect}.`
             : ''
         }
-        error={deleteError}
-        isConfirming={deleteProduct.isPending}
+        error={updateStatus.error instanceof Error ? updateStatus.error.message : undefined}
+        isConfirming={updateStatus.isPending}
+        confirmLabel="Confirm"
+        confirmPendingLabel="Updating…"
+        confirmTone={statusChange?.action.tone === 'default' ? 'neutral' : statusChange?.action.tone}
         onClose={() => {
-          setProductToDelete(null);
-          setDeleteError('');
+          setStatusChange(null);
+          updateStatus.reset();
         }}
         onConfirm={() => {
-          if (productToDelete) {
-            setDeleteError('');
-            deleteProduct.mutate(productToDelete.id, {
-              onSuccess: () => setProductToDelete(null),
-              onError: (e) =>
-                setDeleteError(e instanceof Error ? e.message : 'Could not delete this product.'),
-            });
-          }
+          if (!statusChange) return;
+          updateStatus.mutate(
+            { id: statusChange.order.id, status: statusChange.action.status },
+            {
+              onSuccess: () => setStatusChange(null),
+            },
+          );
+        }}
+      />
+
+      {/* Delete confirmation */}
+      <ConfirmDialog
+        open={orderToDelete !== null}
+        title="Delete order?"
+        description={
+          orderToDelete
+            ? `"${orderToDelete.orderNumber}" will be permanently deleted. This cannot be undone.`
+            : ''
+        }
+        error={deleteOrder.error instanceof Error ? deleteOrder.error.message : undefined}
+        isConfirming={deleteOrder.isPending}
+        confirmLabel="Delete"
+        confirmPendingLabel="Deleting…"
+        confirmTone="danger"
+        onClose={() => {
+          setOrderToDelete(null);
+          deleteOrder.reset();
+        }}
+        onConfirm={() => {
+          if (!orderToDelete) return;
+          deleteOrder.mutate(orderToDelete.id, {
+            onSuccess: () => {
+              toast.success('Order deleted.');
+              setOrderToDelete(null);
+            },
+          });
         }}
       />
     </div>

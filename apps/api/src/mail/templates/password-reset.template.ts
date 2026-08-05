@@ -54,12 +54,7 @@ export function buildPasswordResetEmail(params: {
             <a href="${resetUrl}" style="display:inline-block;background:${ink};color:#ffffff;text-decoration:none;font-size:11px;font-weight:bold;letter-spacing:.1em;text-transform:uppercase;padding:15px 22px;">Reset password &nbsp;&rarr;</a>
           </td></tr>
 
-          <tr><td style="padding:18px 44px 0;">
-            <p style="margin:0;font-size:12px;line-height:1.6;color:${muted};">Or paste this link into your browser:</p>
-            <p style="margin:6px 0 0;font-size:12px;line-height:1.6;word-break:break-all;"><a href="${resetUrl}" style="color:${accent};">${resetUrl}</a></p>
-          </td></tr>
-
-          <tr><td style="padding:16px 44px 34px;">
+          <tr><td style="padding:18px 44px 34px;">
             <p style="margin:0;font-size:12px;line-height:1.6;color:${muted};">This link expires in ${expiresMinutes} minutes and can be used once. If you didn't request a reset, you can safely ignore this email — your password won't change.</p>
           </td></tr>
 

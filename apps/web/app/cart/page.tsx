@@ -54,7 +54,7 @@ export default function CartPage() {
 
   function notify(text: string) {
     setToast(text);
-    window.setTimeout(() => setToast(''), 2800);
+    window.setTimeout(() => setToast(''), 4800);
   }
 
   const load = useCallback(async () => {

@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { buildCreatedAtRange } from '../common/date-range.util';
 import { PrismaService } from '../prisma/prisma.service';
 import type { CreateAuditLogDto } from './dto/create-audit-log.dto';
 import type { ListAuditLogsDto } from './dto/list-audit-logs.dto';
@@ -52,12 +53,10 @@ export class AuditLogService {
     if (query.referenceNumber) {
       where.referenceNumber = { contains: query.referenceNumber, mode: 'insensitive' };
     }
-    if (query.from || query.to) {
-      where.createdAt = {
-        ...(query.from ? { gte: new Date(query.from) } : {}),
-        ...(query.to ? { lte: new Date(query.to) } : {}),
-      };
-    }
+    // A bare "YYYY-MM-DD" resolves to the IST start/end of that day; full
+    // datetime strings are honoured as-is. See buildCreatedAtRange.
+    const createdAtRange = buildCreatedAtRange(query.from, query.to);
+    if (createdAtRange) where.createdAt = createdAtRange;
 
     const [data, total] = await Promise.all([
       this.prisma.auditLog.findMany({

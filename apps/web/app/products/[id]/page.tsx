@@ -87,7 +87,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
     const timer = setTimeout(() => {
       setMessageVisible(false);
       setTimeout(() => setMessage(''), 300);
-    }, 2200);
+    }, 4200);
     return () => clearTimeout(timer);
   }, [message]);
 

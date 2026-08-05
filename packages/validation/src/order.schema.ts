@@ -64,6 +64,10 @@ export const orderQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(100).default(20),
   search: z.string().optional(),
   status: orderStatusSchema.optional(),
+  // Inclusive created-at range as IST calendar days (YYYY-MM-DD). endDate
+  // covers the whole day. Resolved to UTC instants in the service layer.
+  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   sort: z.enum(['newest', 'oldest']).default('newest'),
 });
 
