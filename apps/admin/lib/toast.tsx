@@ -25,7 +25,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     (message: string, variant: ToastVariant) => {
       const id = nextId.current++;
       setToasts((current) => [...current, { id, message, variant }]);
-      window.setTimeout(() => dismiss(id), 3500);
+      window.setTimeout(() => dismiss(id), 5500);
     },
     [dismiss],
   );

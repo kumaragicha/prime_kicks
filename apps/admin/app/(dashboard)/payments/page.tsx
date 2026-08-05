@@ -16,9 +16,19 @@ export default function PaymentsPage() {
   const toast = useToast();
   const [toSettle, setToSettle] = useState<PaymentPendingUser | null>(null);
 
+  const totalPending = data?.reduce((sum, u) => sum + u.totalPending, 0) ?? 0;
+
   return (
     <div>
-      <h1 className="mb-2 text-2xl font-bold">Payment Pending</h1>
+      <div className="mb-2 flex flex-wrap items-start justify-between gap-4">
+        <h1 className="text-2xl font-bold">Payment Pending</h1>
+        {data && data.length > 0 && (
+          <div className="text-right">
+            <p className="text-xs uppercase tracking-wide text-neutral-500">Total pending</p>
+            <p className="text-2xl font-bold text-neutral-900">{formatCurrency(totalPending)}</p>
+          </div>
+        )}
+      </div>
       <p className="mb-6 text-sm text-neutral-500">
         Customers with approved orders awaiting payment (dispatched on credit). Open a customer to
         see their orders, or settle everything at once.

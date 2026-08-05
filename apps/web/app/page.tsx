@@ -44,7 +44,7 @@ export default function HomePage() {
     const timer = setTimeout(() => {
       setToastVisible(false);
       setTimeout(() => setToast(''), 250);
-    }, 2200);
+    }, 4200);
     return () => clearTimeout(timer);
   }, [toast]);
 

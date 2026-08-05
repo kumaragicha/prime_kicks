@@ -74,7 +74,13 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
         </div>
 
         <nav className="flex flex-1 flex-col gap-1 text-sm">
-          <Link className={linkClass('/')} href="/" onClick={onClose}>
+          {user?.role === 'ADMIN' && (
+            <Link className={linkClass('/')} href="/" onClick={onClose}>
+              Dashboard
+            </Link>
+          )}
+
+          <Link className={linkClass('/products')} href="/products" onClick={onClose}>
             Products
           </Link>
 
@@ -94,6 +100,10 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
 
               <Link className={linkClass('/payments')} href="/payments" onClick={onClose}>
                 Payment Pending
+              </Link>
+
+              <Link className={linkClass('/analytics')} href="/analytics" onClick={onClose}>
+                Analytics
               </Link>
 
               <Link className={linkClass('/audit-logs')} href="/audit-logs" onClick={onClose}>

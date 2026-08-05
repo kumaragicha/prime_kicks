@@ -61,11 +61,8 @@ export class CartService {
       const existing = await tx.cartItem.findUnique({ where: { cartId_variantId: { cartId: cart.id, variantId: variant.id } } });
       const nextQuantity = (existing?.quantity ?? 0) + quantity;
       if (nextQuantity > variant.stock) {
-        const remaining = variant.stock - (existing?.quantity ?? 0);
         throw new BadRequestException(
-          remaining > 0
-            ? `You already have ${existing?.quantity ?? 0} in your cart and only ${remaining} more ${remaining === 1 ? 'is' : 'are'} available in this size.`
-            : `You already have all ${variant.stock} available in this size in your cart.`,
+          "You've reached the maximum quantity available for this size.",
         );
       }
       await tx.cartItem.upsert({ where: { cartId_variantId: { cartId: cart.id, variantId: variant.id } }, create: { cartId: cart.id, productId: input.productId, variantId: variant.id, quantity }, update: { quantity: nextQuantity } });

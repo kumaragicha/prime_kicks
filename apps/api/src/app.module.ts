@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { AddressModule } from './address/address.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import { AuditLogModule } from './audit-log/audit-log.module';
 import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
@@ -34,6 +35,7 @@ import { UsersModule } from './users/users.module';
     OrdersModule,
     UploadsModule,
     AddressModule,
+    AnalyticsModule,
   ],
   controllers: [HealthController],
   providers: [

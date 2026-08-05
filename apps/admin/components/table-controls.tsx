@@ -4,7 +4,13 @@ import { Button } from '@prime-kicks/ui';
 import { flexRender, type Table as TanstackTable } from '@tanstack/react-table';
 
 export const controlClass =
-  'rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm focus:border-neutral-900 focus:outline-none';
+  'rounded-lg border border-neutral-300 bg-white px-3.5 py-2.5 text-sm text-neutral-800 shadow-sm transition-colors placeholder:text-neutral-400 hover:border-neutral-400 focus:border-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-900/10';
+
+/**
+ * Select variant of {@link controlClass}: native chevron removed and replaced
+ * with a consistent SVG caret, with room on the right so text never overlaps.
+ */
+export const selectClass = `${controlClass} cursor-pointer appearance-none bg-no-repeat pr-9 bg-[right_0.7rem_center] bg-[length:0.85rem] bg-[url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20fill='none'%20viewBox='0%200%2024%2024'%20stroke='%23737373'%20stroke-width='2.5'%3E%3Cpath%20stroke-linecap='round'%20stroke-linejoin='round'%20d='m6%209%206%206%206-6'/%3E%3C/svg%3E")]`;
 
 /**
  * The shared admin data-table shell (header + rows + empty state), dimmed while
