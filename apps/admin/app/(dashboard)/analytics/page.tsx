@@ -63,17 +63,6 @@ export default function AnalyticsPage() {
     [data, granularity],
   );
 
-  if (user && user.role !== 'ADMIN') return null;
-
-  const cur = data?.period.current;
-  const prev = data?.period.previous;
-  const aov = (p?: { orders: number; revenue: number }) =>
-    p && p.orders > 0 ? p.revenue / p.orders : 0;
-
-  const scopedProduct = data?.sizesByProduct.find((p) => p.productId === sizeProduct);
-  const sizeRows = scopedProduct ? scopedProduct.sizes : (data?.sizes ?? []);
-  const agingTotal = data?.receivablesAging.reduce((s, a) => s + a.amount, 0) ?? 0;
-
   // Collapse the per-size low-stock rows into one row per product, so a product
   // low on several sizes shows once with all its affected sizes as badges.
   const lowByProduct = useMemo(() => {
@@ -93,6 +82,17 @@ export default function AnalyticsPage() {
     }
     return [...map.values()];
   }, [data]);
+
+  if (user && user.role !== 'ADMIN') return null;
+
+  const cur = data?.period.current;
+  const prev = data?.period.previous;
+  const aov = (p?: { orders: number; revenue: number }) =>
+    p && p.orders > 0 ? p.revenue / p.orders : 0;
+
+  const scopedProduct = data?.sizesByProduct.find((p) => p.productId === sizeProduct);
+  const sizeRows = scopedProduct ? scopedProduct.sizes : (data?.sizes ?? []);
+  const agingTotal = data?.receivablesAging.reduce((s, a) => s + a.amount, 0) ?? 0;
 
   return (
     <div>
