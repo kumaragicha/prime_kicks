@@ -191,7 +191,60 @@ export type OrderListParams = {
   pageSize?: number;
   search?: string;
   status?: string;
+  startDate?: string;
+  endDate?: string;
   sort?: 'newest' | 'oldest';
+};
+
+/** Lean payload backing the admin dashboard home. */
+export type DashboardData = {
+  today: {
+    date: string;
+    count: number;
+    totalValue: number;
+    profit: number;
+    orders: AdminOrderRow[];
+  };
+  totals: { orders: number; revenue: number; profit: number };
+  pendingPayment: { customers: number; orders: number; outstanding: number };
+};
+
+/** Rich payload backing the Analytics page. */
+export type InsightsData = {
+  rangeDays: number;
+  period: {
+    current: { orders: number; revenue: number; profit: number };
+    previous: { orders: number; revenue: number; profit: number };
+  };
+  customers: { active: number; new: number; returning: number; repeatRate: number };
+  trend: Array<{ date: string; orders: number; revenue: number }>;
+  topProducts: Array<{
+    productId: string;
+    title: string;
+    sku: string;
+    brand: string;
+    units: number;
+    revenue: number;
+  }>;
+  topBrands: Array<{ brand: string; units: number; revenue: number }>;
+  profitByBrand: Array<{ brand: string; profit: number; revenue: number }>;
+  sizes: Array<{ sizeLabel: string; units: number }>;
+  sizesByProduct: Array<{
+    productId: string;
+    title: string;
+    units: number;
+    sizes: Array<{ sizeLabel: string; units: number }>;
+  }>;
+  locations: Array<{ city: string; state: string; orders: number; revenue: number }>;
+  channel: Array<{ type: string; orders: number; revenue: number }>;
+  topCustomers: Array<{ userId: string; name: string; orders: number; spend: number }>;
+  receivablesAging: Array<{ bucket: string; label: string; orders: number; amount: number }>;
+  stock: {
+    outOfStockCount: number;
+    lowStockCount: number;
+    low: Array<{ productId: string; title: string; brand: string; sizeLabel: string; stock: number }>;
+    dead: Array<{ productId: string; title: string; brand: string; stock: number }>;
+  };
 };
 
 /** One customer's outstanding receivable (approved orders awaiting payment). */
@@ -344,6 +397,8 @@ export const api = {
     request<{ id: string; deleted: boolean }>(`/sizes/${id}`, { method: 'DELETE' }),
 
   // Orders
+  getDashboard: () => request<DashboardData>('/analytics/dashboard'),
+  getInsights: (days: number) => request<InsightsData>(`/analytics/insights?days=${days}`),
   listOrders: (params?: OrderListParams) =>
     request<Paginated<AdminOrderRow>>(`/orders${toQuery(params)}`),
   getOrder: (id: string) => request<Order>(`/orders/${id}`),

@@ -41,6 +41,12 @@ export default function LoginPage() {
     }
   });
 
+  // While the session hydrates (or an authenticated user is being redirected),
+  // show a skeleton instead of flashing the login form.
+  if (isLoading || isAuthenticated) {
+    return <LoginSkeleton />;
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-neutral-50 px-4">
       <Card className="w-full max-w-sm">
@@ -82,6 +88,38 @@ export default function LoginPage() {
               {isSubmitting ? 'Signing in…' : 'Sign in'}
             </Button>
           </form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+const shimmer = 'animate-pulse rounded bg-neutral-200';
+
+/** Placeholder shown while the session resolves, mirroring the login card. */
+function LoginSkeleton() {
+  return (
+    <div
+      className="flex min-h-screen items-center justify-center bg-neutral-50 px-4"
+      aria-hidden="true"
+    >
+      <Card className="w-full max-w-sm">
+        <CardHeader>
+          <div className={`${shimmer} h-6 w-32`} />
+          <div className={`${shimmer} mt-2 h-4 w-56`} />
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1">
+              <div className={`${shimmer} h-4 w-40`} />
+              <div className={`${shimmer} h-10 w-full`} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <div className={`${shimmer} h-4 w-20`} />
+              <div className={`${shimmer} h-10 w-full`} />
+            </div>
+            <div className={`${shimmer} mt-1 h-10 w-full`} />
+          </div>
         </CardContent>
       </Card>
     </div>

@@ -18,6 +18,7 @@ import type {
   UpdateOrderStatusSchema,
 } from '@prime-kicks/validation';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { buildCreatedAtRange } from '../common/date-range.util';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
@@ -318,7 +319,7 @@ export class OrdersService {
   }
 
   async findAll(query: OrderQuerySchema) {
-    const { page, pageSize, search, status, sort } = query;
+    const { page, pageSize, search, status, startDate, endDate, sort } = query;
 
     const where: Record<string, unknown> = {};
     if (status) where['status'] = status;
@@ -328,6 +329,11 @@ export class OrdersService {
         { user: { name: { contains: search, mode: 'insensitive' } } },
       ];
     }
+    // Selected dates are IST calendar days resolved to UTC instants (see
+    // buildCreatedAtRange). An order placed at 02:00 IST on Aug 4 is 20:30 UTC
+    // on Aug 3, so a naive UTC-day filter would drop it from an "Aug 4" range.
+    const createdAtRange = buildCreatedAtRange(startDate, endDate);
+    if (createdAtRange) where['createdAt'] = createdAtRange;
 
     const [data, total] = await Promise.all([
       this.prisma.order.findMany({

@@ -1,6 +1,6 @@
 'use client';
 
-import { controlClass, DataTable, Pagination } from '@/components/table-controls';
+import { controlClass, DataTable, Pagination, selectClass } from '@/components/table-controls';
 import { useAuditLogs, useDebouncedValue } from '@/lib/hooks';
 import {
   AUDIT_EVENTS,
@@ -126,7 +126,7 @@ export default function AuditLogsPage() {
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <select
-          className={`${controlClass} w-full sm:w-auto`}
+          className={`${selectClass} w-full sm:w-auto`}
           value={moduleFilter}
           onChange={(e) => resetTo(setModuleFilter)(e.target.value)}
         >
@@ -138,7 +138,7 @@ export default function AuditLogsPage() {
           ))}
         </select>
         <select
-          className={`${controlClass} w-full sm:w-auto`}
+          className={`${selectClass} w-full sm:w-auto`}
           value={event}
           onChange={(e) => resetTo(setEvent)(e.target.value)}
         >

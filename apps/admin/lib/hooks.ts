@@ -199,6 +199,22 @@ export const useDeleteSize = () => useSizeMutation((id: string) => api.deleteSiz
 
 /* ----------------------------------- Orders ------------------------------------ */
 
+export function useDashboard() {
+  return useQuery({
+    queryKey: ['dashboard'],
+    queryFn: () => api.getDashboard(),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useInsights(days: number) {
+  return useQuery({
+    queryKey: ['insights', days],
+    queryFn: () => api.getInsights(days),
+    placeholderData: (prev) => prev,
+  });
+}
+
 export function useOrders(params?: OrderListParams) {
   return useQuery({
     queryKey: ['orders', params ?? {}],
@@ -233,6 +249,7 @@ export function useUpdateOrderStatus() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['order'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }
@@ -241,7 +258,10 @@ export function useDeleteOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.deleteOrder(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['orders'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
   });
 }
 
@@ -270,6 +290,7 @@ export function useSettlePayment() {
       qc.invalidateQueries({ queryKey: ['payment-pending'] });
       qc.invalidateQueries({ queryKey: ['orders'] });
       qc.invalidateQueries({ queryKey: ['order'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
     },
   });
 }

@@ -2,7 +2,7 @@
 
 import { DeleteIcon, IconButton, Toggle } from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
-import { controlClass, DataTable, Pagination } from '@/components/table-controls';
+import { controlClass, DataTable, Pagination, selectClass } from '@/components/table-controls';
 import { useAuth } from '@/lib/auth';
 import {
   useDebouncedValue,
@@ -147,7 +147,7 @@ export default function UsersPage() {
           onChange={(e) => resetTo(setSearch)(e.target.value)}
         />
         <select
-          className={`${controlClass} w-full sm:w-auto`}
+          className={`${selectClass} w-full sm:w-auto`}
           value={role}
           onChange={(e) => resetTo(setRole)(e.target.value)}
         >
@@ -157,7 +157,7 @@ export default function UsersPage() {
           <option value="CUSTOMER">Customer</option>
         </select>
         <select
-          className={`${controlClass} w-full sm:w-auto`}
+          className={`${selectClass} w-full sm:w-auto`}
           value={status}
           onChange={(e) => resetTo(setStatus)(e.target.value)}
         >

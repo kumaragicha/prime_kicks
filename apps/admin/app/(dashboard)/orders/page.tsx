@@ -3,11 +3,12 @@
 import { DeleteIcon, IconButton } from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CreateOrderForm } from '@/components/create-order-form';
+import { DateRangePicker } from '@/components/date-range-picker';
 import {
   OrderStatusActions,
   type OrderStatusAction,
 } from '@/components/order-status-actions';
-import { controlClass, DataTable, Pagination } from '@/components/table-controls';
+import { controlClass, DataTable, Pagination, selectClass } from '@/components/table-controls';
 import { useDebouncedValue, useDeleteOrder, useOrders, useUpdateOrderStatus } from '@/lib/hooks';
 import { ORDER_STATUS, type AdminOrderRow, type OrderStatus } from '@prime-kicks/types';
 import { Badge } from '@prime-kicks/ui';
@@ -35,6 +36,8 @@ export default function OrdersPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [showCreateOrder, setShowCreateOrder] = useState(false);
   const [orderToDelete, setOrderToDelete] = useState<AdminOrderRow | null>(null);
   const [statusChange, setStatusChange] = useState<{
@@ -48,6 +51,8 @@ export default function OrdersPage() {
     pageSize: PAGE_SIZE,
     search: debouncedSearch || undefined,
     status: status || undefined,
+    startDate: startDate || undefined,
+    endDate: endDate || undefined,
   });
 
   const updateStatus = useUpdateOrderStatus();
@@ -157,7 +162,7 @@ export default function OrdersPage() {
           onChange={(e) => resetTo(setSearch)(e.target.value)}
         />
         <select
-          className={`${controlClass} w-full sm:w-auto`}
+          className={`${selectClass} w-full sm:w-auto`}
           value={status}
           onChange={(e) => resetTo(setStatus)(e.target.value)}
         >
@@ -169,6 +174,16 @@ export default function OrdersPage() {
           <option value={ORDER_STATUS.APPROVED_PAYMENT_PENDING}>Approved (Payment Pending)</option>
           <option value={ORDER_STATUS.REJECTED}>Rejected</option>
         </select>
+
+        <DateRangePicker
+          start={startDate}
+          end={endDate}
+          onChange={({ start, end }) => {
+            setStartDate(start);
+            setEndDate(end);
+            setPage(1);
+          }}
+        />
       </div>
 
       {isLoading && <p className="text-neutral-500">Loading…</p>}
