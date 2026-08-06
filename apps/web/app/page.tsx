@@ -1,215 +1,24 @@
-'use client';
+import type { HeroSlide } from '@/lib/api';
+import { HomeClient } from './home-client';
 
-import { Announcement } from '@/components/announcement';
-import { FilterDrawer } from '@/components/filter-drawer';
-import { Icon } from '@/components/icon';
-import { LoginModal } from '@/components/login-modal';
-import { ProductCard, toStoreProduct, type StoreProduct } from '@/components/product-card';
-import { SiteFooter } from '@/components/site-footer';
-import { SiteHeader } from '@/components/site-header';
-import { Toast } from '@/components/toast';
-import { ApiError, api } from '@/lib/api';
-import { notifyStore, useAuthCart, useInfiniteProducts } from '@/lib/hooks';
-import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
 
-export default function HomePage() {
-  const { data, isLoading, isError, refetch } = useInfiniteProducts();
-  const { user, refresh } = useAuthCart();
-  const router = useRouter();
-  const [toast, setToast] = useState('');
-  const [toastVisible, setToastVisible] = useState(false);
-  const [loginOpen, setLoginOpen] = useState(false);
-  const [pendingAdd, setPendingAdd] = useState<{
-    product: StoreProduct;
-    variantId: string;
-    action: 'cart' | 'book';
-  } | null>(null);
-  const products = useMemo<StoreProduct[]>(
-    () => data?.pages.flatMap((page) => page.data.map(toStoreProduct)) ?? [],
-    [data],
-  );
-
-  useEffect(() => {
-    if (window.localStorage.getItem('prime-kicks-open-login') === 'true') {
-      window.localStorage.removeItem('prime-kicks-open-login');
-      setLoginOpen(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!toast) return;
-    setToastVisible(true);
-    const timer = setTimeout(() => {
-      setToastVisible(false);
-      setTimeout(() => setToast(''), 250);
-    }, 4200);
-    return () => clearTimeout(timer);
-  }, [toast]);
-
-  // Returns true only when the item was actually added, so the card's
-  // confirmation animation reflects reality (not the login/redirect paths).
-  async function addToCart(
-    product: StoreProduct,
-    variantId: string,
-    action: 'cart' | 'book',
-  ): Promise<boolean> {
-    if (!user) {
-      setPendingAdd({ product, variantId, action });
-      setLoginOpen(true);
-      return false;
-    }
-    try {
-      await api.addToCart(product.id, variantId);
-      notifyStore();
-      if (action === 'book') {
-        router.push('/cart');
-        return true;
-      }
-      setToast(`${product.name} added to your bag`);
-      return true;
-    } catch (error) {
-      setToast(error instanceof ApiError ? error.message : "We couldn't add this pair. Please try again.");
-      return false;
-    }
+/**
+ * Fetch the hero-carousel slides on the server so the banner image and copy
+ * ship in the first HTML the visitor sees. Never throws — a failed/absent API
+ * just yields the static fallback hero on the client.
+ */
+async function fetchHeroSlides(): Promise<HeroSlide[]> {
+  try {
+    const res = await fetch(`${API_URL}/hero`, { cache: 'no-store' });
+    if (!res.ok) return [];
+    return (await res.json()) as HeroSlide[];
+  } catch {
+    return [];
   }
-
-  return (
-    <main>
-      <Announcement />
-      <SiteHeader />
-
-      <section
-        className="relative min-h-[492px] py-[82px] px-[7vw] overflow-hidden bg-[#d9d7d0] hero-bg bg-[center_42%] bg-cover text-white isolate after:content-[''] after:absolute after:inset-0 after:bg-[linear-gradient(90deg,rgba(0,0,0,0.68),rgba(0,0,0,0.12)_72%)] after:-z-[1] max-[800px]:min-h-[370px] max-[800px]:py-[58px] max-[800px]:px-[21px] max-[800px]:bg-[58%_center]"
-        id="top"
-      >
-        <p className="m-0 mb-[11px] text-[10px] tracking-[.16em] uppercase font-bold">
-          The summer edit — 2026
-        </p>
-        <h1 className="text-[clamp(48px,7.6vw,110px)] tracking-[-.09em] leading-[.82] m-0 mb-[33px] font-[900] max-[800px]:text-[57px]">
-          Step into
-          <br />
-          <em className="font-[Georgia,serif] font-normal tracking-[-.1em]">{`what's next.`}</em>
-        </h1>
-        <a
-          className="text-white bg-ink border border-[rgba(255,255,255,0.3)] no-underline uppercase text-[11px] font-bold tracking-[.09em] py-[15px] px-[17px] inline-flex gap-[22px] items-center transition-[transform,background] duration-200 hover:translate-x-[5px] hover:bg-[#31302d] [&_svg]:w-[16px] [&_svg]:h-[16px]"
-          href="/search"
-        >
-          Shop new arrivals <Icon name="arrow" />
-        </a>
-        <div className="hero-orb" />
-      </section>
-
-      <section
-        className="pt-[74px] px-[5.25vw] pb-[42px] max-[800px]:pt-[43px] max-[800px]:px-[15px] max-[800px]:pb-[20px]"
-        id="shop"
-      >
-        <div className="flex items-center justify-between gap-[16px] mb-[27px]">
-          <div>
-            <h2 className="text-[38px] tracking-[-.07em] m-0 leading-[.9] max-[800px]:text-[31px]">
-              Fresh drops
-            </h2>
-          </div>
-        </div>
-        <div
-          className="grid grid-cols-4 gap-x-[16px] gap-y-[27px] max-[800px]:grid-cols-2 max-[800px]:gap-x-[10px] max-[800px]:gap-y-[28px] min-[801px]:max-[1100px]:grid-cols-3"
-          id="new"
-        >
-          {products.slice(0, 4).map((product, index) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              onAdd={addToCart}
-              priority={index < 4}
-              isHomePage
-            />
-          ))}
-          {isLoading && Array.from({ length: 4 }, (_, index) => <ProductSkeleton key={index} />)}
-        </div>
-        {isLoading && (
-          <div className="h-[130px] flex items-center justify-center gap-[10px] text-[10px] tracking-[.1em] uppercase text-[#666] max-[800px]:h-[100px]">
-            <i className="w-[15px] h-[15px] border-2 border-[#ccc] border-t-[#111] rounded-full animate-[spin_0.8s_linear_infinite]" />{' '}
-            Loading fresh drops
-          </div>
-        )}
-        {isError && (
-          <div className="text-center text-[13px] text-[#666] pt-[40px] px-0 pb-[70px]">
-            <p>{`We couldn't load the catalogue. Check that the product API is running.`}</p>
-            <button
-              className="border-0 bg-ink text-white py-[11px] px-[14px] mt-[6px] text-[10px] font-bold uppercase tracking-[.08em] inline-flex items-center gap-[12px] [&_svg]:w-[13px]"
-              onClick={() => refetch()}
-            >
-              Try again <Icon name="arrow" />
-            </button>
-          </div>
-        )}
-        {!isLoading && !isError && products.length === 0 && (
-          <p className="text-center text-[13px] text-[#666] pt-[40px] px-0 pb-[70px]">
-            No products are available right now.
-          </p>
-        )}
-        {!isLoading && !isError && products.length > 0 && (
-          <div className="mt-[40px] flex justify-center  ">
-            <Link
-              href="/search"
-              className="text-white bg-ink border border-[rgba(255,255,255,0.3)] no-underline uppercase text-[11px] font-bold tracking-[.09em] py-[11px] px-[15px] inline-flex gap-[22px] items-center transition-[transform,background] duration-200 hover:translate-x-[5px] hover:bg-[#31302d] [&_svg]:w-[16px] [&_svg]:h-[16px]"
-            >
-              View more <Icon name="arrow" />
-            </Link>
-          </div>
-        )}
-      </section>
-      <SiteFooter />
-      <Toast message={toast} visible={toastVisible} />
-      <FilterDrawer />
-      {loginOpen && (
-        <LoginModal
-          onClose={() => {
-            setLoginOpen(false);
-            setPendingAdd(null);
-          }}
-          onSuccess={async () => {
-            if (pendingAdd) {
-              try {
-                await api.addToCart(pendingAdd.product.id, pendingAdd.variantId);
-                notifyStore();
-                if (pendingAdd.action === 'book') {
-                  await refresh();
-                  setPendingAdd(null);
-                  router.push('/cart');
-                  return;
-                }
-                setToast(`${pendingAdd.product.name} added to your bag`);
-              } catch (error) {
-                setToast(
-                  error instanceof ApiError
-                    ? error.message
-                    : "We couldn't add this pair. Please try again.",
-                );
-              }
-              setPendingAdd(null);
-            } else setToast('Welcome back.');
-            await refresh();
-            notifyStore();
-          }}
-        />
-      )}
-    </main>
-  );
 }
 
-function ProductSkeleton() {
-  return (
-    <div className="min-w-0" aria-hidden="true">
-      <div className="bg-[linear-gradient(90deg,#e6e4df_20%,#f1f0ec_50%,#e6e4df_80%)] bg-[length:200%_100%] animate-[shimmer_1.2s_linear_infinite] aspect-[1/1.05]" />
-      <p className="bg-[linear-gradient(90deg,#e6e4df_20%,#f1f0ec_50%,#e6e4df_80%)] bg-[length:200%_100%] animate-[shimmer_1.2s_linear_infinite] w-[55%] h-[11px] mt-[14px] mx-0 mb-0" />
-      <p className="bg-[linear-gradient(90deg,#e6e4df_20%,#f1f0ec_50%,#e6e4df_80%)] bg-[length:200%_100%] animate-[shimmer_1.2s_linear_infinite] w-[82%] h-[11px] mt-[8px] mx-0 mb-0" />
-      <span className="bg-[linear-gradient(90deg,#e6e4df_20%,#f1f0ec_50%,#e6e4df_80%)] bg-[length:200%_100%] animate-[shimmer_1.2s_linear_infinite] block w-[45%] h-[10px] mt-[10px]" />
-      <section className="bg-[linear-gradient(90deg,#e6e4df_20%,#f1f0ec_50%,#e6e4df_80%)] bg-[length:200%_100%] animate-[shimmer_1.2s_linear_infinite] grid grid-cols-2 gap-[5px] mt-[13px]">
-        <i className="h-[37px]" />
-        <i className="h-[37px]" />
-      </section>
-    </div>
-  );
+export default async function HomePage() {
+  const heroSlides = await fetchHeroSlides();
+  return <HomeClient initialHeroSlides={heroSlides} />;
 }

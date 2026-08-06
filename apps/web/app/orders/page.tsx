@@ -1,6 +1,7 @@
 'use client';
 
 import { SiteFooter } from '@/components/site-footer';
+import { FadeSection } from '@/components/fade-section';
 import { SiteHeader } from '@/components/site-header';
 import { useCurrentUser, useMyOrders } from '@/lib/hooks';
 import { ORDER_STATUS, type Order } from '@prime-kicks/types';
@@ -122,7 +123,7 @@ export default function OrdersPage() {
         </section>
 
         {/* Orders list */}
-        <div className="max-w-[820px] mx-auto pt-[36px] px-[5.25vw] pb-[80px] max-[700px]:px-[15px]">
+        <FadeSection className="max-w-[820px] mx-auto pt-[36px] px-[5.25vw] pb-[80px] max-[700px]:px-[15px]">
           {ordersLoading && (
             <div className="flex items-center gap-[10px] text-[13px] text-[#666]">
               <i className="w-[14px] h-[14px] border-2 border-[#ccc] border-t-[#111] rounded-full animate-[spin_0.8s_linear_infinite] inline-block" />
@@ -143,14 +144,14 @@ export default function OrdersPage() {
                 </p>
                 <Link
                   href="/"
-                  className="inline-flex items-center gap-[12px] px-[15px] py-[13px] bg-ink text-white no-underline text-[10px] uppercase font-bold tracking-[.07em]"
+                  className="inline-flex items-center gap-[12px] px-[15px] py-[13px] bg-ink text-white rounded-[8px] no-underline text-[10px] uppercase font-bold tracking-[.07em]"
                 >
                   Start shopping
                 </Link>
               </div>
             )
           )}
-        </div>
+        </FadeSection>
       </main>
       <SiteFooter />
     </>

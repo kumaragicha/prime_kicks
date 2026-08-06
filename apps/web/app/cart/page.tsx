@@ -303,7 +303,7 @@ export default function CartPage() {
             </h1>
             {cart?.items.length === 0 && (
               <Link
-                className="inline-flex items-center gap-[15px] bg-ink text-white px-[15px] py-[13px] no-underline uppercase tracking-[.08em] text-[10px] font-bold [&_svg]:w-[14px]"
+                className="inline-flex items-center gap-[15px] bg-ink text-white rounded-[8px] px-[15px] py-[13px] no-underline uppercase tracking-[.08em] text-[10px] font-bold [&_svg]:w-[14px]"
                 href="/"
               >
                 Continue shopping <Icon name="arrow" />
@@ -323,7 +323,7 @@ export default function CartPage() {
             <div className="min-h-[280px] grid place-content-center justify-items-center gap-[18px] text-center text-[#666] text-[13px]">
               <p>Your bag is waiting for a pair.</p>
               <Link
-                className="inline-flex items-center gap-[15px] bg-ink text-white px-[15px] py-[13px] no-underline uppercase tracking-[.08em] text-[10px] font-bold [&_svg]:w-[14px]"
+                className="inline-flex items-center gap-[15px] bg-ink text-white rounded-[8px] px-[15px] py-[13px] no-underline uppercase tracking-[.08em] text-[10px] font-bold [&_svg]:w-[14px]"
                 href="/"
               >
                 Explore new arrivals <Icon name="arrow" />

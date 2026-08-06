@@ -15,6 +15,7 @@ import { useEffect, useState } from 'react';
 import {
   api,
   type AuditLogListParams,
+  type HeroSlideInput,
   type OrderListParams,
   type ProductListParams,
   type UserListParams,
@@ -59,15 +60,11 @@ export const useProductTypes = () =>
   useQuery({ queryKey: ['product-types'], queryFn: api.listProductTypes });
 export const useCategories = () =>
   useQuery({ queryKey: ['categories'], queryFn: api.listCategories });
+export const useTags = () => useQuery({ queryKey: ['tags'], queryFn: api.listTags });
 
-export function useMasterMutations(resource: 'brands' | 'product-types' | 'categories') {
+export function useMasterMutations(resource: 'brands' | 'product-types' | 'categories' | 'tags') {
   const qc = useQueryClient();
-  const key =
-    resource === 'brands'
-      ? ['brands']
-      : resource === 'product-types'
-        ? ['product-types']
-        : ['categories'];
+  const key = [resource];
   const refresh = () => qc.invalidateQueries({ queryKey: key });
   return {
     create: useMutation({
@@ -199,6 +196,21 @@ export const useDeleteSize = () => useSizeMutation((id: string) => api.deleteSiz
 
 /* ----------------------------------- Orders ------------------------------------ */
 
+export function useHeroSlides() {
+  return useQuery({
+    queryKey: ['hero-slides'],
+    queryFn: () => api.getHeroSlides(),
+  });
+}
+
+export function useUpdateHeroSlides() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (slides: HeroSlideInput[]) => api.updateHeroSlides(slides),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['hero-slides'] }),
+  });
+}
+
 export function useDashboard() {
   return useQuery({
     queryKey: ['dashboard'],
@@ -231,13 +243,30 @@ export function useOrder(id: string) {
   });
 }
 
+/**
+ * Invalidate every cache an order mutation can touch. Rejecting/undoing/creating
+ * orders changes product stock, so the product list & detail must refresh too —
+ * plus the dashboard and analytics rollups and outstanding receivables.
+ */
+function invalidateOrderRelated(qc: ReturnType<typeof useQueryClient>) {
+  for (const queryKey of [
+    ['orders'],
+    ['order'],
+    ['products'],
+    ['product'],
+    ['dashboard'],
+    ['insights'],
+    ['payment-pending'],
+  ]) {
+    qc.invalidateQueries({ queryKey });
+  }
+}
+
 export function useCreateOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: CreateOrderSchema) => api.createOrder(body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['orders'] });
-    },
+    onSuccess: () => invalidateOrderRelated(qc),
   });
 }
 
@@ -246,11 +275,7 @@ export function useUpdateOrderStatus() {
   return useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       api.updateOrderStatus(id, status),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['orders'] });
-      qc.invalidateQueries({ queryKey: ['order'] });
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
-    },
+    onSuccess: () => invalidateOrderRelated(qc),
   });
 }
 
@@ -258,10 +283,7 @@ export function useDeleteOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.deleteOrder(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['orders'] });
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
-    },
+    onSuccess: () => invalidateOrderRelated(qc),
   });
 }
 
@@ -286,12 +308,7 @@ export function useSettlePayment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (userId: string) => api.settlePayment(userId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['payment-pending'] });
-      qc.invalidateQueries({ queryKey: ['orders'] });
-      qc.invalidateQueries({ queryKey: ['order'] });
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
-    },
+    onSuccess: () => invalidateOrderRelated(qc),
   });
 }
 
@@ -310,10 +327,7 @@ export function useApproveOrder() {
   return useMutation({
     mutationFn: ({ id, paymentStatus }: { id: string; paymentStatus: PaymentStatus }) =>
       api.approveOrder(id, paymentStatus),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['orders'] });
-      qc.invalidateQueries({ queryKey: ['order'] });
-    },
+    onSuccess: () => invalidateOrderRelated(qc),
   });
 }
 
@@ -321,10 +335,7 @@ export function useRejectOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.rejectOrder(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['orders'] });
-      qc.invalidateQueries({ queryKey: ['order'] });
-    },
+    onSuccess: () => invalidateOrderRelated(qc),
   });
 }
 
@@ -332,9 +343,6 @@ export function useUndoOrder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => api.undoOrder(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['orders'] });
-      qc.invalidateQueries({ queryKey: ['order'] });
-    },
+    onSuccess: () => invalidateOrderRelated(qc),
   });
 }

@@ -27,4 +27,9 @@ export class MastersController {
   @Roles('ADMIN') @Post('categories') createCategory(@Body() body: BodyInput, @CurrentUser() user: AuthenticatedUser) { return this.masters.create('category', body.name?.trim() ?? '', user.email); }
   @Roles('ADMIN') @Patch('categories/:id') updateCategory(@Param('id') id: string, @Body() body: BodyInput, @CurrentUser() user: AuthenticatedUser) { return this.masters.update('category', id, body, user.email); }
   @Roles('ADMIN') @Delete('categories/:id') deleteCategory(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) { return this.masters.remove('category', id, user.email); }
+
+  @Public() @Get('tags') tags(@Query('includeInactive') inactive?: string) { return this.masters.list('tag', inactive === 'true'); }
+  @Roles('ADMIN') @Post('tags') createTag(@Body() body: BodyInput, @CurrentUser() user: AuthenticatedUser) { return this.masters.create('tag', body.name?.trim() ?? '', user.email); }
+  @Roles('ADMIN') @Patch('tags/:id') updateTag(@Param('id') id: string, @Body() body: BodyInput, @CurrentUser() user: AuthenticatedUser) { return this.masters.update('tag', id, body, user.email); }
+  @Roles('ADMIN') @Delete('tags/:id') deleteTag(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) { return this.masters.remove('tag', id, user.email); }
 }

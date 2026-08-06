@@ -1,7 +1,7 @@
 'use client';
 
 import { ImageUploader, VideoUploader } from '@/components/media-uploader';
-import { useBrands, useCategories, useProductTypes, useSizeTypes } from '@/lib/hooks';
+import { useBrands, useCategories, useProductTypes, useSizeTypes, useTags } from '@/lib/hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { formatSize } from '@prime-kicks/types';
 import { Button } from '@prime-kicks/ui';
@@ -30,6 +30,7 @@ const emptyDefaults: DefaultValues<CreateProductSchema> = {
   brandId: '',
   productTypeIds: [],
   categoryIds: [],
+  tagIds: [],
   description: '',
   currency: 'INR',
   photoUrls: [],
@@ -54,6 +55,7 @@ export function ProductForm({
   const { data: brands } = useBrands();
   const { data: productTypes } = useProductTypes();
   const { data: categories } = useCategories();
+  const { data: tags } = useTags();
 
   // Per-size stock, keyed by sizeId — seeded from defaultValues in edit mode.
   const [stockBySize, setStockBySize] = useState<Record<string, number>>(() => {
@@ -131,6 +133,19 @@ export function ProductForm({
           ))}
         </div>
       </Field>
+
+      {tags && tags.length > 0 && (
+        <Field label="Tags" error={errors.tagIds?.message as string | undefined}>
+          <div className="grid grid-cols-2 gap-2">
+            {tags.map((tag) => (
+              <label key={tag.id} className="flex items-center gap-2 text-sm">
+                <input type="checkbox" value={tag.id} {...register('tagIds')} />
+                {tag.name}
+              </label>
+            ))}
+          </div>
+        </Field>
+      )}
 
       <Field label="Description" error={errors.description?.message}>
         <textarea className={fieldClass} rows={3} {...register('description')} />

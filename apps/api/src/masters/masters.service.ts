@@ -3,13 +3,14 @@ import { AuditEvent, AuditModule } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 
-type MasterKind = 'brand' | 'productType' | 'category';
+type MasterKind = 'brand' | 'productType' | 'category' | 'tag';
 
 /** Map a master resource to its audit module. */
 const AUDIT_MODULE_FOR: Record<MasterKind, AuditModule> = {
   brand: AuditModule.BRANDS,
   productType: AuditModule.PRODUCT_TYPES,
   category: AuditModule.CATEGORIES,
+  tag: AuditModule.TAGS,
 };
 
 @Injectable()
@@ -20,14 +21,15 @@ export class MastersService {
   ) {}
   list(kind: MasterKind, includeInactive = false) { return this.model(kind).findMany({ where: includeInactive ? {} : { isActive: true }, orderBy: { name: 'asc' } }); }
 
-  /** Combined facets for the storefront filter drawer: active brands + categories in one call. */
+  /** Combined facets for the storefront filter drawer: active brands + categories + tags. */
   async filters() {
     const select = { id: true, name: true };
-    const [brands, categories] = await Promise.all([
+    const [brands, categories, tags] = await Promise.all([
       this.prisma.brand.findMany({ where: { isActive: true }, orderBy: { name: 'asc' }, select }),
       this.prisma.category.findMany({ where: { isActive: true }, orderBy: { name: 'asc' }, select }),
+      this.prisma.tag.findMany({ where: { isActive: true }, orderBy: { name: 'asc' }, select }),
     ]);
-    return { brands, categories };
+    return { brands, categories, tags };
   }
   async create(kind: MasterKind, name: string, auditedBy?: string) {
     const row = await this.model(kind).create({ data: { name } });

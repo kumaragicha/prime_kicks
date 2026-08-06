@@ -3,7 +3,7 @@
 import type { AuthResponse } from '@prime-kicks/types';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
-import { api } from './api';
+import { api, type HeroSlide } from './api';
 
 const ACCESS_TOKEN_KEY = 'prime-kicks-access-token';
 
@@ -121,6 +121,20 @@ export function useFilters() {
     queryKey: ['filters'],
     queryFn: () => api.getFilters(),
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Homepage hero carousel slides (admin-managed). `initialData`, when provided,
+ * comes from the server component's fetch — so the banner renders from the first
+ * HTML with no loading flash, then this refreshes it in the background.
+ */
+export function useHeroSlides(initialData?: HeroSlide[]) {
+  return useQuery({
+    queryKey: ['hero-slides'],
+    queryFn: () => api.getHeroSlides(),
+    staleTime: 5 * 60 * 1000,
+    initialData,
   });
 }
 

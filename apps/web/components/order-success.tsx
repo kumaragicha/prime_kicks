@@ -4,6 +4,16 @@ import { Icon } from '@/components/icon';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
 
+const WHATSAPP_URL = 'https://api.whatsapp.com/send?phone=918866929090';
+
+function WhatsAppIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.1-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8-.2-.1-.4-.1-.6.1l-.8 1c-.1.2-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.2-.4.2-.4.6-1.3.1-.1 0-.3 0-.4l-.8-1.9c-.2-.5-.4-.4-.6-.4h-.5c-.2 0-.4.1-.7.3-.2.3-.8.8-.8 2s.9 2.3 1 2.4c.1.2 1.7 2.7 4.2 3.7 1.6.6 2.1.7 2.8.6.5-.1 1.5-.6 1.7-1.2.2-.6.2-1 .1-1.2 0-.1-.2-.1-.4-.3Z" />
+    </svg>
+  );
+}
+
 /**
  * Celebratory order-confirmation screen: a parcel pops in, a sneaker drops
  * into it, a tick badge lands, and confetti bursts — all pure CSS/SVG so there
@@ -88,23 +98,42 @@ export function OrderSuccess({ orderNumber }: { orderNumber: string }) {
       {/* Copy */}
       <div className="animate-[rise_0.45s_0.35s_both] motion-reduce:animate-none">
         <p className="m-0 mb-[10px] text-[10px] font-bold uppercase tracking-[.16em] text-accent">
-          Order confirmed
+          Order placed
         </p>
         <h1 className="m-0 mb-[14px] text-[clamp(38px,5.5vw,58px)] leading-[.82] tracking-[-.09em]">
-          Your kicks are <em className="font-[Georgia,serif] font-normal">packed.</em>
+          One last <em className="font-[Georgia,serif] font-normal">step.</em>
         </h1>
         <p className="mb-[4px] text-[13px] text-[#666]">Your order number is</p>
         <p className="text-[18px] font-bold tracking-[-.02em]">{orderNumber}</p>
-        <p className="mx-auto mt-[14px] max-w-[360px] text-[12px] leading-[1.6] text-[#666]">
-          We&apos;re prepping your pair for dispatch — you&apos;ll get a confirmation the moment it
-          ships.
+        <p className="mx-auto mt-[14px] max-w-[400px] text-[13px] leading-[1.7] text-[#555]">
+          Please take a screenshot of this order from{' '}
+          <strong className="text-ink">My orders</strong> and share it with us on{' '}
+          <strong className="text-ink">WhatsApp</strong> to complete your payment. We&apos;ll take
+          care of the rest.
         </p>
 
+        <div className="mt-[26px] flex flex-wrap items-center justify-center gap-[10px]">
+          <a
+            href={WHATSAPP_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex items-center gap-[10px] rounded-[8px] bg-[#25D366] px-[20px] py-[13px] text-[10px] font-bold uppercase tracking-[.08em] text-[#0b141a] no-underline transition-transform duration-200 hover:-translate-y-[2px] [&_svg]:h-[17px] [&_svg]:w-[17px]"
+          >
+            <WhatsAppIcon /> Share order on WhatsApp
+          </a>
+          <Link
+            className="inline-flex items-center gap-[12px] rounded-[8px] border border-ink px-[20px] py-[13px] text-[10px] font-bold uppercase tracking-[.08em] text-ink no-underline transition-colors duration-200 hover:bg-[#f3f1ec] [&_svg]:w-[14px]"
+            href="/orders"
+          >
+            View my orders <Icon name="arrow" />
+          </Link>
+        </div>
+
         <Link
-          className="mt-[26px] inline-flex items-center gap-[15px] rounded-[8px] bg-ink px-[20px] py-[13px] text-[10px] font-bold uppercase tracking-[.08em] text-white no-underline transition-transform duration-200 hover:translate-x-[4px] [&_svg]:w-[14px]"
+          className="mt-[18px] inline-block text-[11px] font-bold uppercase tracking-[.08em] text-[#888] underline underline-offset-4 hover:text-ink"
           href="/"
         >
-          Continue shopping <Icon name="arrow" />
+          Continue shopping
         </Link>
       </div>
     </section>

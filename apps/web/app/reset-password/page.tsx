@@ -79,7 +79,7 @@ function ResetPassword() {
             </p>
             <Link
               href="/"
-              className="inline-flex h-[46px] w-full items-center justify-center bg-ink text-white uppercase text-[10px] font-bold tracking-[.1em]"
+              className="inline-flex h-[46px] w-full items-center justify-center bg-ink text-white rounded-[8px] uppercase text-[10px] font-bold tracking-[.1em]"
             >
               Back to store
             </Link>
@@ -94,7 +94,7 @@ function ResetPassword() {
             <button
               type="button"
               onClick={goSignIn}
-              className="h-[46px] w-full border-0 bg-ink text-white uppercase text-[10px] font-bold tracking-[.1em]"
+              className="h-[46px] w-full border-0 bg-ink text-white rounded-[8px] uppercase text-[10px] font-bold tracking-[.1em]"
             >
               Sign in <span className="ml-[23px] text-[16px]">→</span>
             </button>
@@ -139,7 +139,7 @@ function ResetPassword() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="h-[46px] border-0 bg-ink text-white uppercase text-[10px] font-bold tracking-[.1em] disabled:opacity-60"
+                className="h-[46px] border-0 bg-ink text-white rounded-[8px] uppercase text-[10px] font-bold tracking-[.1em] disabled:opacity-60"
               >
                 {submitting ? 'Updating…' : 'Update password'}{' '}
                 <span className="ml-[23px] text-[16px]">→</span>

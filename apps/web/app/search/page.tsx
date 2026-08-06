@@ -33,15 +33,20 @@ function SearchResults() {
   const query = params.get('q')?.trim() ?? '';
   const brandId = params.get('brandId') ?? '';
   const categoryId = params.get('categoryId') ?? '';
+  const tagId = params.get('tagId') ?? '';
+  const size = params.get('size') ?? '';
 
   const queryParams: Record<string, string> = { pageSize: '48' };
   if (query) queryParams.search = query;
   if (brandId) queryParams.brandId = brandId;
   if (categoryId) queryParams.categoryId = categoryId;
+  if (tagId) queryParams.tagId = tagId;
+  if (size) queryParams.size = size;
   const { data, isLoading, isError, refetch } = useProducts(queryParams);
 
   const brandName = filters?.brands.find((brand) => brand.id === brandId)?.name;
   const categoryName = filters?.categories.find((category) => category.id === categoryId)?.name;
+  const tagName = filters?.tags?.find((tag) => tag.id === tagId)?.name;
 
   function removeParam(key: string) {
     const next = new URLSearchParams(Array.from(params.entries()));
@@ -53,6 +58,8 @@ function SearchResults() {
   const activeFilters = [
     brandName ? { key: 'brandId', label: brandName } : null,
     categoryName ? { key: 'categoryId', label: categoryName } : null,
+    tagName ? { key: 'tagId', label: tagName } : null,
+    size ? { key: 'size', label: `Size ${size}` } : null,
   ].filter((entry): entry is { key: string; label: string } => entry !== null);
 
   return (
@@ -84,8 +91,10 @@ function SearchResults() {
           />
           {brandId && <input type="hidden" name="brandId" value={brandId} />}
           {categoryId && <input type="hidden" name="categoryId" value={categoryId} />}
+          {tagId && <input type="hidden" name="tagId" value={tagId} />}
+          {size && <input type="hidden" name="size" value={size} />}
           <button
-            className="border-0 bg-ink text-white px-[19px] uppercase tracking-[.08em] text-[10px] font-bold"
+            className="border-0 bg-ink text-white rounded-[8px] px-[19px] uppercase tracking-[.08em] text-[10px] font-bold"
             type="submit"
           >
             Search
@@ -119,7 +128,7 @@ function SearchResults() {
           <div className="min-h-[135px] flex items-center justify-center gap-[10px] text-[12px] text-[#666] text-center">
             <p>Search is unavailable right now.</p>
             <button
-              className="border-0 bg-[#111] text-white px-[12px] py-[9px] text-[10px] uppercase font-bold"
+              className="border-0 bg-[#111] text-white rounded-[8px] px-[12px] py-[9px] text-[10px] uppercase font-bold"
               onClick={() => refetch()}
             >
               Try again

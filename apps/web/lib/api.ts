@@ -1,7 +1,20 @@
 import type { AuthResponse, Order, Paginated, Product } from '@prime-kicks/types';
 
 export type FilterOption = { id: string; name: string };
-export type StoreFilters = { brands: FilterOption[]; categories: FilterOption[] };
+export type StoreFilters = {
+  brands: FilterOption[];
+  categories: FilterOption[];
+  tags: FilterOption[];
+};
+
+export type HeroSlide = {
+  id: string;
+  imageUrl: string;
+  title: string;
+  subtitle: string;
+  ctaLabel: string;
+  ctaHref: string;
+};
 
 export type StoreCart = { id: string; items: StoreCartItem[] };
 export type StoreCartItem = {
@@ -211,6 +224,7 @@ export const api = {
   },
   getProduct: (id: string) => optionalAuthRequest<Product>(`/products/${id}`),
   getFilters: () => request<StoreFilters>('/filters'),
+  getHeroSlides: () => request<HeroSlide[]>('/hero'),
   addToCart: (productId: string, variantId: string) =>
     authenticatedRequest('/cart/items', {
       method: 'POST',

@@ -196,6 +196,21 @@ export type OrderListParams = {
   sort?: 'newest' | 'oldest';
 };
 
+/** A hero-carousel slide as edited in the admin. */
+export type HeroSlideInput = {
+  imageUrl: string;
+  title: string;
+  subtitle: string;
+  ctaLabel: string;
+  ctaHref: string;
+};
+
+export type HeroSlide = HeroSlideInput & {
+  id: string;
+  sortOrder: number;
+  isActive: boolean;
+};
+
 /** Lean payload backing the admin dashboard home. */
 export type DashboardData = {
   today: {
@@ -328,13 +343,14 @@ export const api = {
   listProductTypes: () =>
     request<{ id: string; name: string; isActive: boolean }[]>('/product-types'),
   listCategories: () => request<{ id: string; name: string; isActive: boolean }[]>('/categories'),
-  createMaster: (resource: 'brands' | 'product-types' | 'categories', name: string) =>
+  listTags: () => request<{ id: string; name: string; isActive: boolean }[]>('/tags'),
+  createMaster: (resource: 'brands' | 'product-types' | 'categories' | 'tags', name: string) =>
     request<{ id: string; name: string; isActive: boolean }>(`/${resource}`, {
       method: 'POST',
       body: JSON.stringify({ name }),
     }),
   updateMaster: (
-    resource: 'brands' | 'product-types' | 'categories',
+    resource: 'brands' | 'product-types' | 'categories' | 'tags',
     id: string,
     body: { name?: string; isActive?: boolean },
   ) =>
@@ -342,7 +358,7 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
-  deleteMaster: (resource: 'brands' | 'product-types' | 'categories', id: string) =>
+  deleteMaster: (resource: 'brands' | 'product-types' | 'categories' | 'tags', id: string) =>
     request<{ id: string; deleted: boolean }>(`/${resource}/${id}`, { method: 'DELETE' }),
   // Auth
   login: (body: LoginSchema) =>
@@ -360,6 +376,11 @@ export const api = {
     request<Product>(`/products/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteProduct: (id: string) =>
     request<{ id: string; deleted: boolean }>(`/products/${id}`, { method: 'DELETE' }),
+
+  // Hero carousel
+  getHeroSlides: () => request<HeroSlide[]>('/hero/admin'),
+  updateHeroSlides: (slides: HeroSlideInput[]) =>
+    request<HeroSlide[]>('/hero', { method: 'PUT', body: JSON.stringify({ slides }) }),
 
   // Media uploads (→ Cloudflare R2, returns a public CDN URL)
   uploadImage: (file: File) => uploadFile<{ url: string }>('/uploads/image', file),

@@ -13,6 +13,7 @@ export const createProductSchema = z.object({
   brandId: z.string().min(1, 'Pick a brand'),
   productTypeIds: z.array(z.string().min(1)).min(1, 'Pick at least one product type'),
   categoryIds: z.array(z.string().min(1)).min(1, 'Pick at least one category'),
+  tagIds: z.array(z.string().min(1)).default([]),
   description: z.string().default(''),
 
   // Media
@@ -42,7 +43,12 @@ export const productQuerySchema = z.object({
   pageSize: z.coerce.number().int().positive().max(100).default(20),
   brandId: z.string().optional(),
   categoryId: z.string().optional(),
+  tagId: z.string().optional(),
+  /** Filter by tag name (case-insensitive) — used by the curated homepage sections. */
+  tag: z.string().optional(),
   sizeTypeId: z.string().optional(),
+  /** Filter to products that have this size label in stock (e.g. "40"). */
+  size: z.string().optional(),
   search: z.string().optional(),
 });
 

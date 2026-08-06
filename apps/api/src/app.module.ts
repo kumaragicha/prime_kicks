@@ -9,6 +9,7 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { CartModule } from './cart/cart.module';
 import { HealthController } from './health/health.controller';
+import { HeroModule } from './hero/hero.module';
 import { MailModule } from './mail/mail.module';
 import { MastersModule } from './masters/masters.module';
 import { OrdersModule } from './orders/orders.module';
@@ -36,6 +37,7 @@ import { UsersModule } from './users/users.module';
     UploadsModule,
     AddressModule,
     AnalyticsModule,
+    HeroModule,
   ],
   controllers: [HealthController],
   providers: [

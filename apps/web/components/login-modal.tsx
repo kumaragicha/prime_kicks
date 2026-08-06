@@ -250,7 +250,7 @@ export function LoginModal({
             <button
               type="submit"
               disabled={submitting || code.length !== 6}
-              className="h-[46px] border-0 bg-ink text-white uppercase text-[10px] font-bold tracking-[.1em] disabled:opacity-60"
+              className="h-[46px] border-0 bg-ink text-white rounded-[8px] uppercase text-[10px] font-bold tracking-[.1em] disabled:opacity-60"
             >
               {submitting ? 'Verifying…' : 'Verify & create account'}{' '}
               <span className="ml-[23px] text-[16px]">→</span>
@@ -324,7 +324,7 @@ export function LoginModal({
               <button
                 type="button"
                 onClick={backToLogin}
-                className="h-[46px] w-full border-0 bg-ink text-white uppercase text-[10px] font-bold tracking-[.1em]"
+                className="h-[46px] w-full border-0 bg-ink text-white rounded-[8px] uppercase text-[10px] font-bold tracking-[.1em]"
               >
                 Back to sign in <span className="ml-[23px] text-[16px]">→</span>
               </button>
@@ -351,7 +351,7 @@ export function LoginModal({
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="h-[46px] border-0 bg-ink text-white uppercase text-[10px] font-bold tracking-[.1em] disabled:opacity-60"
+                  className="h-[46px] border-0 bg-ink text-white rounded-[8px] uppercase text-[10px] font-bold tracking-[.1em] disabled:opacity-60"
                 >
                   {submitting ? 'Sending…' : 'Send reset link'}{' '}
                   <span className="ml-[23px] text-[16px]">→</span>
@@ -514,7 +514,7 @@ export function LoginModal({
           <button
             type="submit"
             disabled={submitting}
-            className="h-[46px] border-0 bg-ink text-white uppercase text-[10px] font-bold tracking-[.1em] disabled:opacity-60"
+            className="h-[46px] border-0 bg-ink text-white rounded-[8px] uppercase text-[10px] font-bold tracking-[.1em] disabled:opacity-60"
           >
             {submitting
               ? mode === 'login'

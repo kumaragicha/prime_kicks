@@ -13,6 +13,7 @@ const productInclude = {
   brandRef: true,
   productTypes: true,
   categories: true,
+  tags: true,
   sizeType: true,
   variants: {
     include: { size: true },
@@ -75,13 +76,17 @@ export class ProductsService {
   ) {}
 
   async findAll(query: ProductQuerySchema, user?: AuthenticatedUser) {
-    const { page, pageSize, brandId, categoryId, sizeTypeId, search } = query;
+    const { page, pageSize, brandId, categoryId, tagId, tag, sizeTypeId, size, search } = query;
 
     const buildWhere = (withSearch: boolean): Prisma.ProductWhereInput => ({
       deletedAt: null,
       ...(brandId ? { brandId } : {}),
       ...(categoryId ? { categories: { some: { id: categoryId } } } : {}),
+      ...(tagId ? { tags: { some: { id: tagId } } } : {}),
+      ...(tag ? { tags: { some: { name: { equals: tag, mode: 'insensitive' } } } } : {}),
       ...(sizeTypeId ? { sizeTypeId } : {}),
+      // A product matches a size only if it has that size in stock.
+      ...(size ? { variants: { some: { stock: { gt: 0 }, size: { label: size } } } } : {}),
       ...(withSearch && search
         ? {
             OR: [
@@ -149,7 +154,7 @@ export class ProductsService {
   }
 
   async create(input: CreateProductSchema, auditedBy?: string) {
-    const { variants, brandId, productTypeIds, categoryIds, ...data } = input;
+    const { variants, brandId, productTypeIds, categoryIds, tagIds, ...data } = input;
     const brand = await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } });
 
     // Auto-generate SKU if not provided
@@ -164,6 +169,7 @@ export class ProductsService {
           brandId,
           productTypes: { connect: productTypeIds.map((id) => ({ id })) },
           categories: { connect: categoryIds.map((id) => ({ id })) },
+          tags: { connect: (tagIds ?? []).map((id) => ({ id })) },
           variants: {
             create: variants.map((v) => ({
               sizeId: v.sizeId,
@@ -198,7 +204,7 @@ export class ProductsService {
 
   async update(id: string, input: UpdateProductSchema, auditedBy?: string) {
     await this.ensureExists(id);
-    const { variants, brandId, productTypeIds, categoryIds, ...data } = input;
+    const { variants, brandId, productTypeIds, categoryIds, tagIds, ...data } = input;
     const brand = brandId
       ? await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } })
       : null;
@@ -213,15 +219,29 @@ export class ProductsService {
             ? { productTypes: { set: productTypeIds.map((id) => ({ id })) } }
             : {}),
           ...(categoryIds ? { categories: { set: categoryIds.map((id) => ({ id })) } } : {}),
+          ...(tagIds ? { tags: { set: tagIds.map((id) => ({ id })) } } : {}),
         },
       });
 
       if (variants) {
         const keep = variants.map((v) => v.sizeId);
-        // Drop variants for sizes no longer present.
-        await tx.productVariant.deleteMany({
+        // Variants for sizes no longer offered on the product.
+        const stale = await tx.productVariant.findMany({
           where: { productId: id, sizeId: { notIn: keep.length ? keep : ['__none__'] } },
+          select: { id: true, _count: { select: { cartItems: true } } },
         });
+        const deletable = stale.filter((v) => v._count.cartItems === 0).map((v) => v.id);
+        const inCarts = stale.filter((v) => v._count.cartItems > 0).map((v) => v.id);
+        if (deletable.length) {
+          await tx.productVariant.deleteMany({ where: { id: { in: deletable } } });
+        }
+        // A variant still sitting in a customer's cart can't be deleted (the
+        // CartItem FK is Restrict). Zero its stock instead: storefront reads only
+        // expose in-stock sizes, so it disappears from the store while the cart
+        // reference stays valid.
+        if (inCarts.length) {
+          await tx.productVariant.updateMany({ where: { id: { in: inCarts } }, data: { stock: 0 } });
+        }
         // Upsert the provided ones.
         for (const v of variants) {
           await tx.productVariant.upsert({

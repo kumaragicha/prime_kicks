@@ -1,5 +1,6 @@
 'use client';
 
+import { FadeSection } from '@/components/fade-section';
 import { SiteHeader } from '@/components/site-header';
 import { useCurrentUser } from '@/lib/hooks';
 
@@ -61,7 +62,7 @@ export default function ProfilePage() {
         {/* Main content */}
         <div className="max-w-[820px] mx-auto pt-[36px] px-[5.25vw] pb-[100px] max-[700px]:px-[15px]">
           {/* User details — all visible */}
-          <section className="border border-line bg-white p-[28px] rounded-lg max-[700px]:p-[20px]">
+          <FadeSection className="border border-line bg-white p-[28px] rounded-lg max-[700px]:p-[20px]">
             <p className="text-[10px] tracking-[.16em] uppercase font-bold m-0 mb-[16px] text-[#777]">
               Account details
             </p>
@@ -114,7 +115,7 @@ export default function ProfilePage() {
                 </dd>
               </div>
             </dl>
-          </section>
+          </FadeSection>
 
           {/* Sign out at bottom */}
           <button

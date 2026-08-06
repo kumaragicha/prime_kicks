@@ -17,6 +17,7 @@ export interface Product {
   brandId: string | null;
   productTypes: { id: string; name: string; isActive: boolean }[];
   categories: { id: string; name: string; isActive: boolean }[];
+  tags: { id: string; name: string; isActive: boolean }[];
   description: string;
 
   // Media

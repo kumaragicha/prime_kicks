@@ -15,6 +15,7 @@ export type StoreProduct = {
   currency: 'INR';
   image: string;
   color: string;
+  tags: string[];
   sizes: { id: string; label: string }[];
 };
 
@@ -32,6 +33,7 @@ export function toStoreProduct(product: Product): StoreProduct {
     currency: product.currency,
     image: product.photoUrls[0] ?? '',
     color: product.totalStock > 0 ? `${product.totalStock} in stock` : 'Sold out',
+    tags: (product.tags ?? []).filter((tag) => tag.isActive).map((tag) => tag.name),
     sizes: product.variants
       .filter((variant) => variant.stock > 0)
       .map((variant) => ({ id: variant.id, label: variant.size.label })),
@@ -114,6 +116,19 @@ export function ProductCard({
             </div>
           )}
         </Link>
+
+        {product.tags.length > 0 && (
+          <div className="absolute top-[10px] right-[10px] flex flex-col items-end gap-[5px] max-w-[75%] pointer-events-none">
+            {product.tags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full bg-accent text-white text-[9px] font-bold uppercase tracking-[.07em] px-[9px] py-[4px] shadow-[0_3px_10px_rgba(0,0,0,0.18)] max-[800px]:text-[8px] max-[800px]:px-[7px] max-[800px]:py-[3px]"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
+        )}
 
         <Link
           className="absolute bottom-[10px] right-[10px] opacity-0 translate-y-[5px] transition duration-200 bg-white border-0 rounded-full px-[12px] py-[9px] text-[10px] uppercase font-bold flex gap-[6px] items-center shadow-[0_5px_16px_rgba(0,0,0,0.12)] group-hover:opacity-100 group-hover:translate-y-0 [&_svg]:w-[13px] max-[800px]:hidden"

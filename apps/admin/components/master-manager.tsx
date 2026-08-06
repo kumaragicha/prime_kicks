@@ -7,7 +7,7 @@ import { useToast } from '@/lib/toast';
 import { DeleteIcon, EditIcon, IconButton, Toggle } from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 
-type Resource = 'brands' | 'product-types' | 'categories';
+type Resource = 'brands' | 'product-types' | 'categories' | 'tags';
 type Master = { id: string; name: string; isActive: boolean };
 
 export function MasterManager({ title, description, resource, items, loading }: { title: string; description: string; resource: Resource; items?: Master[]; loading: boolean }) {

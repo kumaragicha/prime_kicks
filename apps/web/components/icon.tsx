@@ -68,16 +68,26 @@ const paths: Record<IconName, ReactNode> = {
   ),
 };
 
-export function Icon({ name }: { name: IconName }) {
+export function Icon({
+  name,
+  strokeWidth = 1.8,
+  className,
+}: {
+  name: IconName;
+  /** Line weight. Bump it (e.g. 2.4) for prominent CTA arrows that read too light. */
+  strokeWidth?: number;
+  className?: string;
+}) {
   return (
     <svg
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth="1.8"
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
+      className={className}
     >
       {paths[name]}
     </svg>

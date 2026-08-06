@@ -17,6 +17,7 @@
     "@prime-kicks/utils": "*",
     "@prime-kicks/validation": "*",
     "@tanstack/react-query": "^5.64.1",
+    "framer-motion": "^13.0.0",
     "next": "^15.1.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

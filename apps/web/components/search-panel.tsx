@@ -47,7 +47,7 @@ export function SearchPanel({ onClose, top }: { onClose: () => void; top: number
             aria-label="Search products"
           />
           <button
-            className="border-0 bg-ink text-white h-[36px] py-0 px-[11px] uppercase text-[9px] tracking-[.08em] font-bold flex items-center gap-[9px] [&_svg]:w-[13px] max-[800px]:text-[8px] max-[800px]:px-[9px]"
+            className="border-0 bg-ink text-white rounded-[8px] h-[36px] py-0 px-[11px] uppercase text-[9px] tracking-[.08em] font-bold flex items-center gap-[9px] [&_svg]:w-[13px] max-[800px]:text-[8px] max-[800px]:px-[9px]"
             type="submit"
           >
             Search <Icon name="arrow" />

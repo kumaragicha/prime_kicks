@@ -42,6 +42,7 @@ enum AuditModule {
   BRANDS
   CATEGORIES
   PRODUCT_TYPES
+  TAGS
   AUTH
 }
 
@@ -213,6 +214,7 @@ model Product {
   variants   ProductVariant[]
   productTypes ProductType[]
   categories Category[]
+  tags       Tag[]
 
   orderItems OrderItem[]
   cartItems  CartItem[]
@@ -250,6 +252,18 @@ model ProductType {
 
 /// Customer category master, e.g. Men or Women.
 model Category {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isActive  Boolean  @default(true)
+  products  Product[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// Merchandising tag master, e.g. New Arrivals, Hot Selling or Most Demanded.
+/// A product can carry any number of tags; used to group products for storefront
+/// promotions and admin curation.
+model Tag {
   id        String   @id @default(cuid())
   name      String   @unique
   isActive  Boolean  @default(true)
@@ -359,4 +373,22 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productId])
+}
+
+/// A slide in the storefront homepage hero carousel. Managed from the admin
+/// "Hero Banner" module; the web home renders active slides ordered by sortOrder.
+model HeroSlide {
+  id        String  @id @default(cuid())
+  imageUrl  String
+  title     String  @default("")
+  subtitle  String  @default("")
+  ctaLabel  String  @default("")
+  ctaHref   String  @default("")
+  sortOrder Int     @default(0)
+  isActive  Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
 }

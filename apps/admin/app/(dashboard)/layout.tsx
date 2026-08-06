@@ -90,6 +90,10 @@ function Sidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
                 Masters
               </Link>
 
+              <Link className={linkClass('/hero')} href="/hero" onClick={onClose}>
+                Hero Banner
+              </Link>
+
               <Link className={linkClass('/users')} href="/users" onClick={onClose}>
                 Users
               </Link>

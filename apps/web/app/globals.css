@@ -294,9 +294,57 @@
 
 /* Home hero background: serve the smaller WebP where supported, fall back to
    the JPEG otherwise. The plain `url()` line is the last-resort fallback for
-   engines without image-set(). */
-.hero-bg {
+   engines without image-set(). Lives on its own absolutely-positioned layer so
+   the slow Ken Burns zoom transforms the image only, never the hero content. */
+.hero-media {
+  position: absolute;
+  inset: 0;
+  z-index: -2;
+  background-position: center 42%;
+  background-size: cover;
+  background-repeat: no-repeat;
   background-image: url('/hero.jpg');
   background-image: -webkit-image-set(url('/hero.webp') 1x, url('/hero.jpg') 1x);
   background-image: image-set(url('/hero.webp') type('image/webp'), url('/hero.jpg') type('image/jpeg'));
+  transform-origin: center;
+  will-change: transform;
+  animation: hero-kenburns 22s ease-in-out infinite alternate;
+}
+
+@keyframes hero-kenburns {
+  0% {
+    transform: scale(1.05) translate3d(0, 0, 0);
+  }
+  100% {
+    transform: scale(1.14) translate3d(-2%, -1.5%, 0);
+  }
+}
+
+/* Headline + CTA rise in on load. */
+.hero-rise {
+  opacity: 0;
+  animation: hero-rise 0.75s cubic-bezier(0.2, 0.65, 0.25, 1) forwards;
+}
+
+@keyframes hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Respect users who prefer less motion: hold the image still, show content. */
+@media (prefers-reduced-motion: reduce) {
+  .hero-media {
+    animation: none;
+    transform: scale(1.05);
+  }
+  .hero-rise {
+    opacity: 1;
+    animation: none;
+  }
 }

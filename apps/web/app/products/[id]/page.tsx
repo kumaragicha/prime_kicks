@@ -269,6 +269,20 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
         </div>
 
         <aside className="pt-[21px] animate-[enter_0.5s_0.1s_both] max-[760px]:pt-[30px]">
+          {product.tags.filter((tag) => tag.isActive).length > 0 && (
+            <div className="flex flex-wrap gap-[7px] mb-[15px]">
+              {product.tags
+                .filter((tag) => tag.isActive)
+                .map((tag) => (
+                  <span
+                    key={tag.id}
+                    className="rounded-full bg-accent text-white text-[10px] font-bold uppercase tracking-[.07em] px-[12px] py-[6px] shadow-[0_3px_10px_rgba(0,0,0,0.14)]"
+                  >
+                    {tag.name}
+                  </span>
+                ))}
+            </div>
+          )}
           <h1 className="text-[clamp(37px,4vw,64px)] tracking-[-.085em] leading-[.88] m-0 max-w-[550px] max-[760px]:text-[42px]">
             {product.brand} {product.name}
           </h1>
@@ -334,7 +348,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
               )}
             </button>
             <button
-              className="h-[49px] rounded-[9px] uppercase tracking-[.08em] text-[10px] font-bold transition-[transform,background] duration-200 enabled:hover:-translate-y-[2px] enabled:active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-[.42] bg-ink text-white border-0 flex items-center justify-center gap-[12px] shadow-[0_8px_17px_#17171620] enabled:hover:bg-[#393834] [&_svg]:w-[15px]"
+              className="h-[49px] rounded-[8px] uppercase tracking-[.08em] text-[10px] font-bold transition-[transform,background] duration-200 enabled:hover:-translate-y-[2px] enabled:active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-[.42] bg-ink text-white border-0 flex items-center justify-center gap-[12px] shadow-[0_8px_17px_#17171620] enabled:hover:bg-[#393834] [&_svg]:w-[15px]"
               disabled={!sizes.length || adding}
               onClick={() => addToBag('book')}
             >

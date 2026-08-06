@@ -5,6 +5,9 @@ import { useRouter } from 'next/navigation';
 import { Icon } from '@/components/icon';
 import { useFilters } from '@/lib/hooks';
 
+/** EU shoe sizes offered as filter chips (36–45). */
+const EU_SIZES = Array.from({ length: 10 }, (_, i) => String(36 + i));
+
 function Chip({
   label,
   selected,
@@ -41,12 +44,19 @@ export function FilterDrawer() {
   const [open, setOpen] = useState(false);
   const [brandId, setBrandId] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [tagId, setTagId] = useState('');
+  const [size, setSize] = useState('');
   const [appliedCount, setAppliedCount] = useState(0);
 
   // Reflect already-applied filters on the pill badge.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setAppliedCount((params.get('brandId') ? 1 : 0) + (params.get('categoryId') ? 1 : 0));
+    setAppliedCount(
+      (params.get('brandId') ? 1 : 0) +
+        (params.get('categoryId') ? 1 : 0) +
+        (params.get('tagId') ? 1 : 0) +
+        (params.get('size') ? 1 : 0),
+    );
   }, []);
 
   // Open from other triggers (e.g. the "Fresh drops" header button) via a shared event.
@@ -70,12 +80,16 @@ export function FilterDrawer() {
     const params = new URLSearchParams(window.location.search);
     setBrandId(params.get('brandId') ?? '');
     setCategoryId(params.get('categoryId') ?? '');
+    setTagId(params.get('tagId') ?? '');
+    setSize(params.get('size') ?? '');
     setOpen(true);
   }
 
   function clearAll() {
     setBrandId('');
     setCategoryId('');
+    setTagId('');
+    setSize('');
   }
 
   function apply() {
@@ -84,12 +98,14 @@ export function FilterDrawer() {
     if (existingQuery) params.set('q', existingQuery);
     if (brandId) params.set('brandId', brandId);
     if (categoryId) params.set('categoryId', categoryId);
+    if (tagId) params.set('tagId', tagId);
+    if (size) params.set('size', size);
     const qs = params.toString();
     setOpen(false);
     router.push(`/search${qs ? `?${qs}` : ''}`);
   }
 
-  const selectedCount = (brandId ? 1 : 0) + (categoryId ? 1 : 0);
+  const selectedCount = (brandId ? 1 : 0) + (categoryId ? 1 : 0) + (tagId ? 1 : 0) + (size ? 1 : 0);
 
   return (
     <>
@@ -170,9 +186,53 @@ export function FilterDrawer() {
                 </section>
               )}
 
-              {data && data.brands.length === 0 && data.categories.length === 0 && (
-                <p className="text-[12px] text-[#777]">No filters available right now.</p>
+              {data && data.tags?.length > 0 && (
+                <section>
+                  <p className="text-[10px] uppercase tracking-[.12em] font-bold text-[#777] m-0 mb-[13px]">
+                    Tag
+                  </p>
+                  <div className="flex flex-wrap gap-[8px]">
+                    {data.tags.map((tag) => (
+                      <Chip
+                        key={tag.id}
+                        label={tag.name}
+                        selected={tagId === tag.id}
+                        onClick={() => setTagId(tagId === tag.id ? '' : tag.id)}
+                      />
+                    ))}
+                  </div>
+                </section>
               )}
+
+              <section>
+                <p className="text-[10px] uppercase tracking-[.12em] font-bold text-[#777] m-0 mb-[13px]">
+                  Size (EU)
+                </p>
+                <div className="flex flex-wrap gap-[8px]">
+                  {EU_SIZES.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setSize(size === s ? '' : s)}
+                      aria-pressed={size === s}
+                      className={`grid place-items-center min-w-[46px] h-[42px] rounded-[10px] px-[10px] text-[13px] border transition-colors duration-200 ${
+                        size === s
+                          ? 'bg-accent text-white border-accent font-bold'
+                          : 'bg-transparent border-line text-ink hover:border-ink'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </section>
+
+              {data &&
+                data.brands.length === 0 &&
+                data.categories.length === 0 &&
+                !data.tags?.length && (
+                  <p className="text-[12px] text-[#777]">No filters available right now.</p>
+                )}
             </div>
 
             <div className="border-t border-line px-[24px] py-[18px] flex items-center gap-[12px]">
