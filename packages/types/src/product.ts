@@ -1,3 +1,4 @@
+import type { Dimension } from './dimension';
 import type { Size, SizeType } from './size';
 
 export interface ProductVariant {
@@ -44,6 +45,10 @@ export interface Product {
   sizeTypeId: string;
   sizeType: SizeType;
   variants: ProductVariant[];
+
+  // Physical dimension — optional, at most one per product.
+  dimensionId: string | null;
+  dimension: Dimension | null;
   /** Sum of variant stock, computed by the API for convenience. */
   totalStock: number;
 

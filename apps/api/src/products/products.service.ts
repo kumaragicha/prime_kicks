@@ -15,6 +15,7 @@ const productInclude = {
   categories: true,
   tags: true,
   sizeType: true,
+  dimension: true,
   variants: {
     include: { size: true },
     orderBy: { size: { sortOrder: 'asc' } },

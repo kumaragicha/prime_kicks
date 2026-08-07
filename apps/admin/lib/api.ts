@@ -2,6 +2,7 @@ import type {
   AdminOrderRow,
   AdminUserRow,
   AuthResponse,
+  Dimension,
   Order,
   Paginated,
   PaymentStatus,
@@ -10,11 +11,13 @@ import type {
   SizeType,
 } from '@prime-kicks/types';
 import type {
+  CreateDimensionSchema,
   CreateOrderSchema,
   CreateProductSchema,
   CreateSizeSchema,
   CreateSizeTypeSchema,
   LoginSchema,
+  UpdateDimensionSchema,
   UpdateProductSchema,
   UpdateSizeSchema,
   UpdateSizeTypeSchema,
@@ -298,6 +301,7 @@ export const AUDIT_MODULES = [
   'BRANDS',
   'CATEGORIES',
   'PRODUCT_TYPES',
+  'DIMENSIONS',
   'AUTH',
 ] as const;
 export type AuditModule = (typeof AUDIT_MODULES)[number];
@@ -416,6 +420,16 @@ export const api = {
     request<unknown>(`/sizes/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   deleteSize: (id: string) =>
     request<{ id: string; deleted: boolean }>(`/sizes/${id}`, { method: 'DELETE' }),
+
+  // Dimensions master
+  listDimensions: (includeInactive = false) =>
+    request<Dimension[]>(`/dimensions${includeInactive ? '?includeInactive=true' : ''}`),
+  createDimension: (body: CreateDimensionSchema) =>
+    request<Dimension>('/dimensions', { method: 'POST', body: JSON.stringify(body) }),
+  updateDimension: (id: string, body: UpdateDimensionSchema) =>
+    request<Dimension>(`/dimensions/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteDimension: (id: string) =>
+    request<{ id: string; deleted: boolean }>(`/dimensions/${id}`, { method: 'DELETE' }),
 
   // Orders
   getDashboard: () => request<DashboardData>('/analytics/dashboard'),

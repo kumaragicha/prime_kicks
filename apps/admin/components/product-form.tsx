@@ -1,9 +1,16 @@
 'use client';
 
 import { ImageUploader, VideoUploader } from '@/components/media-uploader';
-import { useBrands, useCategories, useProductTypes, useSizeTypes, useTags } from '@/lib/hooks';
+import {
+  useBrands,
+  useCategories,
+  useDimensions,
+  useProductTypes,
+  useSizeTypes,
+  useTags,
+} from '@/lib/hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { formatSize } from '@prime-kicks/types';
+import { formatDimension, formatSize } from '@prime-kicks/types';
 import { Button } from '@prime-kicks/ui';
 import { createProductSchema, type CreateProductSchema } from '@prime-kicks/validation';
 import { useMemo, useState } from 'react';
@@ -38,6 +45,7 @@ const emptyDefaults: DefaultValues<CreateProductSchema> = {
   releaseYear: null,
   sizeTypeId: '',
   variants: [],
+  dimensionId: null,
 };
 
 export function ProductForm({
@@ -56,6 +64,7 @@ export function ProductForm({
   const { data: productTypes } = useProductTypes();
   const { data: categories } = useCategories();
   const { data: tags } = useTags();
+  const { data: dimensions } = useDimensions();
 
   // Per-size stock, keyed by sizeId — seeded from defaultValues in edit mode.
   const [stockBySize, setStockBySize] = useState<Record<string, number>>(() => {
@@ -94,7 +103,10 @@ export function ProductForm({
     const brandName = brands?.find((b) => b.id === values.brandId)?.name;
     const sku = values.sku?.trim() || generateSku(brandName);
 
-    return onSubmit({ ...values, sku, variants });
+    // A blank dimension select ("") means "no dimension".
+    const dimensionId = values.dimensionId || null;
+
+    return onSubmit({ ...values, sku, variants, dimensionId });
   });
 
   return (
@@ -214,6 +226,18 @@ export function ProductForm({
           </div>
         </div>
       )}
+
+      {/* Dimension — optional, at most one per product. */}
+      <Field label="Dimension" error={errors.dimensionId?.message}>
+        <select className={fieldClass} {...register('dimensionId')}>
+          <option value="">No dimension</option>
+          {dimensions?.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name} · {formatDimension(d)}
+            </option>
+          ))}
+        </select>
+      </Field>
 
       <Field label="In-house cost (₹)" error={errors.inhouseCost?.message}>
         <input

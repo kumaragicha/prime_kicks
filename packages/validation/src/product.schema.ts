@@ -34,6 +34,9 @@ export const createProductSchema = z.object({
   // Sizing
   sizeTypeId: z.string().min(1, 'Pick a size type'),
   variants: z.array(productVariantInputSchema).default([]),
+
+  // Physical dimension — optional, at most one per product.
+  dimensionId: z.string().min(1).nullable().default(null),
 });
 
 export const updateProductSchema = createProductSchema.partial();

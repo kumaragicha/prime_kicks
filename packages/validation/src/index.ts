@@ -1,3 +1,4 @@
+export * from './dimension.schema.js';
 export * from './hero.schema.js';
 export * from './order.schema.js';
 export * from './product.schema.js';

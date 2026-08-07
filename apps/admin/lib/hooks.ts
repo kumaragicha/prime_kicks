@@ -2,10 +2,12 @@
 
 import type { PaymentStatus } from '@prime-kicks/types';
 import type {
+  CreateDimensionSchema,
   CreateOrderSchema,
   CreateProductSchema,
   CreateSizeSchema,
   CreateSizeTypeSchema,
+  UpdateDimensionSchema,
   UpdateProductSchema,
   UpdateSizeSchema,
   UpdateSizeTypeSchema,
@@ -193,6 +195,35 @@ export const useUpdateSize = () =>
   );
 
 export const useDeleteSize = () => useSizeMutation((id: string) => api.deleteSize(id));
+
+/* ------------------------------ Dimensions master ------------------------------ */
+
+export function useDimensions(includeInactive = false) {
+  return useQuery({
+    queryKey: ['dimensions', { includeInactive }],
+    queryFn: () => api.listDimensions(includeInactive),
+  });
+}
+
+export function useDimensionMutations() {
+  const qc = useQueryClient();
+  const refresh = () => qc.invalidateQueries({ queryKey: ['dimensions'] });
+  return {
+    create: useMutation({
+      mutationFn: (body: CreateDimensionSchema) => api.createDimension(body),
+      onSuccess: refresh,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, body }: { id: string; body: UpdateDimensionSchema }) =>
+        api.updateDimension(id, body),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({
+      mutationFn: (id: string) => api.deleteDimension(id),
+      onSuccess: refresh,
+    }),
+  };
+}
 
 /* ----------------------------------- Orders ------------------------------------ */
 

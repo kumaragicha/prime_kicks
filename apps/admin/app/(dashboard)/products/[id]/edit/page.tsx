@@ -33,6 +33,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     customerPrice: product.customerPrice,
     sizeTypeId: product.sizeTypeId,
     variants: product.variants.map((v) => ({ sizeId: v.sizeId, stock: v.stock, sku: v.sku })),
+    dimensionId: product.dimensionId ?? null,
   };
 
   const onSubmit = async (values: CreateProductSchema) => {
