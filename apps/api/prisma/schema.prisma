@@ -20,6 +20,15 @@ enum PaymentStatus {
 }
 
 /// How an admin-created order is classified: a single item (retail-style) or a bulk reseller order.
+/// Lifecycle of an order's shipment with the Shipmozo courier aggregator.
+enum ShipmentStatus {
+  NOT_SHIPPED // no attempt yet
+  PUSHED // order created in the Shipmozo panel
+  ASSIGNED // a courier partner has been assigned (tracking id available)
+  FAILED // last push/assign attempt errored
+  CANCELLED // order was cancelled in the Shipmozo panel (kept in sync on our cancel/delete)
+}
+
 enum OrderType {
   BULK
   SINGLE
@@ -44,7 +53,9 @@ enum AuditModule {
   PRODUCT_TYPES
   TAGS
   DIMENSIONS
+  SHIPMENTS
   AUTH
+  CREDIT_CUSTOMERS
 }
 
 /// The kind of change an audit-log entry records.
@@ -106,6 +117,29 @@ model User {
 
   @@index([role])
   // Backs the admin user list: `where deletedAt IS NULL order by createdAt desc`.
+  @@index([deletedAt, createdAt])
+}
+
+/// A non-login account for admin-created bulk orders taken on credit (e.g. a
+/// customer who orders in bulk over the phone). Unlike User there is no password
+/// or auth — it exists purely so bulk orders and their outstanding payments can
+/// be tracked against a named customer.
+model CreditCustomer {
+  id       String  @id @default(cuid())
+  name     String
+  mobileNo String
+  email    String?
+  city     String?
+  state    String?
+  notes    String? // free-form admin notes
+
+  orders Order[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete
+
+  // Backs the admin credit-customer list: active rows, newest first.
   @@index([deletedAt, createdAt])
 }
 
@@ -284,13 +318,65 @@ model Tag {
 model Dimension {
   id        String    @id @default(cuid())
   name      String    @unique
+  weight    Float     @default(0.5) // kg — used as the shipment weight when this dimension is mapped to a product
   length    Float // cm
   width     Float // cm
   height    Float // cm
   isActive  Boolean   @default(true)
   products  Product[]
+
+  // Combination relations: a dimension can be the resulting "box" of some
+  // combinations and/or appear as a recipe item in others.
+  combinationBoxes DimensionCombination[]     @relation("CombinationBox")
+  combinationItems DimensionCombinationItem[] @relation("CombinationItemDimension")
+
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
+}
+
+/// A quantity-based shipment rule: when an order's basket of product dimensions
+/// exactly matches this combination's recipe (see items), the shipment uses this
+/// combination's `weight` and the `boxDimension`'s measurements instead of the
+/// per-product dimension. Used for multi-unit orders (qty >= 2).
+model DimensionCombination {
+  id             String                     @id @default(cuid())
+  name           String                     @unique
+  weight         Float // kg — resulting shipment weight for this combination
+  boxDimension   Dimension                  @relation("CombinationBox", fields: [boxDimensionId], references: [id])
+  boxDimensionId String
+  isActive       Boolean                    @default(true)
+  items          DimensionCombinationItem[]
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  @@index([boxDimensionId])
+}
+
+/// One line of a combination's recipe: "this dimension × this quantity".
+model DimensionCombinationItem {
+  id            String               @id @default(cuid())
+  combination   DimensionCombination @relation(fields: [combinationId], references: [id], onDelete: Cascade)
+  combinationId String
+  dimension     Dimension            @relation("CombinationItemDimension", fields: [dimensionId], references: [id])
+  dimensionId   String
+  quantity      Int
+
+  @@unique([combinationId, dimensionId])
+  @@index([combinationId])
+  @@index([dimensionId])
+}
+
+/// Admin-editable Shipmozo integration settings. Single row (id = "singleton")
+/// so the whole shipment flow can be controlled from the admin without env/code
+/// changes.
+model ShipmozoSetting {
+  id                String   @id @default("singleton")
+  enabled           Boolean  @default(true) // false → orders stay in our system only, no Shipmozo push
+  autoAssignCourier Boolean  @default(false) // true → auto-run courier assignment after a successful push
+  warehouseId       String   @default("") // overrides SHIPMOZO_WEARHOUSE_ID env when set
+  skipStates        String[] @default([]) // orders shipping to these states are NOT pushed to Shipmozo
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }
 
 /// Per-size stock for a product (product X, size UK 3, qty 5).
@@ -317,8 +403,12 @@ model ProductVariant {
 model Order {
   id            String      @id @default(cuid())
   orderNumber   String      @unique
-  user          User        @relation(fields: [userId], references: [id])
-  userId        String
+  // An order is owned by EXACTLY ONE of: a login User (web / reseller) OR a
+  // CreditCustomer (admin-created bulk order on credit). Enforced in the service.
+  user          User?       @relation(fields: [userId], references: [id])
+  userId        String?
+  creditCustomer   CreditCustomer? @relation(fields: [creditCustomerId], references: [id])
+  creditCustomerId String?
   status        OrderStatus @default(PENDING)
   paymentStatus PaymentStatus @default(PENDING)
   orderType     OrderType   @default(SINGLE)
@@ -343,14 +433,29 @@ model Order {
   city               String
   state              String
 
+  // Shipmozo shipment integration. An order is pushed to the Shipmozo panel
+  // right after creation; the courier + tracking id arrive in a later step.
+  shipmentStatus      ShipmentStatus @default(NOT_SHIPPED)
+  shipmozoOrderId     String? // Shipmozo's internal order id (from push-order)
+  shipmozoReferenceId String? // Shipmozo's reference_id (from push-order)
+  courierPartner      String? // assigned courier name (once assigned)
+  trackingId          String? // AWB / tracking number shown to the customer
+  shipmentError       String? // last push/assign error, for admin diagnostics
+  shipmentPushedAt    DateTime?
+
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
   // Backs "my orders" and the per-user receivables list (userId + createdAt sort).
   @@index([userId, createdAt])
+  // Backs the per-credit-customer receivables list.
+  @@index([creditCustomerId, createdAt])
   // Backs the admin order list filtered by status and sorted by date, plus the
   // APPROVED_PAYMENT_PENDING receivables rollup.
   @@index([status, createdAt])
+  // Backs the admin order list's common case: no status filter, sorted by date
+  // (a bare createdAt sort neither composite index above can serve).
+  @@index([createdAt])
 }
 
 model Cart {

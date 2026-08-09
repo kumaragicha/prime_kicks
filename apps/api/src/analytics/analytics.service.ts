@@ -50,8 +50,9 @@ export class AnalyticsService {
       this.prisma.order.findMany({
         where: { createdAt: { gte: today.gte, lte: today.lte } },
         include: {
-          user: { select: { name: true } },
-          items: { select: { id: true } },
+          user: { select: { name: true, role: true } },
+          creditCustomer: { select: { name: true } },
+          items: { select: { quantity: true } },
         },
         orderBy: { createdAt: 'desc' },
       }),
@@ -83,9 +84,13 @@ export class AnalyticsService {
         orders: todayOrders.map((o) => ({
           id: o.id,
           orderNumber: o.orderNumber,
-          userName: o.user.name,
+          userName: o.user?.name ?? o.creditCustomer?.name ?? 'Unknown',
+          userRole: o.user?.role ?? 'CREDIT',
           status: o.status,
-          itemsCount: o.items.length,
+          shipmentStatus: o.shipmentStatus,
+          trackingId: o.trackingId,
+          courierPartner: o.courierPartner,
+          itemsCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
           total: o.total,
           currency: o.currency,
           createdAt: o.createdAt.toISOString(),
@@ -260,7 +265,7 @@ export class AnalyticsService {
       if (o.createdAt >= currentStart) {
         curOrders += 1;
         curRevenue += o.total;
-        periodUserIds.add(o.userId);
+        if (o.userId) periodUserIds.add(o.userId);
         const bucket = trendBuckets.get(istDateKey(o.createdAt));
         if (bucket) {
           bucket.orders += 1;
@@ -326,13 +331,16 @@ export class AnalyticsService {
       .sort((a, b) => b.stock - a.stock)
       .slice(0, DEAD_STOCK_LIMIT);
 
-    // ---- Top customers -----------------------------------------------------
+    // ---- Top customers (login users only; credit-customer orders excluded) --
+    const userCustomerGroup = customerGroup.filter(
+      (g): g is typeof g & { userId: string } => g.userId !== null,
+    );
     const customerNames = await this.prisma.user.findMany({
-      where: { id: { in: customerGroup.map((g) => g.userId) } },
+      where: { id: { in: userCustomerGroup.map((g) => g.userId) } },
       select: { id: true, name: true },
     });
     const nameById = new Map(customerNames.map((u) => [u.id, u.name]));
-    const topCustomers = customerGroup.map((g) => ({
+    const topCustomers = userCustomerGroup.map((g) => ({
       userId: g.userId,
       name: nameById.get(g.userId) ?? 'Unknown',
       orders: g._count._all,

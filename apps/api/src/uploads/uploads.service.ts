@@ -13,16 +13,28 @@ type UploadedFile = {
 // WebP quality for photo re-encoding. 80 is visually lossless yet notably
 // smaller than a typical JPEG; override with WEBP_QUALITY (1–100) if needed.
 const WEBP_QUALITY = Math.min(100, Math.max(1, Number(process.env.WEBP_QUALITY ?? 80)));
+// sharp encode effort (0–6): higher = smaller files but much more CPU. sharp
+// runs on the libuv threadpool (default 4), so a high effort under concurrent
+// uploads starves *all* async work. 4 is the sweet spot; override if needed.
+const WEBP_EFFORT = Math.min(6, Math.max(0, Number(process.env.WEBP_EFFORT ?? 4)));
 
-const ACCEPTED_IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp'];
+export const ACCEPTED_IMAGE_MIME = ['image/jpeg', 'image/png', 'image/webp'] as const;
 const ACCEPTED_VIDEO = {
   'video/mp4': 'mp4',
   'video/webm': 'webm',
 } as const;
+export const ACCEPTED_VIDEO_MIME = Object.keys(ACCEPTED_VIDEO);
 
 @Injectable()
 export class UploadsService {
   constructor(private readonly storage: StorageService) {}
+
+  /** Upload a media buffer under a unique products/<subdir>/<uuid>.<ext> key. */
+  private async store(subdir: string, ext: string, body: Buffer, contentType: string) {
+    const key = `products/${subdir}/${randomUUID()}.${ext}`;
+    const url = await this.storage.upload(key, body, contentType);
+    return { url };
+  }
 
   /**
    * Validate an uploaded image, re-encode it to optimised WebP (near-lossless,
@@ -30,7 +42,7 @@ export class UploadsService {
    */
   async uploadImage(file?: UploadedFile): Promise<{ url: string }> {
     if (!file) throw new BadRequestException('No file uploaded.');
-    if (!ACCEPTED_IMAGE_MIME.includes(file.mimetype)) {
+    if (!ACCEPTED_IMAGE_MIME.includes(file.mimetype as (typeof ACCEPTED_IMAGE_MIME)[number])) {
       throw new BadRequestException('Only JPG, PNG or WebP images are allowed.');
     }
     if (!isImageMagic(file.buffer)) {
@@ -45,10 +57,10 @@ export class UploadsService {
         .resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true });
 
       // quality 80 = visually lossless for photos while compressing well below
-      // the source JPEG. effort 6 + smartSubsample squeeze out extra bytes.
+      // the source JPEG. smartSubsample squeezes out extra bytes.
       webp = await base
         .clone()
-        .webp({ quality: WEBP_QUALITY, effort: 6, smartSubsample: true })
+        .webp({ quality: WEBP_QUALITY, effort: WEBP_EFFORT, smartSubsample: true })
         .toBuffer();
 
       // Safety net: a heavily pre-compressed source can occasionally grow at
@@ -56,16 +68,14 @@ export class UploadsService {
       if (webp.length >= file.size && WEBP_QUALITY > 65) {
         webp = await base
           .clone()
-          .webp({ quality: 65, effort: 6, smartSubsample: true })
+          .webp({ quality: 65, effort: WEBP_EFFORT, smartSubsample: true })
           .toBuffer();
       }
     } catch {
       throw new BadRequestException('Could not process this image.');
     }
 
-    const key = `products/images/${randomUUID()}.webp`;
-    const url = await this.storage.upload(key, webp, 'image/webp');
-    return { url };
+    return this.store('images', 'webp', webp, 'image/webp');
   }
 
   /**
@@ -82,9 +92,7 @@ export class UploadsService {
       throw new BadRequestException('File does not look like a valid video.');
     }
 
-    const key = `products/videos/${randomUUID()}.${ext}`;
-    const url = await this.storage.upload(key, file.buffer, file.mimetype);
-    return { url };
+    return this.store('videos', ext, file.buffer, file.mimetype);
   }
 
   /** Remove a previously-uploaded media object from the bucket by its URL. */

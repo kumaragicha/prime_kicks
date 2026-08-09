@@ -177,6 +177,239 @@ async function main() {
     console.log(`  ✓ product ${created.sku} — ${sizeTypeName}, ${total} in stock`);
   }
 
+  // Dimension masters: only 4 product dimensions (no separate box dimensions).
+  const dimensionDefs = [
+    { name: 'Small (Converse, Vans, Crocs)', weight: 0.5, length: 24, width: 16, height: 8 },
+    { name: 'Medium (Ballet)', weight: 0.8, length: 28, width: 18, height: 10 },
+    { name: 'Large (Airforce, Speed cat)', weight: 1.2, length: 32, width: 20, height: 12 },
+    { name: 'Extra Large (Multiple shoes)', weight: 5, length: 40, width: 30, height: 20 },
+  ];
+
+  const dimensionIdOf: Record<string, string> = {};
+  for (const def of dimensionDefs) {
+    const dim = await prisma.dimension.upsert({
+      where: { name: def.name },
+      update: { ...def, isActive: true },
+      create: { ...def, isActive: true },
+    });
+    dimensionIdOf[def.name] = dim.id;
+    console.log(`  ✓ dimension ${dim.name}`);
+  }
+
+  // Dimension combinations: for 2–4 units, match the basket to a recipe.
+  // All combos use the Extra Large box (40×30×20 cm, 5 kg) as the shipping box.
+  // Weight is always 5 kg (from the Extra Large dimension master).
+  const combinationDefs = [
+    {
+      name: 'Large × 2',
+      items: [{ dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 2 }],
+    },
+    {
+      name: 'Large × 1 + Medium × 1',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 1 },
+      ],
+    },
+    {
+      name: 'Large × 1 + Small × 1',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 1 },
+      ],
+    },
+    { name: 'Medium × 2', items: [{ dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 2 }] },
+    {
+      name: 'Medium × 1 + Small × 1',
+      items: [
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 1 },
+      ],
+    },
+    {
+      name: 'Small × 2',
+      items: [{ dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 2 }],
+    },
+    {
+      name: 'Large × 3',
+      items: [{ dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 3 }],
+    },
+    {
+      name: 'Large × 2 + Medium × 1',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 2 },
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 1 },
+      ],
+    },
+    {
+      name: 'Large × 2 + Small × 1',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 2 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 1 },
+      ],
+    },
+    {
+      name: 'Large × 1 + Medium × 2',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 2 },
+      ],
+    },
+    {
+      name: 'Large × 1 + Medium × 1 + Small × 1',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 1 },
+      ],
+    },
+    {
+      name: 'Large × 1 + Small × 2',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 2 },
+      ],
+    },
+    { name: 'Medium × 3', items: [{ dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 3 }] },
+    {
+      name: 'Medium × 2 + Small × 1',
+      items: [
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 2 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 1 },
+      ],
+    },
+    {
+      name: 'Medium × 1 + Small × 2',
+      items: [
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 2 },
+      ],
+    },
+    {
+      name: 'Small × 3',
+      items: [{ dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 3 }],
+    },
+    {
+      name: 'Large × 4',
+      items: [{ dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 4 }],
+    },
+    {
+      name: 'Large × 3 + Medium × 1',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 3 },
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 1 },
+      ],
+    },
+    {
+      name: 'Large × 3 + Small × 1',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 3 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 1 },
+      ],
+    },
+    {
+      name: 'Large × 2 + Medium × 2',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 2 },
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 2 },
+      ],
+    },
+    {
+      name: 'Large × 2 + Medium × 1 + Small × 1',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 2 },
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 1 },
+      ],
+    },
+    {
+      name: 'Large × 2 + Small × 2',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 2 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 2 },
+      ],
+    },
+    {
+      name: 'Large × 1 + Medium × 3',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 3 },
+      ],
+    },
+    {
+      name: 'Large × 1 + Medium × 2 + Small × 1',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 2 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 1 },
+      ],
+    },
+    {
+      name: 'Large × 1 + Medium × 1 + Small × 2',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 2 },
+      ],
+    },
+    {
+      name: 'Large × 1 + Small × 3',
+      items: [
+        { dimensionId: dimensionIdOf['Large (Airforce, Speed cat)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 3 },
+      ],
+    },
+    { name: 'Medium × 4', items: [{ dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 4 }] },
+    {
+      name: 'Medium × 3 + Small × 1',
+      items: [
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 3 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 1 },
+      ],
+    },
+    {
+      name: 'Medium × 2 + Small × 2',
+      items: [
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 2 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 2 },
+      ],
+    },
+    {
+      name: 'Medium × 1 + Small × 3',
+      items: [
+        { dimensionId: dimensionIdOf['Medium (Ballet)'], quantity: 1 },
+        { dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 3 },
+      ],
+    },
+    {
+      name: 'Small × 4',
+      items: [{ dimensionId: dimensionIdOf['Small (Converse, Vans, Crocs)'], quantity: 4 }],
+    },
+  ];
+
+  // Clear old combinations before re-seeding to avoid duplicates.
+  await prisma.dimensionCombinationItem.deleteMany({});
+  await prisma.dimensionCombination.deleteMany({});
+
+  for (const def of combinationDefs) {
+    const boxId = dimensionIdOf['Extra Large (Multiple shoes)']!;
+    const combo = await prisma.dimensionCombination.create({
+      data: {
+        name: def.name,
+        weight: 5,
+        boxDimensionId: boxId,
+        isActive: true,
+        items: {
+          create: def.items.map((i) => ({
+            dimensionId: i.dimensionId as string,
+            quantity: i.quantity,
+          })),
+        },
+      },
+    });
+    console.log(`  ✓ combination ${combo.name}`);
+  }
+
   console.log('✅ Seed complete');
 }
 

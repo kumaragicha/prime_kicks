@@ -23,7 +23,7 @@ Phone no 9339901747`;
     expect(result.pincode).toBe('737121');
     expect(result.state).toBe('Sikkim');
     expect(result.line1).toContain('jorethang');
-    expect(result.landmark).toContain('Sikkim professional university');
+    expect(result.line2).toContain('Sikkim professional university');
   });
 
   it('should parse address block 2 - Prasanta Chettri', () => {
@@ -45,7 +45,7 @@ NUMBER-9932047288`;
     expect(result.city).toBe('Sombaria');
     expect(result.state).toBe('Sikkim');
     expect(result.line1).toContain('Sombaria Bazar');
-    expect(result.landmark).toContain('Sombaria');
+    expect(result.line2).toContain('Sombaria');
   });
 
   it('should parse address block 3 - Laden Bhutia', () => {
@@ -67,7 +67,7 @@ NUMBER-7797489235`;
     expect(result.city).toBe('Gangtok');
     expect(result.state).toBe('Sikkim');
     expect(result.line1).toContain('Sports and youth affair');
-    expect(result.landmark).toContain('ridge Park');
+    expect(result.line2).toContain('ridge Park');
   });
 
   it('should parse address block 4 - Mamta Rai', () => {
@@ -87,7 +87,7 @@ South Sikkim
     expect(result.pincode).toBe('737128');
     expect(result.state).toBe('Sikkim');
     expect(result.line1).toContain('Rateypani');
-    expect(result.landmark).toContain('Near post office');
+    expect(result.line2).toContain('Near post office');
   });
 
   it('should parse address block 6 - Baishali Basisth (misspelled "pincod" + alternative number)', () => {
@@ -111,7 +111,7 @@ Alternative no -7002957295`;
     expect(result.state).toBe('Assam');
     expect(result.city).toBe('guwahati');
     expect(result.line1).toContain('Noonmati');
-    expect(result.landmark).toContain('bhabanipur near lp school');
+    expect(result.line2).toContain('bhabanipur near lp school');
   });
 
   it('should parse address block 7 - Nitesh rai (minimal fields, city/state from pincode)', () => {
@@ -209,7 +209,7 @@ Number:9362097675`;
     // Address line 1 should be fully retained including commas
     expect(result.line1).toBe('Mainland China,18,A, Platinum Techno Park,1st Floor');
     // Landmark should be fully retained including commas
-    expect(result.landmark).toBe('Plot No 17 ,behind RAGHULEELA MALL, Sector 30');
+    expect(result.line2).toContain('Plot No 17 ,behind RAGHULEELA MALL, Sector 30');
   });
 
   it('should parse block 11 - labeled template with emojis, parenthetical labels & instructions', () => {
@@ -232,7 +232,7 @@ Email ID: (if available)
 
     expect(result.name).toBe('Ginson Haokip');
     expect(result.line1).toBe('Hno D-3/6 Vinod puri, Vijay enclave');
-    expect(result.landmark).toBe('Near Dashrath puri metro station gate no.3');
+    expect(result.line2).toContain('Near Dashrath puri metro station gate no.3');
     expect(result.city).toBe('New Delhi');
     expect(result.state).toBe('Delhi');
     expect(result.pincode).toBe('110045');
@@ -288,7 +288,8 @@ Hightops `;
     const result = service.parseAddressBlock(addressBlock);
 
     expect(result.name).toBe('Vanlalhriati Pachuau');
-    expect(result.line1).toBe('PUC GIRLS HOSTEL, College veng, Aizawl');
+    // City ("Aizawl") is stripped from line1 since it has its own field.
+    expect(result.line1).toBe('PUC GIRLS HOSTEL, College veng');
     expect(result.city).toBe('Aizawl');
     expect(result.state).toBe('Mizoram');
     expect(result.pincode).toBe('796001');
@@ -331,9 +332,94 @@ Pin-796001`;
     expect(result.name).toBe('Aju Ahmed Laskar');
     expect(result.line1).toBe('khatla peter street');
     expect(result.state).toBe('Mizoram');
-    expect(result.landmark).toBe('NBE tata motors');
+    expect(result.line2).toContain('NBE tata motors');
     expect(result.mobileNo).toBe('8132993081');
     expect(result.pincode).toBe('796001');
     expect(result.city).toContain('Aizawl');
+  });
+
+  it('should drop the inline "From:" sender line and strip city/state from line1', () => {
+    const addressBlock = `From:-HYPEBEAST_DARJEELING
+NAME- Nakul Pariyar
+ADDRESS-  P 72 block INS KUNJALI, near us club, south colaba, Mumbai, Maharashtra
+LANDMARK- near us club
+CITY- Mumbai
+STATE- Maharashtra
+PINCODE- 400005
+NUMBER-9832531300
+ALTERNATIVE NUMBER- 7679471252`;
+
+    const result = service.parseAddressBlock(addressBlock);
+
+    expect(result.name).toBe('Nakul Pariyar');
+    // Sender header dropped, city/state removed from line1.
+    expect(result.line1).not.toMatch(/hypebeast/i);
+    expect(result.line1).not.toMatch(/mumbai|maharashtra/i);
+    // Landmark is folded into line 2, no separate landmark field.
+    expect(result.line2).toContain('near us club');
+    expect(result.landmark).toBe('');
+    expect(result.city).toBe('Mumbai');
+    expect(result.state).toBe('Maharashtra');
+    expect(result.pincode).toBe('400005');
+    expect(result.mobileNo).toBe('9832531300');
+    expect(result.altMobileNo).toBe('7679471252');
+  });
+
+  it('should keep line1 within 100 chars, spilling overflow into line2', () => {
+    const addressBlock = `Name- Test User
+Address- Flat 101 Sunshine Apartments, Plot 45 Sector 12 Extension, Behind the Grand Central Mall complex, MG Road area
+State- Delhi
+Pincode- 110001
+Phone- 9832531300`;
+
+    const result = service.parseAddressBlock(addressBlock);
+
+    expect(result.line1.length).toBeLessThanOrEqual(100);
+    expect(result.line2.length).toBeGreaterThan(0);
+    // Together they still contain the full street address.
+    expect(`${result.line1}, ${result.line2}`).toContain('MG Road area');
+  });
+
+  it('should parse address with two unlabeled contact numbers - first as primary, second as alternative', () => {
+    const addressBlock = `Pratiksha Tamang
+Hakim para Siliguri
+path bhawan school
+West Bengal
+734001
+6296956142
+7679471252`;
+
+    const result = service.parseAddressBlock(addressBlock);
+
+    console.log(
+      'Test - Pratiksha Tamang (two unlabeled numbers):',
+      JSON.stringify(result, null, 2),
+    );
+
+    expect(result.name).toBe('Pratiksha Tamang');
+    expect(result.mobileNo).toBe('6296956142'); // First number as primary
+    expect(result.altMobileNo).toBe('7679471252'); // Second number as alternative
+    expect(result.pincode).toBe('734001');
+    expect(result.state).toBe('West Bengal');
+    expect(result.line1).toContain('Hakim para Siliguri');
+    expect(result.line2).toContain('path bhawan school');
+  });
+
+  it('should parse address with two unlabeled numbers on same line', () => {
+    const addressBlock = `Name: Test User
+Address: 123 Main Street
+City: Mumbai
+State: Maharashtra
+Pincode: 400001
+9876543210 9123456789`;
+
+    const result = service.parseAddressBlock(addressBlock);
+
+    console.log('Test - Two numbers on same line:', JSON.stringify(result, null, 2));
+
+    expect(result.name).toBe('Test User');
+    expect(result.mobileNo).toBe('9876543210'); // First number as primary
+    expect(result.altMobileNo).toBe('9123456789'); // Second number as alternative
+    expect(result.pincode).toBe('400001');
   });
 });

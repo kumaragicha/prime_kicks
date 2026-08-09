@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { AuditEvent, AuditModule, Prisma, type UserRole } from '@prisma/client';
@@ -20,6 +21,7 @@ import type {
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { buildCreatedAtRange } from '../common/date-range.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { ShipmentService } from '../shipmozo/shipment.service';
 
 /**
  * Payment status implied by each order status. Payment is only ever RECEIVED
@@ -41,11 +43,20 @@ const PAYMENT_FOR_STATUS: Record<OrderStatus, PaymentStatus> = {
  */
 const orderDetailInclude = {
   user: { select: { id: true, name: true } },
+  creditCustomer: { select: { id: true, name: true } },
   items: {
     include: { product: { select: { photoUrls: true } } },
     orderBy: { id: 'asc' },
   },
 } satisfies Prisma.OrderInclude;
+
+/** An order's owner is either a login User or a CreditCustomer — return the display name. */
+function ownerName(order: {
+  user: { name: string } | null;
+  creditCustomer: { name: string } | null;
+}): string {
+  return order.user?.name ?? order.creditCustomer?.name ?? 'Unknown';
+}
 
 type OrderWithDetails = Prisma.OrderGetPayload<{ include: typeof orderDetailInclude }>;
 
@@ -79,13 +90,34 @@ function mapOrderAddress(order: OrderWithDetails) {
   };
 }
 
+/**
+ * Map an order's Shipmozo shipment columns to the DTO shape.
+ * `includeInternal` controls the admin-only fields (Shipmozo ids + last error);
+ * customers only ever see the courier, tracking id and status.
+ */
+function mapShipment(order: OrderWithDetails, includeInternal: boolean) {
+  return {
+    status: order.shipmentStatus,
+    courierPartner: order.courierPartner,
+    trackingId: order.trackingId,
+    pushedAt: order.shipmentPushedAt?.toISOString() ?? null,
+    ...(includeInternal
+      ? {
+          shipmozoOrderId: order.shipmozoOrderId,
+          shipmozoReferenceId: order.shipmozoReferenceId,
+          error: order.shipmentError,
+        }
+      : {}),
+  };
+}
+
 /** The full single-order DTO (used by create and findOne). */
 function toOrderDto(order: OrderWithDetails) {
   return {
     id: order.id,
     orderNumber: order.orderNumber,
     userId: order.userId,
-    userName: order.user.name,
+    userName: ownerName(order),
     status: order.status,
     paymentStatus: order.paymentStatus,
     orderType: order.orderType,
@@ -96,6 +128,7 @@ function toOrderDto(order: OrderWithDetails) {
     total: order.total,
     currency: order.currency,
     address: mapOrderAddress(order),
+    shipment: mapShipment(order, true),
     createdAt: order.createdAt.toISOString(),
     updatedAt: order.updatedAt.toISOString(),
   };
@@ -103,9 +136,12 @@ function toOrderDto(order: OrderWithDetails) {
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogService,
+    private readonly shipment: ShipmentService,
   ) {}
 
   /** Create an order.
@@ -121,26 +157,46 @@ export class OrdersService {
     callerRole?: UserRole,
     auditedBy?: string,
   ) {
-    // The admin-created flow (order billed to another user, pre-approved, reseller
-    // pricing) is unlocked only by `resellerId` — and that must never be honored
-    // for a non-admin caller, or any customer could place auto-approved,
-    // reseller-priced orders on someone else's account.
-    const isAdminCreated = Boolean(input.resellerId);
+    this.logger.debug(
+      `[ORDER DEBUG] create START userId=${userId} callerRole=${callerRole ?? 'none'} resellerId=${input.resellerId ?? 'none'} items=${input.items.length}`,
+    );
+    // The admin-created flow (order billed to another account, pre-approved) is
+    // unlocked by either `resellerId` (reseller pricing) or `creditCustomerId`
+    // (bulk, manual per-line rate). Neither may be honored for a non-admin caller,
+    // or any customer could place auto-approved orders on someone else's account.
+    const isResellerOrder = Boolean(input.resellerId);
+    const isCreditOrder = Boolean(input.creditCustomerId);
+    const isAdminCreated = isResellerOrder || isCreditOrder;
     if (isAdminCreated && callerRole !== 'ADMIN') {
-      throw new ForbiddenException('Only admins can create orders on behalf of another user');
+      throw new ForbiddenException('Only admins can create orders on behalf of another account');
     }
 
-    // Admin-created orders use the reseller as the order owner; web orders use the authenticated user.
-    const actualUserId = input.resellerId ?? userId;
+    // Resolve the order owner: a CreditCustomer (bulk) OR a login User
+    // (reseller / web). Exactly one of these ends up set on the order.
+    let ownerUserId: string | null = null;
+    let ownerCreditCustomerId: string | null = null;
+    let ownerRole: UserRole | null = null;
 
-    // Validate user exists and is active (disabled users cannot place orders)
-    const user = await this.prisma.user.findFirst({
-      where: { id: actualUserId, deletedAt: null },
-      select: { id: true, name: true, isActive: true, role: true },
-    });
-    if (!user) throw new NotFoundException('User not found');
-    if (!user.isActive) {
-      throw new BadRequestException('Your account is disabled. You cannot place orders.');
+    if (isCreditOrder) {
+      const creditCustomer = await this.prisma.creditCustomer.findFirst({
+        where: { id: input.creditCustomerId!, deletedAt: null },
+        select: { id: true },
+      });
+      if (!creditCustomer) throw new NotFoundException('Credit customer not found');
+      ownerCreditCustomerId = creditCustomer.id;
+    } else {
+      // Admin reseller orders bill the reseller; web orders bill the caller.
+      const actualUserId = input.resellerId ?? userId;
+      const user = await this.prisma.user.findFirst({
+        where: { id: actualUserId, deletedAt: null },
+        select: { id: true, name: true, isActive: true, role: true },
+      });
+      if (!user) throw new NotFoundException('User not found');
+      if (!user.isActive) {
+        throw new BadRequestException('Your account is disabled. You cannot place orders.');
+      }
+      ownerUserId = user.id;
+      ownerRole = user.role;
     }
 
     // Validate all items and compute pricing
@@ -154,8 +210,10 @@ export class OrdersService {
       quantity: number;
     };
 
-    // Web orders from RESELLER accounts use the reseller price; everyone else pays the customer price.
-    const useResellerPrice = isAdminCreated || user.role === 'RESELLER';
+    // Reseller orders (admin) and web orders from RESELLER accounts use the
+    // reseller price; everyone else pays the customer price. Bulk/credit orders
+    // ignore both and use the admin-entered per-line rate.
+    const useResellerPrice = isResellerOrder || ownerRole === 'RESELLER';
 
     // Fetch every requested variant in a single query (avoids one round-trip per item).
     const variants = await this.prisma.productVariant.findMany({
@@ -168,7 +226,6 @@ export class OrdersService {
             sku: true,
             customerPrice: true,
             resellerPrice: true,
-            photoUrls: true,
           },
         },
         size: { select: { label: true } },
@@ -196,9 +253,13 @@ export class OrdersService {
         title: variant.product.name,
         sku: variant.product.sku,
         sizeLabel: variant.size.label,
-        unitPrice: useResellerPrice
-          ? variant.product.resellerPrice
-          : variant.product.customerPrice,
+        // Bulk/credit orders carry an explicit per-line rate (validated present
+        // by the schema); everyone else derives it from the product.
+        unitPrice: isCreditOrder
+          ? item.unitPrice!
+          : useResellerPrice
+            ? variant.product.resellerPrice
+            : variant.product.customerPrice,
         quantity: item.quantity,
       };
     });
@@ -210,6 +271,9 @@ export class OrdersService {
     );
     const shipping = input.shipping ?? 0;
     const total = subtotal + shipping;
+
+    // Credit-customer orders are always BULK; otherwise honor the request.
+    const orderType = isCreditOrder ? ORDER_TYPE.BULK : input.orderType ?? ORDER_TYPE.SINGLE;
 
     // Admin-created orders are pre-approved; web orders start as PENDING.
     const status = isAdminCreated
@@ -240,24 +304,20 @@ export class OrdersService {
         }
       }
 
-      // Clear cart items for this user (web flow only — admin-created orders don't touch the cart)
+      // Clear cart items for this user (web flow only — admin-created orders don't touch the cart).
+      // Single relation-filtered delete keeps the transaction open for one fewer round-trip.
       if (!isAdminCreated) {
-        const cart = await tx.cart.findUnique({
-          where: { userId: actualUserId },
-          select: { id: true },
-        });
-        if (cart) {
-          await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
-        }
+        await tx.cartItem.deleteMany({ where: { cart: { userId } } });
       }
 
       return tx.order.create({
         data: {
           orderNumber,
-          userId: actualUserId,
+          userId: ownerUserId,
+          creditCustomerId: ownerCreditCustomerId,
           status,
           paymentStatus: input.paymentStatus ?? PAYMENT_STATUS.PENDING,
-          orderType: input.orderType ?? ORDER_TYPE.SINGLE,
+          orderType,
           shippingStatus: input.shippingStatus ?? PAYMENT_STATUS.PENDING,
           subtotal,
           shipping,
@@ -289,6 +349,9 @@ export class OrdersService {
     });
 
     const dto = toOrderDto(order);
+    this.logger.debug(
+      `[ORDER DEBUG] order CREATED id=${order.id} orderNumber=${order.orderNumber} total=${order.total} items=${order.items.length} — committed to DB`,
+    );
     this.audit.log({
       module: AuditModule.ORDERS,
       event: AuditEvent.CREATION,
@@ -298,6 +361,32 @@ export class OrdersService {
       formData: { ...dto },
       auditedBy,
     });
+
+    // Push the freshly-created order to Shipmozo in the BACKGROUND. Checkout
+    // latency is never coupled to the courier API: the response returns
+    // immediately and the push resolves on its own. It runs only after the
+    // order transaction has committed, and pushForOrder records any courier-side
+    // error on the order itself rather than throwing — so a slow or failing
+    // Shipmozo can neither delay, block, nor roll back a successful checkout.
+    // The admin can retry from the order page if the background push fails.
+    this.logger.debug(
+      `[ORDER DEBUG] launching BACKGROUND Shipmozo push for order ${order.orderNumber} (id=${order.id})`,
+    );
+    void this.shipment
+      .pushForOrder(order.id, auditedBy)
+      .then((shipment) => {
+        this.logger.debug(
+          `[ORDER DEBUG] background push finished for ${order.orderNumber}: status=${shipment.shipmentStatus} tracking=${shipment.trackingId ?? 'none'} courier=${shipment.courierPartner ?? 'none'} error=${shipment.shipmentError ?? 'none'}`,
+        );
+      })
+      .catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.debug(
+          `[ORDER DEBUG] background push THREW for ${order.orderNumber}: ${message}`,
+        );
+        this.logger.error(`Background Shipmozo push threw for ${order.orderNumber}: ${message}`);
+      });
+
     return dto;
   }
 
@@ -314,7 +403,8 @@ export class OrdersService {
     // already knows it's their own order).
     return data.map((order) => {
       const { userId: _userId, userName: _userName, ...rest } = toOrderDto(order);
-      return rest;
+      // Customers see only the courier/tracking/status, never internal ids or errors.
+      return { ...rest, shipment: mapShipment(order, false) };
     });
   }
 
@@ -339,8 +429,9 @@ export class OrdersService {
       this.prisma.order.findMany({
         where,
         include: {
-          user: { select: { id: true, name: true } },
-          items: { select: { id: true } },
+          user: { select: { id: true, name: true, role: true } },
+          creditCustomer: { select: { id: true, name: true } },
+          items: { select: { quantity: true } },
         },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -353,9 +444,15 @@ export class OrdersService {
       data: data.map((order) => ({
         id: order.id,
         orderNumber: order.orderNumber,
-        userName: order.user.name,
+        userName: ownerName(order),
+        // Credit-customer (bulk) orders have no login role; surface them as CREDIT.
+        userRole: order.user?.role ?? 'CREDIT',
         status: order.status,
-        itemsCount: order.items.length,
+        shipmentStatus: order.shipmentStatus,
+        trackingId: order.trackingId,
+        courierPartner: order.courierPartner,
+        // Total units ordered (sum of line-item quantities), not the number of lines.
+        itemsCount: order.items.reduce((sum, i) => sum + i.quantity, 0),
         total: order.total,
         currency: order.currency,
         createdAt: order.createdAt.toISOString(),
@@ -377,13 +474,18 @@ export class OrdersService {
       _count: { _all: true },
     });
 
+    // Credit-customer (bulk) orders group under a null userId — exclude them here;
+    // their receivables are surfaced separately.
+    const userGroups = grouped.filter(
+      (g): g is typeof g & { userId: string } => g.userId !== null,
+    );
     const users = await this.prisma.user.findMany({
-      where: { id: { in: grouped.map((g) => g.userId) } },
+      where: { id: { in: userGroups.map((g) => g.userId) } },
       select: { id: true, name: true },
     });
     const nameById = new Map(users.map((u) => [u.id, u.name]));
 
-    return grouped
+    return userGroups
       .map((g) => ({
         userId: g.userId,
         userName: nameById.get(g.userId) ?? 'Unknown',
@@ -403,7 +505,7 @@ export class OrdersService {
 
     const orders = await this.prisma.order.findMany({
       where: { userId, status: ORDER_STATUS.APPROVED_PAYMENT_PENDING },
-      include: { items: { select: { id: true } } },
+      include: { _count: { select: { items: true } } },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -414,7 +516,7 @@ export class OrdersService {
       orders: orders.map((o) => ({
         id: o.id,
         orderNumber: o.orderNumber,
-        itemsCount: o.items.length,
+        itemsCount: o._count.items,
         total: o.total,
         currency: o.currency,
         createdAt: o.createdAt.toISOString(),
@@ -471,9 +573,19 @@ export class OrdersService {
    * Transitioning to the current status is a no-op (idempotent).
    */
   async transition(id: string, target: OrderStatus, auditedBy?: string) {
+    // Only scalar OrderItem columns are read below (variantId/quantity for the
+    // stock moves, title/sizeLabel for error messages) — no need to join the
+    // ProductVariant relation.
     const order = await this.prisma.order.findUnique({
       where: { id },
-      include: { items: { include: { variant: true } } },
+      select: {
+        id: true,
+        orderNumber: true,
+        status: true,
+        items: {
+          select: { variantId: true, quantity: true, title: true, sizeLabel: true },
+        },
+      },
     });
     if (!order) throw new NotFoundException(`Order ${id} not found`);
 
@@ -483,7 +595,7 @@ export class OrdersService {
     const leavingRejected = current === ORDER_STATUS.REJECTED;
     const enteringRejected = target === ORDER_STATUS.REJECTED;
 
-    await this.prisma.$transaction(async (tx) => {
+    const updated = await this.prisma.$transaction(async (tx) => {
       if (leavingRejected) {
         // Re-reserve the stock the rejection released — atomically, only if still
         // available. The transaction rolls back on the first shortfall.
@@ -510,9 +622,12 @@ export class OrdersService {
         }
       }
 
-      await tx.order.update({
+      // Return the fully-mapped order straight from the write, so we don't
+      // re-query it just to build the response DTO.
+      return tx.order.update({
         where: { id },
         data: { status: target, paymentStatus: PAYMENT_FOR_STATUS[target] },
+        include: orderDetailInclude,
       });
     });
 
@@ -526,7 +641,20 @@ export class OrdersService {
       auditedBy,
     });
 
-    return this.findOne(id);
+    // Cancelling the order (→ REJECTED) also cancels it in the Shipmozo panel
+    // to keep both sides in sync. Runs in the background and never throws, so a
+    // courier-side failure can't block or roll back the status change.
+    if (enteringRejected) {
+      this.logger.debug(
+        `[ORDER DEBUG] order ${order.orderNumber} rejected — triggering Shipmozo cancel sync`,
+      );
+      void this.shipment.cancelForOrder(id, auditedBy).catch((error) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.error(`Background Shipmozo cancel threw for ${order.orderNumber}: ${message}`);
+      });
+    }
+
+    return toOrderDto(updated);
   }
 
   /** Manual status change from the admin UI — delegates to {@link transition}. */
@@ -545,6 +673,12 @@ export class OrdersService {
       },
     });
     if (!order) throw new NotFoundException(`Order ${id} not found`);
+
+    // Keep Shipmozo in sync: cancel the shipment there BEFORE we delete the
+    // order row (afterwards its Shipmozo ids would be gone). Awaited but never
+    // throws, and persist=false since the row is about to be removed.
+    this.logger.debug(`[ORDER DEBUG] deleting order ${order.orderNumber} — syncing Shipmozo cancel first`);
+    await this.shipment.cancelForOrder(id, auditedBy, false);
 
     // A non-rejected order still holds its reserved stock; deleting it must
     // return those units to inventory (a REJECTED order already released them).

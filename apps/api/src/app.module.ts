@@ -8,6 +8,7 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { CartModule } from './cart/cart.module';
+import { CreditCustomersModule } from './credit-customers/credit-customers.module';
 import { DimensionsModule } from './dimensions/dimensions.module';
 import { HealthController } from './health/health.controller';
 import { HeroModule } from './hero/hero.module';
@@ -16,6 +17,8 @@ import { MastersModule } from './masters/masters.module';
 import { OrdersModule } from './orders/orders.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
+import { SettingsModule } from './settings/settings.module';
+import { ShipmozoModule } from './shipmozo/shipmozo.module';
 import { SizesModule } from './sizes/sizes.module';
 import { StorageModule } from './storage/storage.module';
 import { UploadsModule } from './uploads/uploads.module';
@@ -34,6 +37,9 @@ import { UsersModule } from './users/users.module';
     SizesModule,
     MastersModule,
     DimensionsModule,
+    CreditCustomersModule,
+    SettingsModule,
+    ShipmozoModule,
     CartModule,
     OrdersModule,
     UploadsModule,

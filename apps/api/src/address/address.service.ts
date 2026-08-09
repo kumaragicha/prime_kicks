@@ -103,6 +103,10 @@ const LABELS = {
 
 /** Lines that are instructions/marketing/headers, never part of the address. */
 const NOISE_PATTERNS: RegExp[] = [
+  // Inline sender line, e.g. "From:- HYPEBEAST_DARJEELING" — the shop, not the
+  // recipient. (A standalone "From" marker is handled separately by scoping the
+  // block to everything before it.)
+  /^\s*from\b\s*[:,\-–—]\s*\S/i,
   /please make sure/i,
   /unboxing/i,
   /avoid delivery/i,
@@ -202,13 +206,28 @@ export class AddressService {
         break;
       }
     }
+
+    // Scan for mobile numbers - capture both primary and alternative if present
+    let primaryFound = false;
     for (const line of lines) {
       const nums = extractMobiles(line);
-      if (nums[0]) {
-        result.mobileNo = nums[0];
-        break;
+      if (nums.length > 0) {
+        if (!primaryFound) {
+          result.mobileNo = nums[0]!;
+          primaryFound = true;
+          // If this line has a second number, capture it as alternative
+          if (nums[1] && !result.altMobileNo) {
+            result.altMobileNo = nums[1]!;
+            break; // Both numbers found, stop scanning
+          }
+        } else if (nums[0] && !result.altMobileNo) {
+          // Found a second number on a different line
+          result.altMobileNo = nums[0]!;
+          break; // Alternative found, stop scanning
+        }
       }
     }
+
     for (const line of lines) {
       const pincodeMatch = line.match(PINCODE_REGEX);
       if (pincodeMatch && pincodeMatch[1]) {
@@ -387,8 +406,93 @@ export class AddressService {
       result.landmark = addressLines.join(', ');
     }
 
+    // Shipmozo has no landmark field, so we no longer keep a separate one —
+    // fold any detected landmark into line 2 (after existing line-two text).
+    if (result.landmark) {
+      result.line2 = [result.line2, result.landmark]
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .join(' ');
+      result.landmark = '';
+    }
+
+    // City/state live in their own fields, so drop any comma-segment in line1 /
+    // line2 that merely repeats them (e.g. "…, Mumbai, Maharashtra").
+    result.line1 = stripCityState(result.line1, result.city, result.state);
+    result.line2 = stripCityState(result.line2, result.city, result.state);
+
+    // Keep line1 within the form's 100-char limit: overflow spills into line2.
+    const split = enforceLine1Limit(result.line1, result.line2);
+    result.line1 = split.line1;
+    result.line2 = split.line2;
+
     return result;
   }
+}
+
+/** Form limit for address line 1 — matches the web checkout validation. */
+const MAX_LINE1_LENGTH = 100;
+
+/**
+ * Ensure line1 is at most {@link MAX_LINE1_LENGTH} characters. Overflow is moved
+ * to the front of line2 (split on comma boundaries when possible, else a hard
+ * character split for a single oversized segment).
+ */
+function enforceLine1Limit(line1: string, line2: string): { line1: string; line2: string } {
+  if (!line1 || line1.length <= MAX_LINE1_LENGTH) return { line1, line2 };
+
+  const segments = line1
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const head: string[] = [];
+  const tail: string[] = [];
+  let len = 0;
+  for (const seg of segments) {
+    const added = (head.length ? 2 : 0) + seg.length; // ", " join cost
+    // Always keep at least the first segment in line1.
+    if (head.length === 0 || len + added <= MAX_LINE1_LENGTH) {
+      head.push(seg);
+      len += added;
+    } else {
+      tail.push(seg);
+    }
+  }
+
+  let newLine1 = head.join(', ');
+  let overflow = tail.join(', ');
+
+  // A single segment can still exceed the limit — hard-split it at the boundary.
+  if (newLine1.length > MAX_LINE1_LENGTH) {
+    const cut = newLine1.slice(MAX_LINE1_LENGTH).trim();
+    newLine1 = newLine1.slice(0, MAX_LINE1_LENGTH).trim();
+    overflow = overflow ? `${cut}, ${overflow}` : cut;
+  }
+
+  const newLine2 = line2 ? (overflow ? `${overflow}, ${line2}` : line2) : overflow;
+  return { line1: newLine1, line2: newLine2 };
+}
+
+/**
+ * Remove comma-separated segments of `line` that just repeat the resolved city
+ * or state (case-insensitive). Keeps the original line if stripping would empty
+ * it (i.e. the line was nothing but city/state).
+ */
+function stripCityState(line: string, city: string, state: string): string {
+  if (!line) return line;
+  const drop = new Set(
+    [city, state].filter((s) => s.trim().length > 0).map((s) => s.trim().toLowerCase()),
+  );
+  if (drop.size === 0) return line;
+  const segments = line
+    .split(',')
+    .map((seg) => seg.trim())
+    .filter(Boolean);
+  const kept = segments.filter((seg) => !drop.has(seg.toLowerCase()));
+  // Nothing to remove → return the line untouched (preserve original spacing).
+  if (kept.length === segments.length) return line;
+  return kept.length > 0 ? kept.join(', ') : line;
 }
 
 /** Whether a line is instructions, a marker, or product spec — never address data. */
@@ -442,7 +546,10 @@ function isPlaceholder(v: string): boolean {
 
 /** Trim surrounding whitespace and stray leading/trailing separators/punctuation. */
 function cleanValue(v: string): string {
-  return v.replace(/^[\s,;:.\-–—]+/, '').replace(/[\s,;:.\-–—]+$/, '').trim();
+  return v
+    .replace(/^[\s,;:.\-–—]+/, '')
+    .replace(/[\s,;:.\-–—]+$/, '')
+    .trim();
 }
 
 function toTitleCase(str: string): string {
