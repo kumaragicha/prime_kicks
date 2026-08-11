@@ -93,10 +93,15 @@ export class AuthController {
     return this.auth.resetPassword(body.token, body.password);
   }
 
+  /** Log out. Send the current refresh token to revoke only this session;
+   *  omit it to log out of every session for the account. */
   @HttpCode(200)
   @Post('logout')
-  logout(@CurrentUser() user: AuthenticatedUser) {
-    return this.auth.logout(user.id);
+  logout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { refreshToken?: string } = {},
+  ) {
+    return this.auth.logout(user.id, body?.refreshToken);
   }
 
   @Get('me')

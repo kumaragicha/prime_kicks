@@ -104,13 +104,13 @@ model User {
 
   // Auth
   passwordHash     String
-  refreshTokenHash String? // bcrypt hash of the current refresh token (rotated on use)
   isEmailVerified  Boolean   @default(false)
   lastLoginAt      DateTime?
 
   orders        Order[]
   cart          Cart?
   passwordReset PasswordResetToken?
+  refreshTokens RefreshToken[] // one row per active login session (multi-device)
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -119,6 +119,24 @@ model User {
   @@index([role])
   // Backs the admin user list: `where deletedAt IS NULL order by createdAt desc`.
   @@index([deletedAt, createdAt])
+}
+
+/// One row per active login session. Holds the bcrypt hash of that session's
+/// refresh token (rotated on every use) plus its own expiry, so a user can be
+/// signed in on multiple devices/tabs at once without sessions invalidating one
+/// another. The row id is embedded as the refresh JWT's `jti`, so refresh can
+/// look up exactly which session to verify and rotate.
+model RefreshToken {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+  tokenHash String // bcrypt hash of sha256(refresh token) for this session
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 /// A non-login account for admin-created bulk orders taken on credit (e.g. a

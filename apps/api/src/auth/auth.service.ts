@@ -41,6 +41,30 @@ const OTP_RESEND_COOLDOWN_SECONDS = 60;
 /** How long a password-reset link stays valid, in minutes. */
 const PASSWORD_RESET_EXP_MINUTES = 30;
 
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Parse a zeit/ms-style duration ("15m", "7d", "12h", "30s", or plain seconds)
+ * into milliseconds, used to stamp a refresh session's DB expiry so it mirrors
+ * the JWT's own `expiresIn`. Falls back to `fallbackMs` for anything unparseable.
+ */
+function parseDurationMs(value: string, fallbackMs: number): number {
+  const match = /^(\d+)\s*([smhd])?$/.exec(value.trim());
+  if (!match) return fallbackMs;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount)) return fallbackMs;
+  const unitMs: Record<string, number> = {
+    s: 1000,
+    m: 60_000,
+    h: 3_600_000,
+    d: 86_400_000,
+  };
+  // No unit → treat as seconds (jsonwebtoken's default for a bare number).
+  const unit = match[2];
+  const multiplier = unit ? (unitMs[unit] ?? 1000) : 1000;
+  return amount * multiplier;
+}
+
 @Injectable()
 export class AuthService {
   constructor(
@@ -306,11 +330,9 @@ export class AuthService {
 
     const passwordHash = await hash(newPassword, SALT_ROUNDS);
     await this.prisma.$transaction([
-      this.prisma.user.update({
-        where: { id: user.id },
-        // Clearing refreshTokenHash logs out every existing session.
-        data: { passwordHash, refreshTokenHash: null },
-      }),
+      this.prisma.user.update({ where: { id: user.id }, data: { passwordHash } }),
+      // A password change logs out every existing session for the account.
+      this.prisma.refreshToken.deleteMany({ where: { userId: user.id } }),
       this.prisma.passwordResetToken.delete({ where: { id: record.id } }),
     ]);
 
@@ -395,27 +417,60 @@ export class AuthService {
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    const user = await this.prisma.user.findFirst({
-      where: { id: payload.sub, deletedAt: null },
+    // The refresh token must carry the session id (jti). Legacy tokens without
+    // one (issued before the sessions model) can't be mapped — force re-login.
+    if (!payload.jti) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    const session = await this.prisma.refreshToken.findUnique({
+      where: { id: payload.jti },
+      include: { user: true },
     });
-    if (!user || !user.refreshTokenHash || !user.isActive) {
+    if (!session || session.expiresAt.getTime() < Date.now()) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+    const user = session.user;
+    if (!user || user.deletedAt || !user.isActive) {
+      // Session is dead if the account is gone/disabled — clean it up.
+      await this.prisma.refreshToken.delete({ where: { id: session.id } }).catch(() => undefined);
       throw new UnauthorizedException('Invalid refresh token');
     }
 
-    const matches = await compare(this.digest(refreshToken), user.refreshTokenHash);
+    const matches = await compare(this.digest(refreshToken), session.tokenHash);
     if (!matches) {
+      // Presented token doesn't match this session's current hash — it was
+      // already rotated (replay / stolen token). Revoke the session defensively.
+      await this.prisma.refreshToken.delete({ where: { id: session.id } }).catch(() => undefined);
       throw new UnauthorizedException('Invalid refresh token');
     }
 
+    // Rotate: retire this session and mint a fresh one. Only THIS session is
+    // affected — the user's other sessions keep working.
+    await this.prisma.refreshToken.delete({ where: { id: session.id } });
     return this.issueTokens(user);
   }
 
-  /** Invalidate the stored refresh token. */
-  async logout(userId: string) {
-    await this.prisma.user.update({
-      where: { id: userId },
-      data: { refreshTokenHash: null },
-    });
+  /**
+   * Log out. With a refresh token, revokes ONLY that session (other devices stay
+   * signed in). Without one, revokes every session for the user ("log out
+   * everywhere") — the safe fallback when the client can't supply its token.
+   */
+  async logout(userId: string, refreshToken?: string) {
+    if (refreshToken) {
+      try {
+        const payload = await this.jwt.verifyAsync<JwtPayload>(refreshToken, {
+          secret: this.refreshSecret(),
+        });
+        if (payload.jti && payload.sub === userId) {
+          await this.prisma.refreshToken.deleteMany({ where: { id: payload.jti, userId } });
+          return { success: true };
+        }
+      } catch {
+        // Unverifiable token → fall through to revoke-all.
+      }
+    }
+    await this.prisma.refreshToken.deleteMany({ where: { userId } });
     return { success: true };
   }
 
@@ -430,23 +485,43 @@ export class AuthService {
   }
 
   private async issueTokens(user: User, extraData: Prisma.UserUpdateInput = {}) {
-    const payload: JwtPayload = { sub: user.id, email: user.email, role: user.role };
+    const basePayload: JwtPayload = { sub: user.id, email: user.email, role: user.role };
+    const refreshTtl = this.config.get<string>('JWT_REFRESH_EXPIRES_IN', '7d');
+
+    // Create the session row first so its id can be embedded as the refresh
+    // token's `jti` — refresh then looks up exactly this session to verify and
+    // rotate, which is what lets a user hold many sessions at once (web + admin
+    // + multiple tabs) without them invalidating each other. tokenHash is filled
+    // in once the token exists.
+    const session = await this.prisma.refreshToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: '',
+        expiresAt: new Date(Date.now() + parseDurationMs(refreshTtl, SEVEN_DAYS_MS)),
+      },
+    });
 
     const [accessToken, refreshToken] = await Promise.all([
-      this.jwt.signAsync(payload),
-      this.jwt.signAsync(payload, {
-        secret: this.refreshSecret(),
-        expiresIn: this.config.get<string>(
-          'JWT_REFRESH_EXPIRES_IN',
-          '7d',
-        ) as `${number}${'m' | 'h' | 'd'}`,
-      }),
+      this.jwt.signAsync(basePayload),
+      this.jwt.signAsync(
+        { ...basePayload, jti: session.id },
+        {
+          secret: this.refreshSecret(),
+          expiresIn: refreshTtl as `${number}${'m' | 'h' | 'd'}`,
+        },
+      ),
     ]);
 
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { refreshTokenHash: await hash(this.digest(refreshToken), SALT_ROUNDS), ...extraData },
+    await this.prisma.refreshToken.update({
+      where: { id: session.id },
+      data: { tokenHash: await hash(this.digest(refreshToken), SALT_ROUNDS) },
     });
+
+    // `extraData` currently only carries lastLoginAt on login — apply it to the
+    // user row (the session is stored separately now).
+    if (Object.keys(extraData).length > 0) {
+      await this.prisma.user.update({ where: { id: user.id }, data: extraData });
+    }
 
     return { accessToken, refreshToken, user: this.toPublicUser(user) };
   }

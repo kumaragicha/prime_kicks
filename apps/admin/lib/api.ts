@@ -424,7 +424,12 @@ export const api = {
   login: (body: LoginSchema) =>
     request<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify(body) }, false),
   me: () => request<PublicUser>('/auth/me'),
-  logout: () => request<{ success: boolean }>('/auth/logout', { method: 'POST' }, false),
+  logout: () =>
+    request<{ success: boolean }>(
+      '/auth/logout',
+      { method: 'POST', body: JSON.stringify({ refreshToken: tokenStore.refresh() ?? undefined }) },
+      false,
+    ),
 
   // Products
   listProducts: (params?: ProductListParams) =>

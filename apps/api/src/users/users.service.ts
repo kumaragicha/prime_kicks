@@ -90,9 +90,14 @@ export class UsersService {
     }
     const user = await this.prisma.user.update({
       where: { id },
-      data: { isActive, ...(isActive ? {} : { refreshTokenHash: null }) },
+      data: { isActive },
       select: userSelect,
     });
+    // Disabling an account revokes every active session so it can't keep using
+    // already-issued refresh tokens.
+    if (!isActive) {
+      await this.prisma.refreshToken.deleteMany({ where: { userId: id } });
+    }
     this.audit.log({
       module: AuditModule.USERS,
       event: AuditEvent.UPDATION,
