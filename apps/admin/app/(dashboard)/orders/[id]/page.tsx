@@ -5,6 +5,7 @@ import {
   OrderStatusActions,
   type OrderStatusAction,
 } from '@/components/order-status-actions';
+import { ShipmentPanel } from '@/components/shipment-panel';
 import { useOrder, useUpdateOrderStatus } from '@/lib/hooks';
 import { ORDER_STATUS, PAYMENT_STATUS, type OrderStatus } from '@prime-kicks/types';
 import { Badge } from '@prime-kicks/ui';
@@ -86,6 +87,7 @@ export default function OrderDetailPage() {
         <div className="flex gap-1 items-center">
           <OrderStatusActions
             current={order.status as OrderStatus}
+            shipmentStatus={order.shipment.status}
             disabled={updateStatus.isPending}
             onSelect={setPendingAction}
           />
@@ -109,6 +111,8 @@ export default function OrderDetailPage() {
                       <img
                         src={item.product.photoUrls[0]}
                         alt={item.title}
+                        loading="lazy"
+                        decoding="async"
                         className="w-full h-full object-cover"
                       />
                     </div>
@@ -198,6 +202,13 @@ export default function OrderDetailPage() {
               </p>
             </div>
           </div>
+
+          {/* Shipmozo shipment */}
+          <ShipmentPanel
+            orderId={order.id}
+            shipment={order.shipment}
+            state={order.address.state}
+          />
         </aside>
       </div>
 

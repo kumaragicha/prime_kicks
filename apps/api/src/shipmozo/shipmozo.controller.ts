@@ -39,6 +39,15 @@ export class ShipmozoController {
     return this.shipment.pushForOrder(id, user.email, true);
   }
 
+  /** Retry courier assignment on an order already pushed to Shipmozo (admin only).
+   *  Reuses the existing Shipmozo order — never re-pushes — so it can't create a
+   *  duplicate; walks the configured couriers in priority order until one books. */
+  @Roles('ADMIN')
+  @Post('orders/:id/assign-courier')
+  assignCourier(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.shipment.retryAssignForOrder(id, user.email);
+  }
+
   /** Manually mark an order as shipped with a local courier + AWB (admin only). */
   @Roles('ADMIN')
   @Post('orders/:id/manual-ship')

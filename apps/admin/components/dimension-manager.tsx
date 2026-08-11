@@ -11,17 +11,20 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 const fieldClass =
   'w-full rounded-md border border-neutral-300 px-3 py-2 text-sm focus:border-neutral-900 focus:outline-none';
 
-type Draft = { name: string; length: string; width: string; height: string };
-const emptyDraft: Draft = { name: '', length: '', width: '', height: '' };
+type Draft = { name: string; weight: string; length: string; width: string; height: string };
+const emptyDraft: Draft = { name: '', weight: '', length: '', width: '', height: '' };
 
 /** Parse a draft into a numeric payload, or return null if anything is invalid. */
-function parseDraft(draft: Draft): { name: string; length: number; width: number; height: number } | null {
+function parseDraft(
+  draft: Draft,
+): { name: string; weight: number; length: number; width: number; height: number } | null {
   const name = draft.name.trim();
+  const weight = Number(draft.weight);
   const length = Number(draft.length);
   const width = Number(draft.width);
   const height = Number(draft.height);
-  if (!name || !(length > 0) || !(width > 0) || !(height > 0)) return null;
-  return { name, length, width, height };
+  if (!name || !(weight > 0) || !(length > 0) || !(width > 0) || !(height > 0)) return null;
+  return { name, weight, length, width, height };
 }
 
 export function DimensionManager({ items, loading }: { items?: Dimension[]; loading: boolean }) {
@@ -36,7 +39,7 @@ export function DimensionManager({ items, loading }: { items?: Dimension[]; load
   const add = () => {
     const payload = parseDraft(creating);
     if (!payload) {
-      toastError('Enter a name and positive length, width and height.');
+      toastError('Enter a name and positive weight, length, width and height.');
       return;
     }
     create.mutate({ ...payload, isActive: true }, { onSuccess: () => setCreating(emptyDraft), onError });
@@ -45,7 +48,7 @@ export function DimensionManager({ items, loading }: { items?: Dimension[]; load
   const saveEdit = (id: string) => {
     const payload = parseDraft(editDraft);
     if (!payload) {
-      toastError('Enter a name and positive length, width and height.');
+      toastError('Enter a name and positive weight, length, width and height.');
       return;
     }
     update.mutate({ id, body: payload }, { onSuccess: () => setEditingId(null), onError });
@@ -59,7 +62,7 @@ export function DimensionManager({ items, loading }: { items?: Dimension[]; load
       </p>
 
       {/* Create row */}
-      <div className="mt-6 grid gap-2 sm:grid-cols-[2fr_1fr_1fr_1fr_auto] sm:items-end">
+      <div className="mt-6 grid gap-2 sm:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] sm:items-end">
         <label className="flex flex-col gap-1">
           <span className="text-xs text-neutral-600">Name</span>
           <input
@@ -69,6 +72,7 @@ export function DimensionManager({ items, loading }: { items?: Dimension[]; load
             placeholder="e.g. Standard Box"
           />
         </label>
+        <NumberField label="Weight" unit="kg" value={creating.weight} onChange={(v) => setCreating((d) => ({ ...d, weight: v }))} />
         <NumberField label="Length" value={creating.length} onChange={(v) => setCreating((d) => ({ ...d, length: v }))} />
         <NumberField label="Width" value={creating.width} onChange={(v) => setCreating((d) => ({ ...d, width: v }))} />
         <NumberField label="Height" value={creating.height} onChange={(v) => setCreating((d) => ({ ...d, height: v }))} />
@@ -82,7 +86,7 @@ export function DimensionManager({ items, loading }: { items?: Dimension[]; load
         {loading && <p className="p-5 text-sm text-neutral-500">Loading…</p>}
         {items?.map((item) =>
           editingId === item.id ? (
-            <div key={item.id} className="grid gap-2 border-b border-neutral-100 p-3 last:border-0 sm:grid-cols-[2fr_1fr_1fr_1fr_auto] sm:items-end">
+            <div key={item.id} className="grid gap-2 border-b border-neutral-100 p-3 last:border-0 sm:grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] sm:items-end">
               <label className="flex flex-col gap-1">
                 <span className="text-xs text-neutral-600">Name</span>
                 <input
@@ -92,6 +96,7 @@ export function DimensionManager({ items, loading }: { items?: Dimension[]; load
                   onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
                 />
               </label>
+              <NumberField label="Weight" unit="kg" value={editDraft.weight} onChange={(v) => setEditDraft((d) => ({ ...d, weight: v }))} />
               <NumberField label="Length" value={editDraft.length} onChange={(v) => setEditDraft((d) => ({ ...d, length: v }))} />
               <NumberField label="Width" value={editDraft.width} onChange={(v) => setEditDraft((d) => ({ ...d, width: v }))} />
               <NumberField label="Height" value={editDraft.height} onChange={(v) => setEditDraft((d) => ({ ...d, height: v }))} />
@@ -108,7 +113,9 @@ export function DimensionManager({ items, loading }: { items?: Dimension[]; load
             <div key={item.id} className="flex items-center gap-3 border-b border-neutral-100 p-3 last:border-0">
               <div className="flex-1">
                 <span className="text-sm font-medium">{item.name}</span>
-                <span className="ml-2 text-xs text-neutral-500">{formatDimension(item)}</span>
+                <span className="ml-2 text-xs text-neutral-500">
+                  {item.weight} kg · {formatDimension(item)}
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <Toggle
@@ -125,6 +132,7 @@ export function DimensionManager({ items, loading }: { items?: Dimension[]; load
                     setEditingId(item.id);
                     setEditDraft({
                       name: item.name,
+                      weight: String(item.weight),
                       length: String(item.length),
                       width: String(item.width),
                       height: String(item.height),
@@ -163,14 +171,18 @@ function NumberField({
   label,
   value,
   onChange,
+  unit = 'cm',
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  unit?: string;
 }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs text-neutral-600">{label} (cm)</span>
+      <span className="text-xs text-neutral-600">
+        {label} ({unit})
+      </span>
       <input
         type="number"
         min={0}

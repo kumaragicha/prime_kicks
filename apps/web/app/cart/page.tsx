@@ -8,7 +8,7 @@ import { ApiError, api, type StoreCart } from '@/lib/api';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 type AddressForm = {
   name: string;
@@ -51,6 +51,8 @@ export default function CartPage() {
   const [placing, setPlacing] = useState(false);
   const [addressBlock, setAddressBlock] = useState('');
   const [parsing, setParsing] = useState(false);
+  // Idempotency key for the in-flight checkout; survives retries, cleared on success.
+  const idempotencyKeyRef = useRef<string | null>(null);
 
   function notify(text: string) {
     setToast(text);
@@ -105,7 +107,14 @@ export default function CartPage() {
   );
 
   function updateField(field: keyof AddressForm, value: string) {
-    setAddress((prev) => ({ ...prev, [field]: value }));
+    let next = value;
+    // Phone fields: digits only (no +, spaces, or symbols), capped at 10.
+    if (field === 'mobileNo' || field === 'altMobileNo') {
+      next = value.replace(/\D/g, '').slice(0, 10);
+    }
+    // Address line 1 is capped at 100 characters.
+    if (field === 'line1') next = value.slice(0, 100);
+    setAddress((prev) => ({ ...prev, [field]: next }));
     setErrors((prev) => (prev[field] ? { ...prev, [field]: undefined } : prev));
   }
 
@@ -115,13 +124,19 @@ export default function CartPage() {
     // Email is now optional — only validate format if provided
     if (a.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email.trim()))
       e.email = 'Enter a valid email address.';
-    if (!a.mobileNo.trim()) e.mobileNo = 'Please enter your mobile number.';
-    else if (!/^\d{10}$/.test(a.mobileNo.replace(/\D/g, '')))
-      e.mobileNo = 'Enter a valid 10-digit mobile number.';
+    // Phone: exactly 10 digits, no spaces, +, or any other symbol.
+    if (!a.mobileNo) e.mobileNo = 'Please enter your mobile number.';
+    else if (!/^\d{10}$/.test(a.mobileNo))
+      e.mobileNo = 'Mobile number must be 10 digits — no spaces, +, or symbols.';
     // Alternative mobile is optional — only validate format if provided
-    if (a.altMobileNo.trim() && !/^\d{10}$/.test(a.altMobileNo.replace(/\D/g, '')))
-      e.altMobileNo = 'Enter a valid 10-digit alternative mobile number.';
+    if (a.altMobileNo && !/^\d{10}$/.test(a.altMobileNo))
+      e.altMobileNo = 'Alternative mobile must be 10 digits — no spaces, +, or symbols.';
+    // ...and it must differ from the primary number.
+    else if (a.altMobileNo && a.altMobileNo === a.mobileNo)
+      e.altMobileNo = 'Alternative mobile must be different from the mobile number.';
     if (!a.line1.trim()) e.line1 = 'Please enter your address.';
+    else if (a.line1.trim().length > 100)
+      e.line1 = 'Address line 1 must be 100 characters or fewer.';
     if (!a.pincode.trim()) e.pincode = 'Please enter your pincode.';
     else if (!/^\d{6}$/.test(a.pincode.trim())) e.pincode = 'Enter a valid 6-digit pincode.';
     if (!a.city.trim()) e.city = 'Please enter your city.';
@@ -133,6 +148,10 @@ export default function CartPage() {
   // replays the shake; typing doesn't change errKey, so focus is never lost.
   function renderField(field: keyof AddressForm, placeholder: string, type = 'text') {
     const err = errors[field];
+    const isPhone = field === 'mobileNo' || field === 'altMobileNo';
+    const isNumeric = isPhone || field === 'pincode';
+    const maxLength =
+      isPhone ? 10 : field === 'pincode' ? 6 : field === 'line1' ? 100 : undefined;
     return (
       <div key={`${field}-${errKey}`}>
         <input
@@ -143,6 +162,8 @@ export default function CartPage() {
           }`}
           placeholder={placeholder}
           type={type}
+          inputMode={isNumeric ? 'numeric' : undefined}
+          maxLength={maxLength}
           value={address[field]}
           onChange={(e) => updateField(field, e.target.value)}
           aria-invalid={err ? true : undefined}
@@ -173,8 +194,8 @@ export default function CartPage() {
         mobileNo: parsed.mobileNo || prev.mobileNo,
         altMobileNo: parsed.altMobileNo || prev.altMobileNo,
         line1: parsed.line1 || prev.line1,
+        // Landmark is folded into line 2 by the parser (Shipmozo has no landmark field).
         line2: parsed.line2 || prev.line2,
-        landmark: parsed.landmark || prev.landmark,
         pincode: parsed.pincode || prev.pincode,
         city: parsed.city || prev.city,
         state: parsed.state || prev.state,
@@ -200,15 +221,28 @@ export default function CartPage() {
     }
     setErrors({});
     setPlacing(true);
+    // Reuse one idempotency key across retries of THIS checkout so a
+    // double-submit (or a lost response) can't create a second order; it's
+    // cleared on success so the next checkout gets a fresh key.
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
     try {
-      const result = await api.createOrder({
-        items: cart.items.map((item) => ({
-          productId: item.product.id,
-          variantId: item.variant.id,
-          quantity: item.quantity,
-        })),
-        address,
-      });
+      const result = await api.createOrder(
+        {
+          items: cart.items.map((item) => ({
+            productId: item.product.id,
+            variantId: item.variant.id,
+            quantity: item.quantity,
+          })),
+          address,
+        },
+        idempotencyKeyRef.current,
+      );
+      idempotencyKeyRef.current = null; // order placed — retire this key
       // Redirect to a dedicated confirmation route so the success screen has its
       // own URL — a refresh keeps showing it instead of falling back to the cart.
       router.replace(`/order-confirmed?order=${encodeURIComponent(result.orderNumber)}`);
@@ -352,6 +386,8 @@ export default function CartPage() {
                             className="w-full h-full object-cover"
                             src={item.product.photoUrls[0]}
                             alt={item.product.name}
+                            loading="lazy"
+                            decoding="async"
                           />
                         ) : (
                           <span className="h-full grid place-items-center text-[11px] font-bold">
@@ -463,8 +499,7 @@ export default function CartPage() {
                         {renderField('altMobileNo', 'Alternative mobile (optional)')}
                       </div>
                       {renderField('line1', 'Address line 1 *')}
-                      {renderField('line2', 'Address line 2')}
-                      {renderField('landmark', 'Landmark')}
+                      {renderField('line2', 'Landmark')}
                       <div className="grid grid-cols-3 gap-[12px] items-start max-[480px]:grid-cols-1">
                         {renderField('pincode', 'Pincode *')}
                         {renderField('city', 'City *')}
@@ -531,7 +566,8 @@ export default function CartPage() {
 
                     {/* Place order button */}
                     <button
-                      className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] disabled:opacity-50 [&_svg]:w-[14px]"
+                      type="button"
+                      className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] select-none transition-opacity duration-150 disabled:opacity-50 [&_svg]:w-[14px]"
                       disabled={placing}
                       onClick={placeOrder}
                     >

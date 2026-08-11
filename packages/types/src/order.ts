@@ -1,3 +1,5 @@
+import type { UserRole } from './user';
+
 /** Order status constants — use these instead of raw string literals everywhere. */
 export const ORDER_STATUS = {
   PENDING: 'PENDING',
@@ -23,6 +25,31 @@ export const ORDER_TYPE = {
 } as const;
 
 export type OrderType = (typeof ORDER_TYPE)[keyof typeof ORDER_TYPE];
+
+/** Shipmozo shipment lifecycle — mirrors the API's ShipmentStatus enum. */
+export const SHIPMENT_STATUS = {
+  NOT_SHIPPED: 'NOT_SHIPPED',
+  PUSHED: 'PUSHED',
+  ASSIGNED: 'ASSIGNED',
+  FAILED: 'FAILED',
+  CANCELLED: 'CANCELLED',
+} as const;
+
+export type ShipmentStatus = (typeof SHIPMENT_STATUS)[keyof typeof SHIPMENT_STATUS];
+
+/**
+ * An order's Shipmozo shipment. Customers receive only the courier/tracking/
+ * status; the Shipmozo ids and last error are admin-only (optional here).
+ */
+export interface OrderShipment {
+  status: ShipmentStatus;
+  courierPartner: string | null;
+  trackingId: string | null;
+  pushedAt: string | null;
+  shipmozoOrderId?: string | null;
+  shipmozoReferenceId?: string | null;
+  error?: string | null;
+}
 
 export interface OrderItem {
   id: string;
@@ -65,6 +92,7 @@ export interface Order {
   total: number;
   currency: 'INR';
   address: OrderAddress;
+  shipment: OrderShipment;
   createdAt: string;
   updatedAt: string;
 }
@@ -73,7 +101,15 @@ export interface AdminOrderRow {
   id: string;
   orderNumber: string;
   userName: string;
+  /** Order owner's account role — shown under the name. 'CREDIT' = a bulk
+   *  credit-customer account (not a login user). */
+  userRole: UserRole | 'CREDIT';
   status: OrderStatus;
+  shipmentStatus: ShipmentStatus;
+  /** AWB / tracking number once a courier is assigned, else null. */
+  trackingId: string | null;
+  /** Assigned courier name once a courier is assigned, else null. */
+  courierPartner: string | null;
   itemsCount: number;
   total: number;
   currency: string;

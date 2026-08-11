@@ -21,6 +21,8 @@ const LABELS = {
   line1: [
     'complete address',
     'full address',
+    'full addresh',
+    'full adress',
     'address line 1',
     'address 1',
     'addr 1',
@@ -138,7 +140,9 @@ const PRODUCT_WORDS = new Set([
 ]);
 
 const EMAIL_REGEX = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-const MOBILE_REGEX = /(?:\+?91[\s-]?)?[6-9]\d{9}/g;
+// Supports optional country/trunk prefixes and common separators, e.g.
+// "+91 63521-84172", "06352184172", or "63521 84172".
+const MOBILE_REGEX = /(?:\+?91[\s().-]*)?(?:0[\s().-]*)?[6-9](?:[\s().-]*\d){9}/g;
 const PINCODE_REGEX = /\b(\d{6})\b/;
 
 /** Hard caps so a huge pasted block can't tie up the event loop (this endpoint
@@ -153,7 +157,7 @@ function labelRegex(label: string): RegExp {
   let re = labelRegexCache.get(label);
   if (!re) {
     const esc = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    re = new RegExp(`^\\s*${esc}\\b\\s*(?:\\([^)]*\\))?\\s*[:\\-–—]?\\s*(.*)$`, 'i');
+    re = new RegExp(`^\\s*${esc}\\b\\s*(?:\\([^)]*\\))?\\s*[:=.\\-–—]*\\s*(.*)$`, 'i');
     labelRegexCache.set(label, re);
   }
   return re;
@@ -207,7 +211,8 @@ export class AddressService {
       }
     }
 
-    // Scan for mobile numbers - capture both primary and alternative if present
+    // Phone labels are intentionally ignored here. Contacts can be written
+    // with any label (or none); their order determines primary then alternate.
     let primaryFound = false;
     for (const line of lines) {
       const nums = extractMobiles(line);
@@ -303,7 +308,10 @@ export class AddressService {
       const altVal = matchLabel(line, LABELS.alt);
       if (altVal !== null) {
         const nums = extractMobiles(altVal);
-        if (nums[0]) result.altMobileNo = nums[0];
+        // Do not let a later "alternative" label swap contacts already found
+        // by the whole-block, in-order phone scan.
+        if (!result.mobileNo && nums[0]) result.mobileNo = nums[0];
+        else if (!result.altMobileNo && nums[0]) result.altMobileNo = nums[0];
         continue;
       }
 
@@ -311,7 +319,7 @@ export class AddressService {
       const phoneVal = matchLabel(line, LABELS.phone);
       if (phoneVal !== null) {
         const nums = extractMobiles(phoneVal);
-        if (nums[0]) result.mobileNo = nums[0];
+        if (!result.mobileNo && nums[0]) result.mobileNo = nums[0];
         if (nums[1] && !result.altMobileNo) result.altMobileNo = nums[1];
         if (nums.length === 0 && !isPlaceholder(phoneVal)) addressLines.push(line);
         continue;

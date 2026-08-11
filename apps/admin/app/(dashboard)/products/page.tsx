@@ -9,12 +9,14 @@ import { Button } from '@prime-kicks/ui';
 import { formatCurrency } from '@prime-kicks/utils';
 import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
 const columnHelper = createColumnHelper<Product>();
 const PAGE_SIZE = 10;
 
 export default function ProductsPage() {
+  const router = useRouter();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [sizeTypeId, setSizeTypeId] = useState('');
@@ -49,7 +51,7 @@ export default function ProductsPage() {
             <div className="h-11 w-11 overflow-hidden rounded-md border border-neutral-200 bg-neutral-100">
               {src ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={src} alt={c.row.original.name} className="h-full w-full object-cover" />
+                <img src={src} alt={c.row.original.name} loading="lazy" decoding="async" className="h-full w-full object-cover" />
               ) : (
                 <span className="flex h-full w-full items-center justify-center text-[9px] font-medium text-neutral-400">
                   No image
@@ -82,7 +84,12 @@ export default function ProductsPage() {
         id: 'actions',
         header: () => <div className="text-right">Action</div>,
         cell: (c) => (
-          <div className="flex justify-end gap-1 items-center">
+          // Stop propagation so acting on a product never triggers the row's
+          // click-through to the edit page.
+          <div
+            className="flex justify-end gap-1 items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
             <IconLink
               href={`/products/${c.row.original.id}/edit`}
               label={`Edit ${c.row.original.name}`}
@@ -112,7 +119,14 @@ export default function ProductsPage() {
   return (
     <div>
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-2xl font-bold">Products</h1>
+        <h1 className="text-2xl font-bold">
+          Products
+          {data && (
+            <span className="ml-2 text-base font-medium text-neutral-500">
+              ({data.meta.total})
+            </span>
+          )}
+        </h1>
         <Link href="/products/new" className="w-full sm:w-auto">
           <Button className="w-full sm:w-auto">+ Add product</Button>
         </Link>
@@ -148,6 +162,7 @@ export default function ProductsPage() {
             table={table}
             isFetching={isFetching}
             emptyMessage="No products match your filters."
+            onRowClick={(product) => router.push(`/products/${product.id}/edit`)}
           />
 
           <Pagination

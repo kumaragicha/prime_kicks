@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { use } from 'react';
 import type { DefaultValues } from 'react-hook-form';
 import type { CreateProductSchema } from '@prime-kicks/validation';
@@ -43,6 +44,21 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
 
   return (
     <div>
+      <Link
+        href="/products"
+        className="mb-6 inline-flex items-center gap-2 text-sm text-neutral-600 hover:text-neutral-900"
+      >
+        <svg
+          className="h-4 w-4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+        </svg>
+        Back to products
+      </Link>
       <h1 className="mb-6 text-2xl font-bold">Edit product</h1>
       <ProductForm
         defaultValues={defaultValues}

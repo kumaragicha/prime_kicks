@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query } from '@nestjs/common';
 import type { PaymentStatus } from '@prime-kicks/types';
 import type {
   CreateOrderSchema,
@@ -27,43 +27,47 @@ export class OrdersController {
   create(
     @CurrentUser() user: AuthenticatedUser,
     @Body(new ZodValidationPipe(createOrderSchema)) body: CreateOrderSchema,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.orders.create(user.id, body, user.role, user.email);
+    return this.orders.create(user.id, body, user.role, user.email, idempotencyKey);
   }
 
   /** Get orders for the currently authenticated user (web profile). */
   @Get('my')
   findMy(@CurrentUser() user: AuthenticatedUser) {
-    return this.orders.findMyOrders(user.id);
+    return this.orders.findMyOrders(user.id, user.email);
   }
 
   /** List all orders (admin only). */
   @Roles('ADMIN')
   @Get()
-  findAll(@Query(new ZodValidationPipe(orderQuerySchema)) query: OrderQuerySchema) {
-    return this.orders.findAll(query);
+  findAll(
+    @Query(new ZodValidationPipe(orderQuerySchema)) query: OrderQuerySchema,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.orders.findAll(query, user.email);
   }
 
   /** Outstanding receivables grouped by customer (admin only).
    *  Declared before `:id` so "payment-pending" isn't captured as an order id. */
   @Roles('ADMIN')
   @Get('payment-pending')
-  paymentPending() {
-    return this.orders.paymentPendingSummary();
+  paymentPending(@CurrentUser() user: AuthenticatedUser) {
+    return this.orders.paymentPendingSummary(user.email);
   }
 
   /** A single customer's approved-payment-pending orders (admin only). */
   @Roles('ADMIN')
   @Get('payment-pending/:userId')
-  paymentPendingForUser(@Param('userId') userId: string) {
-    return this.orders.paymentPendingForUser(userId);
+  paymentPendingForUser(@Param('userId') userId: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.orders.paymentPendingForUser(userId, user.email);
   }
 
   /** Get order details (admin only). */
   @Roles('ADMIN')
   @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.orders.findOne(id);
+  findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.orders.findOne(id, user.email);
   }
 
   /** Update order status (admin only). */

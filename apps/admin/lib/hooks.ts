@@ -2,13 +2,18 @@
 
 import type { PaymentStatus } from '@prime-kicks/types';
 import type {
+  CreateCreditCustomerSchema,
+  CreateDimensionCombinationSchema,
   CreateDimensionSchema,
   CreateOrderSchema,
   CreateProductSchema,
   CreateSizeSchema,
   CreateSizeTypeSchema,
+  UpdateCreditCustomerSchema,
+  UpdateDimensionCombinationSchema,
   UpdateDimensionSchema,
   UpdateProductSchema,
+  UpdateShipmozoSettingSchema,
   UpdateSizeSchema,
   UpdateSizeTypeSchema,
 } from '@prime-kicks/validation';
@@ -271,6 +276,18 @@ export function useOrder(id: string) {
     queryKey: ['order', id],
     queryFn: () => api.getOrder(id),
     enabled: Boolean(id),
+    // The Shipmozo handoff starts after checkout has already returned. Refresh
+    // a just-created/in-progress order briefly so the admin sees the final
+    // assignment result or the stored failure without manually reloading.
+    refetchInterval: (query) => {
+      const order = query.state.data;
+      if (!order || order.shipment.error) return false;
+      const stillStarting = order.shipment.status === 'NOT_SHIPPED';
+      const awaitingAssignment = order.shipment.status === 'PUSHED';
+      const isRecent = Date.now() - new Date(order.createdAt).getTime() < 2 * 60_000;
+      return (awaitingAssignment || (stillStarting && isRecent)) ? 2_000 : false;
+    },
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -341,6 +358,196 @@ export function useSettlePayment() {
     mutationFn: (userId: string) => api.settlePayment(userId),
     onSuccess: () => invalidateOrderRelated(qc),
   });
+}
+
+/* --------------------------------- Shipmozo ----------------------------------- */
+
+/** On-demand Shipmozo health check (admin "Check API" button). */
+export function useShipmozoInfo() {
+  return useMutation({ mutationFn: () => api.shipmozoInfo() });
+}
+
+/** (Re)push an order to Shipmozo, then refresh the order so the panel updates. */
+export function usePushShipment(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.pushShipment(orderId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order', orderId] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+}
+
+/** Manually mark an order shipped with a local courier + AWB, then refresh it. */
+export function useMarkManualShipment(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { courierPartner: string; trackingId: string }) =>
+      api.markManualShipment(orderId, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order', orderId] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+}
+
+/** Attach an existing Shipmozo order by id (validates + marks shipped), then refresh. */
+export function useAttachShipmozoOrder(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { shipmozoOrderId: string }) => api.attachShipmozoOrder(orderId, body),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order', orderId] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+}
+
+/** Drop a shipment — revert to not shipped, clear all tracking, then refresh. */
+export function useDropShipment(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.dropShipment(orderId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order', orderId] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+}
+
+/** Retry courier assignment on an already-pushed order (never re-pushes), then refresh. */
+export function useAssignCourier(orderId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.assignCourier(orderId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['order', orderId] });
+      qc.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+}
+
+/* --------------------------- Dimension combinations --------------------------- */
+
+export function useCombinations(includeInactive = true) {
+  return useQuery({
+    queryKey: ['dimension-combinations', { includeInactive }],
+    queryFn: () => api.listCombinations(includeInactive),
+  });
+}
+
+export function useCombinationMutations() {
+  const qc = useQueryClient();
+  const refresh = () => qc.invalidateQueries({ queryKey: ['dimension-combinations'] });
+  return {
+    create: useMutation({
+      mutationFn: (body: CreateDimensionCombinationSchema) => api.createCombination(body),
+      onSuccess: refresh,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, body }: { id: string; body: UpdateDimensionCombinationSchema }) =>
+        api.updateCombination(id, body),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({
+      mutationFn: (id: string) => api.deleteCombination(id),
+      onSuccess: refresh,
+    }),
+  };
+}
+
+/* ------------------------------ Credit customers ------------------------------ */
+
+export function useCreditCustomers(
+  params: { search?: string; page?: number; pageSize?: number } = {},
+) {
+  return useQuery({
+    queryKey: ['credit-customers', params],
+    queryFn: () => api.listCreditCustomers(params),
+  });
+}
+
+export function useCreditCustomerMutations() {
+  const qc = useQueryClient();
+  const refresh = () => qc.invalidateQueries({ queryKey: ['credit-customers'] });
+  return {
+    create: useMutation({
+      mutationFn: (body: CreateCreditCustomerSchema) => api.createCreditCustomer(body),
+      onSuccess: refresh,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, body }: { id: string; body: UpdateCreditCustomerSchema }) =>
+        api.updateCreditCustomer(id, body),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({
+      mutationFn: (id: string) => api.deleteCreditCustomer(id),
+      onSuccess: refresh,
+    }),
+  };
+}
+
+/* ------------------------------ Settings (Shipmozo) --------------------------- */
+
+export function useShipmozoSettings() {
+  return useQuery({
+    queryKey: ['shipmozo-settings'],
+    queryFn: () => api.getShipmozoSettings(),
+  });
+}
+
+export function useUpdateShipmozoSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UpdateShipmozoSettingSchema) => api.updateShipmozoSettings(body),
+    onSuccess: (data) => qc.setQueryData(['shipmozo-settings'], data),
+  });
+}
+
+/* ------------------------------ Courier config ------------------------------ */
+
+export function useCourierConfigs() {
+  return useQuery({
+    queryKey: ['courier-configs'],
+    queryFn: () => api.listCourierConfigs(),
+  });
+}
+
+export function useCourierConfigMutations() {
+  const qc = useQueryClient();
+  const refresh = () => qc.invalidateQueries({ queryKey: ['courier-configs'] });
+  return {
+    create: useMutation({
+      mutationFn: (body: {
+        weightSlab: string;
+        courierCompanyId: string;
+        courierCompanyServiceTypeId: string;
+        label?: string | null;
+        priority?: number;
+      }) => api.createCourierConfig(body),
+      onSuccess: refresh,
+    }),
+    update: useMutation({
+      mutationFn: ({
+        id,
+        body,
+      }: {
+        id: string;
+        body: {
+          courierCompanyId?: string;
+          courierCompanyServiceTypeId?: string;
+          label?: string | null;
+          priority?: number;
+        };
+      }) => api.updateCourierConfig(id, body),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({
+      mutationFn: (id: string) => api.deleteCourierConfig(id),
+      onSuccess: refresh,
+    }),
+  };
 }
 
 /* ---------------------------------- Audit log --------------------------------- */

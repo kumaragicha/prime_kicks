@@ -95,7 +95,7 @@ export interface ShipmozoRateCalculatorPayload {
   dimensions: ShipmozoRateCalculatorDimension[];
 }
 
-/** The `data` block returned by auto-assign-order on success. */
+/** The `data` block returned by assign-courier on success. */
 export interface ShipmozoAssignCourierData {
   order_id?: string;
   reference_id?: string;
@@ -235,24 +235,32 @@ export class ShipmozoService {
   }
 
   /**
-   * Auto-assign a courier to an already-pushed order — POST /auto-assign-order.
-   * `shipmozoOrderId` is the order id returned by push-order.
+   * Assign the chosen courier to a pushed Shipmozo order — POST /assign-courier.
+   * The endpoint takes `order_id` (from push-order) and `courier_id` — the
+   * numeric courier id from the rate-calculator response. Sends `courier_id` as
+   * a number when the id is cleanly numeric (the API requires a number), else
+   * the raw string.
    */
   async assignCourier(
     shipmozoOrderId: string,
+    courierId: string,
   ): Promise<ShipmozoResponse<ShipmozoAssignCourierData>> {
-    const body = { order_id: shipmozoOrderId };
+    const digits = courierId.replace(/\D/g, '');
+    const body = {
+      order_id: shipmozoOrderId,
+      courier_id: digits.length > 0 && digits === courierId.trim() ? Number(digits) : courierId,
+    };
     this.logger.debug(
-      `[SHIPMOZO DEBUG] POST ${this.baseUrl()}/auto-assign-order body=${JSON.stringify(body)}`,
+      `[SHIPMOZO DEBUG] POST ${this.baseUrl()}/assign-courier body=${JSON.stringify(body)}`,
     );
     // Non-idempotent: a repeated assign could book a second shipment, so retry
     // only on connection failures — never once the request bytes have gone out.
     const res = await this.call<ShipmozoAssignCourierData>(
-      '/auto-assign-order',
+      '/assign-courier',
       { method: 'POST', body: JSON.stringify(body) },
       false,
     );
-    this.logger.debug(`[SHIPMOZO DEBUG] auto-assign-order response=${JSON.stringify(res)}`);
+    this.logger.debug(`[SHIPMOZO DEBUG] assign-courier response=${JSON.stringify(res)}`);
     return res;
   }
 

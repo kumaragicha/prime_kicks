@@ -223,6 +223,8 @@ export const api = {
     return optionalAuthRequest<Paginated<Product>>(`/products${qs}`);
   },
   getProduct: (id: string) => optionalAuthRequest<Product>(`/products/${id}`),
+  getSimilarProducts: (id: string) =>
+    optionalAuthRequest<Product[]>(`/products/${id}/similar`),
   getFilters: () => request<StoreFilters>('/filters'),
   getHeroSlides: () => request<HeroSlide[]>('/hero'),
   addToCart: (productId: string, variantId: string) =>
@@ -238,24 +240,30 @@ export const api = {
     }),
   removeCartItem: (itemId: string) =>
     authenticatedRequest<StoreCart>(`/cart/items/${itemId}`, { method: 'DELETE' }),
-  createOrder: (body: {
-    items: Array<{ productId: string; variantId: string; quantity: number }>;
-    address: {
-      name: string;
-      email?: string;
-      altMobileNo?: string;
-      mobileNo: string;
-      line1: string;
-      line2?: string;
-      landmark?: string;
-      pincode: string;
-      city: string;
-      state: string;
-    };
-  }) =>
+  createOrder: (
+    body: {
+      items: Array<{ productId: string; variantId: string; quantity: number }>;
+      address: {
+        name: string;
+        email?: string;
+        altMobileNo?: string;
+        mobileNo: string;
+        line1: string;
+        line2?: string;
+        landmark?: string;
+        pincode: string;
+        city: string;
+        state: string;
+      };
+    },
+    // Idempotency key: a retried/double-submitted checkout with the same key
+    // returns the original order instead of creating a duplicate.
+    idempotencyKey?: string,
+  ) =>
     authenticatedRequest<{ id: string; orderNumber: string }>('/orders', {
       method: 'POST',
       body: JSON.stringify(body),
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     }),
   /** Get the current user's order history (for the profile page). */
   getMyOrders: () => authenticatedRequest<Order[]>('/orders/my'),

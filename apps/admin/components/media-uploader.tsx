@@ -59,17 +59,24 @@ export function ImageUploader({
       setError(`You can add ${max} photos in total.`);
     }
     setUploading((n) => n + picked.length);
-    // Upload sequentially so the order stays predictable.
-    for (const file of picked) {
-      try {
-        const { url } = await api.uploadImage(file);
-        onChange([...currentRef.current, url]);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Upload failed.');
-      } finally {
-        setUploading((n) => n - 1);
-      }
-    }
+    // Upload all picked files in parallel — they're independent, so there's no
+    // reason to wait for each round-trip. Order is preserved by keeping the
+    // results in the picked order and appending the successful ones in one go.
+    const settled = await Promise.all(
+      picked.map(async (file) => {
+        try {
+          const { url } = await api.uploadImage(file);
+          return url;
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Upload failed.');
+          return null;
+        } finally {
+          setUploading((n) => n - 1);
+        }
+      }),
+    );
+    const uploaded = settled.filter((url): url is string => url !== null);
+    if (uploaded.length > 0) onChange([...currentRef.current, ...uploaded]);
     if (inputRef.current) inputRef.current.value = '';
   }
 
@@ -115,6 +122,8 @@ export function ImageUploader({
               src={url}
               alt={`Photo ${i + 1}`}
               draggable={false}
+              loading="lazy"
+              decoding="async"
               className="h-full w-full object-cover"
             />
             {i === 0 && (

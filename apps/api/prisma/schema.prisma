@@ -63,6 +63,7 @@ enum AuditEvent {
   CREATION
   UPDATION
   DELETION
+  READ
 }
 
 /// Append-only trail of every create/update/delete performed through the API.
@@ -379,6 +380,22 @@ model ShipmozoSetting {
   updatedAt         DateTime @updatedAt
 }
 
+/// Courier configuration for different weight slabs. Maps weight ranges to
+/// specific courier company and service type IDs from Shipmozo panel.
+/// Multiple mappings are allowed within a slab and are evaluated by priority.
+model CourierConfig {
+  id                          String   @id @default(cuid())
+  weightSlab                  String   // e.g. "1kg", "2kg", "5kg"
+  courierCompanyId            String   // Shipmozo courier_company_id (e.g., "2" for Delhivery)
+  courierCompanyServiceTypeId String   // Shipmozo courier_company_service_type_id for this weight
+  label                       String?  // optional admin-friendly name, e.g. "Delhivery Surface"
+  priority                    Int      @default(0) // lower values are tried first within the same slab
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([weightSlab, priority])
+}
+
 /// Per-size stock for a product (product X, size UK 3, qty 5).
 model ProductVariant {
   id        String  @id @default(cuid())
@@ -403,6 +420,10 @@ model ProductVariant {
 model Order {
   id            String      @id @default(cuid())
   orderNumber   String      @unique
+  // Optional client-supplied idempotency key (from the `Idempotency-Key` header).
+  // A retried checkout with the same key returns the original order instead of
+  // creating a duplicate. Unique so a race resolves to a single order.
+  idempotencyKey String?    @unique
   // An order is owned by EXACTLY ONE of: a login User (web / reseller) OR a
   // CreditCustomer (admin-created bulk order on credit). Enforced in the service.
   user          User?       @relation(fields: [userId], references: [id])

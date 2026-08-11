@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { AuditEvent, AuditModule, Prisma, type UserRole } from '@prisma/client';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import {
   ORDER_STATUS,
   ORDER_TYPE,
@@ -18,6 +18,7 @@ import type {
   OrderQuerySchema,
   UpdateOrderStatusSchema,
 } from '@prime-kicks/validation';
+import { AuditEvent, AuditModule, Prisma, type UserRole } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { buildCreatedAtRange } from '../common/date-range.util';
 import { PrismaService } from '../prisma/prisma.service';
@@ -59,6 +60,13 @@ function ownerName(order: {
 }
 
 type OrderWithDetails = Prisma.OrderGetPayload<{ include: typeof orderDetailInclude }>;
+
+/** Human-readable, collision-resistant order number: time + random suffix.
+ *  A P2002 on the unique column triggers a regenerate-and-retry in create(). */
+function generateOrderNumber(): string {
+  const random = Math.random().toString(36).slice(2, 9).toUpperCase();
+  return `ORD-${Date.now()}-${random}`;
+}
 
 /** Map an order's line items to the API DTO shape. */
 function mapOrderItems(items: OrderWithDetails['items']) {
@@ -144,6 +152,61 @@ export class OrdersService {
     private readonly shipment: ShipmentService,
   ) {}
 
+  /** Guards against overlapping auto-cancel sweeps if one runs long. */
+  private autoCancelling = false;
+
+  /** How long an unpaid web order may sit PENDING before it's auto-cancelled. */
+  private static readonly PENDING_ORDER_TTL_MS = 48 * 60 * 60 * 1000;
+
+  /**
+   * Auto-cancel unpaid web orders. A customer who checks out on the web places
+   * a PENDING order (payment is confirmed manually by an admin); if payment
+   * never arrives, the order shouldn't hold its reserved stock forever. This
+   * runs every night at 12:00 AM (IST) and cancels orders that have been PENDING
+   * for more than 48 hours, which restores their inventory. Only PENDING is
+   * swept — admin-created orders are pre-approved (never PENDING), so this only
+   * ever touches web/customer orders.
+   *
+   * Cancelling reuses {@link transition} → REJECTED, so it releases stock and
+   * syncs the Shipmozo cancel exactly like a manual admin rejection.
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { timeZone: 'Asia/Kolkata' })
+  async autoCancelStalePendingOrders() {
+    if (this.autoCancelling) return;
+    this.autoCancelling = true;
+    try {
+      const cutoff = new Date(Date.now() - OrdersService.PENDING_ORDER_TTL_MS);
+      const stale = await this.prisma.order.findMany({
+        where: { status: ORDER_STATUS.PENDING, createdAt: { lt: cutoff } },
+        select: { id: true, orderNumber: true },
+        orderBy: { createdAt: 'asc' },
+        take: 200,
+      });
+      if (stale.length === 0) return;
+      this.logger.log(`Auto-cancelling ${stale.length} order(s) unpaid and PENDING for >48h.`);
+      for (const order of stale) {
+        try {
+          // Re-check just before acting: an admin may have approved it since the
+          // sweep query, in which case we must not cancel a now-approved order.
+          const fresh = await this.prisma.order.findUnique({
+            where: { id: order.id },
+            select: { status: true },
+          });
+          if (fresh?.status !== ORDER_STATUS.PENDING) continue;
+          await this.transition(order.id, ORDER_STATUS.REJECTED, 'system:auto-cancel');
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.error(`Auto-cancel failed for ${order.orderNumber}: ${message}`);
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Auto-cancel sweep failed: ${message}`);
+    } finally {
+      this.autoCancelling = false;
+    }
+  }
+
   /** Create an order.
    *  Single endpoint for both web (customer) and admin (reseller) flows.
    *  When `input.resellerId` is present the order is treated as admin-created:
@@ -156,10 +219,29 @@ export class OrdersService {
     input: CreateOrderSchema,
     callerRole?: UserRole,
     auditedBy?: string,
+    idempotencyKey?: string,
   ) {
     this.logger.debug(
-      `[ORDER DEBUG] create START userId=${userId} callerRole=${callerRole ?? 'none'} resellerId=${input.resellerId ?? 'none'} items=${input.items.length}`,
+      `[ORDER DEBUG] create START userId=${userId} callerRole=${callerRole ?? 'none'} resellerId=${input.resellerId ?? 'none'} items=${input.items.length} idem=${idempotencyKey ?? 'none'}`,
     );
+
+    // Idempotency fast path: a retried checkout (same Idempotency-Key) returns the
+    // original order instead of creating a duplicate + double-decrementing stock.
+    // A concurrent race that slips past this is still caught by the unique index
+    // on commit (see the P2002 handling below).
+    const idemKey = idempotencyKey?.trim() || undefined;
+    if (idemKey) {
+      const existing = await this.prisma.order.findUnique({
+        where: { idempotencyKey: idemKey },
+        include: orderDetailInclude,
+      });
+      if (existing) {
+        this.logger.debug(
+          `[ORDER DEBUG] idempotency hit — returning existing order ${existing.orderNumber} for key ${idemKey}`,
+        );
+        return toOrderDto(existing);
+      }
+    }
     // The admin-created flow (order billed to another account, pre-approved) is
     // unlocked by either `resellerId` (reseller pricing) or `creditCustomerId`
     // (bulk, manual per-line rate). Neither may be honored for a non-admin caller,
@@ -215,9 +297,25 @@ export class OrdersService {
     // ignore both and use the admin-entered per-line rate.
     const useResellerPrice = isResellerOrder || ownerRole === 'RESELLER';
 
+    // Collapse duplicate lines (same product + variant) into one, summing the
+    // quantity. Without this the same variant could appear twice, producing two
+    // order lines and two stock decrements against a stale pre-check. The first
+    // line's unitPrice wins (identical variant ⇒ same price for bulk lines too).
+    const mergedItems = Array.from(
+      input.items
+        .reduce((map, item) => {
+          const key = `${item.productId}::${item.variantId}`;
+          const existing = map.get(key);
+          if (existing) existing.quantity += item.quantity;
+          else map.set(key, { ...item });
+          return map;
+        }, new Map<string, (typeof input.items)[number]>())
+        .values(),
+    );
+
     // Fetch every requested variant in a single query (avoids one round-trip per item).
     const variants = await this.prisma.productVariant.findMany({
-      where: { id: { in: input.items.map((i) => i.variantId) } },
+      where: { id: { in: mergedItems.map((i) => i.variantId) } },
       include: {
         product: {
           select: {
@@ -233,7 +331,7 @@ export class OrdersService {
     });
     const variantById = new Map(variants.map((v) => [v.id, v]));
 
-    const itemsWithDetails: ItemWithDetails[] = input.items.map((item) => {
+    const itemsWithDetails: ItemWithDetails[] = mergedItems.map((item) => {
       const variant = variantById.get(item.variantId);
       if (!variant || variant.productId !== item.productId) {
         throw new NotFoundException(
@@ -269,11 +367,19 @@ export class OrdersService {
       (sum, item) => sum + item.unitPrice * item.quantity,
       0,
     );
-    const shipping = input.shipping ?? 0;
+    // Shipping charge is admin-controlled; a web customer can't set it (the
+    // create endpoint is open, so gate it — web orders always default to 0).
+    const shipping = isAdminCreated ? (input.shipping ?? 0) : 0;
     const total = subtotal + shipping;
 
-    // Credit-customer orders are always BULK; otherwise honor the request.
-    const orderType = isCreditOrder ? ORDER_TYPE.BULK : input.orderType ?? ORDER_TYPE.SINGLE;
+    // Credit-customer orders are always BULK. Admins may set the order type
+    // (reseller BULK/SINGLE); a web customer never can — force SINGLE so the
+    // open create endpoint can't be used to inject a privileged order type.
+    const orderType = isCreditOrder
+      ? ORDER_TYPE.BULK
+      : isAdminCreated
+        ? (input.orderType ?? ORDER_TYPE.SINGLE)
+        : ORDER_TYPE.SINGLE;
 
     // Admin-created orders are pre-approved; web orders start as PENDING.
     const status = isAdminCreated
@@ -282,71 +388,124 @@ export class OrdersService {
         : ORDER_STATUS.APPROVED_PAYMENT_PENDING
       : ORDER_STATUS.PENDING;
 
-    // Generate order number
-    const orderNumber = `ORD-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    // Payment status is DERIVED from the order status, never trusted from input:
+    // the create endpoint is open to any authenticated user, so a web customer
+    // must not be able to mark their own order paid. Shipping status is admin-only
+    // too; a web order always starts PENDING.
+    const paymentStatus = PAYMENT_FOR_STATUS[status];
+    const shippingStatus = isAdminCreated
+      ? (input.shippingStatus ?? PAYMENT_STATUS.PENDING)
+      : PAYMENT_STATUS.PENDING;
 
     const addr = input.address;
 
-    // Create order in a transaction
-    const order = await this.prisma.$transaction(async (tx) => {
-      // Decrement stock atomically: the `stock >= quantity` guard means two
-      // concurrent orders for the last unit can't both succeed (no overselling).
-      // A zero-row update means it sold out between validation and commit.
-      for (const item of itemsWithDetails) {
-        const decremented = await tx.productVariant.updateMany({
-          where: { id: item.variantId, stock: { gte: item.quantity } },
-          data: { stock: { decrement: item.quantity } },
-        });
-        if (decremented.count === 0) {
-          throw new BadRequestException(
-            `Insufficient stock for "${item.title}" size ${item.sizeLabel}. Please review your cart and try again.`,
-          );
-        }
-      }
+    // Create the order in a transaction, retrying only on an order-number
+    // collision (regenerate + retry) and resolving an idempotency-key race to
+    // the winning order. An explicit timeout keeps a large basket's sequential
+    // stock decrements from tripping Prisma's 5s interactive-transaction default.
+    const MAX_ORDER_NUMBER_ATTEMPTS = 5;
+    let order: OrderWithDetails | undefined;
+    for (let attempt = 1; ; attempt++) {
+      const orderNumber = generateOrderNumber();
+      try {
+        order = await this.prisma.$transaction(
+          async (tx) => {
+            // Decrement stock atomically: the `stock >= quantity` guard means two
+            // concurrent orders for the last unit can't both succeed (no overselling).
+            // A zero-row update means it sold out between validation and commit.
+            for (const item of itemsWithDetails) {
+              const decremented = await tx.productVariant.updateMany({
+                where: { id: item.variantId, stock: { gte: item.quantity } },
+                data: { stock: { decrement: item.quantity } },
+              });
+              if (decremented.count === 0) {
+                throw new BadRequestException(
+                  `Insufficient stock for "${item.title}" size ${item.sizeLabel}. Please review your cart and try again.`,
+                );
+              }
+            }
 
-      // Clear cart items for this user (web flow only — admin-created orders don't touch the cart).
-      // Single relation-filtered delete keeps the transaction open for one fewer round-trip.
-      if (!isAdminCreated) {
-        await tx.cartItem.deleteMany({ where: { cart: { userId } } });
-      }
+            // Clear cart items for this user (web flow only — admin-created orders don't touch the cart).
+            // Single relation-filtered delete keeps the transaction open for one fewer round-trip.
+            if (!isAdminCreated) {
+              await tx.cartItem.deleteMany({ where: { cart: { userId } } });
+            }
 
-      return tx.order.create({
-        data: {
-          orderNumber,
-          userId: ownerUserId,
-          creditCustomerId: ownerCreditCustomerId,
-          status,
-          paymentStatus: input.paymentStatus ?? PAYMENT_STATUS.PENDING,
-          orderType,
-          shippingStatus: input.shippingStatus ?? PAYMENT_STATUS.PENDING,
-          subtotal,
-          shipping,
-          total,
-          addressName: addr.name,
-          addressEmail: addr.email || null,
-          addressMobileNo: addr.mobileNo,
-          addressAltMobileNo: addr.altMobileNo || null,
-          addressLine1: addr.line1,
-          addressLine2: addr.line2 ?? '',
-          landmark: addr.landmark ?? '',
-          pincode: addr.pincode,
-          city: addr.city,
-          state: addr.state,
-          items: {
-            create: itemsWithDetails.map((item) => ({
-              productId: item.productId,
-              variantId: item.variantId,
-              title: item.title,
-              sku: item.sku,
-              sizeLabel: item.sizeLabel,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-            })),
+            return tx.order.create({
+              data: {
+                orderNumber,
+                idempotencyKey: idemKey ?? null,
+                userId: ownerUserId,
+                creditCustomerId: ownerCreditCustomerId,
+                status,
+                paymentStatus,
+                orderType,
+                shippingStatus,
+                subtotal,
+                shipping,
+                total,
+                addressName: addr.name,
+                addressEmail: addr.email || null,
+                addressMobileNo: addr.mobileNo,
+                addressAltMobileNo: addr.altMobileNo || null,
+                addressLine1: addr.line1,
+                addressLine2: addr.line2 ?? '',
+                landmark: addr.landmark ?? '',
+                pincode: addr.pincode,
+                city: addr.city,
+                state: addr.state,
+                items: {
+                  create: itemsWithDetails.map((item) => ({
+                    productId: item.productId,
+                    variantId: item.variantId,
+                    title: item.title,
+                    sku: item.sku,
+                    sizeLabel: item.sizeLabel,
+                    quantity: item.quantity,
+                    unitPrice: item.unitPrice,
+                  })),
+                },
+              },
+              include: orderDetailInclude,
+            });
           },
-        },
-        include: orderDetailInclude,
-      });
-    });
+          { timeout: 20_000, maxWait: 10_000 },
+        );
+        break;
+      } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+          const target = Array.isArray(error.meta?.target)
+            ? (error.meta?.target as string[]).join(',')
+            : String(error.meta?.target ?? '');
+          // Lost an idempotency race: a concurrent request with the same key
+          // already created the order — return that one, don't create a second.
+          if (idemKey && target.includes('idempotencyKey')) {
+            const winner = await this.prisma.order.findUnique({
+              where: { idempotencyKey: idemKey },
+              include: orderDetailInclude,
+            });
+            if (winner) {
+              this.logger.debug(
+                `[ORDER DEBUG] idempotency race resolved to existing order ${winner.orderNumber}`,
+              );
+              return toOrderDto(winner);
+            }
+          }
+          // Order-number collision (astronomically rare): regenerate and retry.
+          if (target.includes('orderNumber') && attempt < MAX_ORDER_NUMBER_ATTEMPTS) {
+            this.logger.warn(
+              `Order number collision on ${orderNumber} — regenerating (attempt ${attempt}/${MAX_ORDER_NUMBER_ATTEMPTS}).`,
+            );
+            continue;
+          }
+        }
+        // Anything else (stock BadRequestException, DB/connection failure) is
+        // surfaced unchanged — HttpExceptions map to their status; the rest 500.
+        throw error;
+      }
+    }
+    // The loop only exits via break (order assigned), an early return, or throw.
+    if (!order) throw new Error('Order creation did not produce an order.');
 
     const dto = toOrderDto(order);
     this.logger.debug(
@@ -391,12 +550,28 @@ export class OrdersService {
   }
 
   /** Get orders for the currently authenticated user (web profile). */
-  async findMyOrders(userId: string) {
+  async findMyOrders(userId: string, auditedBy?: string) {
+    this.logger.debug(`[ORDER DEBUG] findMyOrders START userId=${userId}`);
+
     const data = await this.prisma.order.findMany({
       where: { userId },
       include: orderDetailInclude,
       orderBy: { createdAt: 'desc' },
       take: 50,
+    });
+
+    this.logger.debug(
+      `[ORDER DEBUG] findMyOrders found ${data.length} orders for userId=${userId}`,
+    );
+
+    this.audit.log({
+      module: AuditModule.ORDERS,
+      event: AuditEvent.READ,
+      moduleId: userId,
+      subModule: 'my-orders',
+      action: `Retrieved ${data.length} orders for user ${userId}`,
+      formData: { count: data.length, orderIds: data.map((o) => o.id) },
+      auditedBy,
     });
 
     // Same shape as the full order DTO minus the owner identity (the caller
@@ -408,8 +583,12 @@ export class OrdersService {
     });
   }
 
-  async findAll(query: OrderQuerySchema) {
+  async findAll(query: OrderQuerySchema, auditedBy?: string) {
     const { page, pageSize, search, status, startDate, endDate, sort } = query;
+
+    this.logger.debug(
+      `[ORDER DEBUG] findAll START page=${page} pageSize=${pageSize} search=${search ?? 'none'} status=${status ?? 'none'}`,
+    );
 
     const where: Record<string, unknown> = {};
     if (status) where['status'] = status;
@@ -440,6 +619,19 @@ export class OrdersService {
       this.prisma.order.count({ where }),
     ]);
 
+    this.logger.debug(
+      `[ORDER DEBUG] findAll returned ${data.length} orders (total: ${total}) page=${page}`,
+    );
+
+    this.audit.log({
+      module: AuditModule.ORDERS,
+      event: AuditEvent.READ,
+      subModule: 'list',
+      action: `Listed orders (page ${page}, ${data.length} of ${total} results)`,
+      formData: { page, pageSize, search, status, startDate, endDate, sort, total },
+      auditedBy,
+    });
+
     return {
       data: data.map((order) => ({
         id: order.id,
@@ -466,7 +658,9 @@ export class OrdersService {
    * approved-but-unpaid orders (APPROVED_PAYMENT_PENDING), with their pending
    * order count and total owed. Highest balance first.
    */
-  async paymentPendingSummary() {
+  async paymentPendingSummary(auditedBy?: string) {
+    this.logger.debug(`[ORDER DEBUG] paymentPendingSummary START`);
+
     const grouped = await this.prisma.order.groupBy({
       by: ['userId'],
       where: { status: ORDER_STATUS.APPROVED_PAYMENT_PENDING },
@@ -476,16 +670,14 @@ export class OrdersService {
 
     // Credit-customer (bulk) orders group under a null userId — exclude them here;
     // their receivables are surfaced separately.
-    const userGroups = grouped.filter(
-      (g): g is typeof g & { userId: string } => g.userId !== null,
-    );
+    const userGroups = grouped.filter((g): g is typeof g & { userId: string } => g.userId !== null);
     const users = await this.prisma.user.findMany({
       where: { id: { in: userGroups.map((g) => g.userId) } },
       select: { id: true, name: true },
     });
     const nameById = new Map(users.map((u) => [u.id, u.name]));
 
-    return userGroups
+    const result = userGroups
       .map((g) => ({
         userId: g.userId,
         userName: nameById.get(g.userId) ?? 'Unknown',
@@ -493,15 +685,38 @@ export class OrdersService {
         totalPending: g._sum.total ?? 0,
       }))
       .sort((a, b) => b.totalPending - a.totalPending);
+
+    this.logger.debug(
+      `[ORDER DEBUG] paymentPendingSummary returned ${result.length} customers with pending payments`,
+    );
+
+    this.audit.log({
+      module: AuditModule.ORDERS,
+      event: AuditEvent.READ,
+      subModule: 'payment-pending-summary',
+      action: `Retrieved payment pending summary: ${result.length} customers with pending orders`,
+      formData: {
+        customerCount: result.length,
+        totalPending: result.reduce((sum, c) => sum + c.totalPending, 0),
+      },
+      auditedBy,
+    });
+
+    return result;
   }
 
   /** The approved-payment-pending orders for one user (the card's detail view). */
-  async paymentPendingForUser(userId: string) {
+  async paymentPendingForUser(userId: string, auditedBy?: string) {
+    this.logger.debug(`[ORDER DEBUG] paymentPendingForUser START userId=${userId}`);
+
     const user = await this.prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
       select: { id: true, name: true },
     });
-    if (!user) throw new NotFoundException('User not found');
+    if (!user) {
+      this.logger.debug(`[ORDER DEBUG] paymentPendingForUser NOT FOUND userId=${userId}`);
+      throw new NotFoundException('User not found');
+    }
 
     const orders = await this.prisma.order.findMany({
       where: { userId, status: ORDER_STATUS.APPROVED_PAYMENT_PENDING },
@@ -509,10 +724,32 @@ export class OrdersService {
       orderBy: { createdAt: 'desc' },
     });
 
+    const totalPending = orders.reduce((sum, o) => sum + o.total, 0);
+
+    this.logger.debug(
+      `[ORDER DEBUG] paymentPendingForUser found ${orders.length} orders for userId=${userId} totalPending=${totalPending}`,
+    );
+
+    this.audit.log({
+      module: AuditModule.ORDERS,
+      event: AuditEvent.READ,
+      moduleId: userId,
+      subModule: 'payment-pending-user',
+      action: `Retrieved ${orders.length} payment-pending orders for user ${user.name}`,
+      formData: {
+        userId,
+        userName: user.name,
+        orderCount: orders.length,
+        totalPending,
+        orderIds: orders.map((o) => o.id),
+      },
+      auditedBy,
+    });
+
     return {
       userId: user.id,
       userName: user.name,
-      totalPending: orders.reduce((sum, o) => sum + o.total, 0),
+      totalPending,
       orders: orders.map((o) => ({
         id: o.id,
         orderNumber: o.orderNumber,
@@ -530,6 +767,8 @@ export class OrdersService {
    * stays reserved either way), so a single bulk update is safe.
    */
   async settlePaymentForUser(userId: string, auditedBy?: string) {
+    this.logger.debug(`[ORDER DEBUG] settlePaymentForUser START userId=${userId}`);
+
     const result = await this.prisma.order.updateMany({
       where: { userId, status: ORDER_STATUS.APPROVED_PAYMENT_PENDING },
       data: {
@@ -537,24 +776,64 @@ export class OrdersService {
         paymentStatus: PAYMENT_STATUS.RECEIVED,
       },
     });
+
+    this.logger.debug(
+      `[ORDER DEBUG] settlePaymentForUser SUCCESS userId=${userId} settled=${result.count}`,
+    );
+
     this.audit.log({
       module: AuditModule.ORDERS,
       event: AuditEvent.UPDATION,
       moduleId: userId,
       subModule: 'payment-settlement',
       action: `Settled ${result.count} pending payment order(s) for user ${userId}`,
-      formData: { settled: result.count },
+      formData: {
+        userId,
+        settled: result.count,
+        newStatus: ORDER_STATUS.APPROVED_PAYMENT_RECEIVED,
+        paymentStatus: PAYMENT_STATUS.RECEIVED,
+      },
       auditedBy,
     });
+
     return { settled: result.count };
   }
 
-  async findOne(id: string) {
+  async findOne(id: string, auditedBy?: string) {
+    this.logger.debug(`[ORDER DEBUG] findOne START id=${id}`);
+
     const order = await this.prisma.order.findUnique({
       where: { id },
       include: orderDetailInclude,
     });
-    if (!order) throw new NotFoundException(`Order ${id} not found`);
+    if (!order) {
+      this.logger.debug(`[ORDER DEBUG] findOne NOT FOUND id=${id}`);
+      this.audit.log({
+        module: AuditModule.ORDERS,
+        event: AuditEvent.READ,
+        moduleId: id,
+        subModule: 'detail',
+        action: `Attempted to view order ${id} — not found`,
+        formData: { orderId: id, found: false },
+        auditedBy,
+      });
+      throw new NotFoundException(`Order ${id} not found`);
+    }
+
+    this.logger.debug(
+      `[ORDER DEBUG] findOne SUCCESS id=${id} orderNumber=${order.orderNumber} status=${order.status}`,
+    );
+
+    this.audit.log({
+      module: AuditModule.ORDERS,
+      event: AuditEvent.READ,
+      moduleId: id,
+      subModule: 'detail',
+      referenceNumber: order.orderNumber,
+      action: `Viewed order ${order.orderNumber}`,
+      formData: { orderId: id, orderNumber: order.orderNumber, status: order.status },
+      auditedBy,
+    });
 
     return toOrderDto(order);
   }
@@ -573,6 +852,10 @@ export class OrdersService {
    * Transitioning to the current status is a no-op (idempotent).
    */
   async transition(id: string, target: OrderStatus, auditedBy?: string) {
+    this.logger.debug(
+      `[ORDER DEBUG] transition START id=${id} target=${target} auditedBy=${auditedBy ?? 'none'}`,
+    );
+
     // Only scalar OrderItem columns are read below (variantId/quantity for the
     // stock moves, title/sizeLabel for error messages) — no need to join the
     // ProductVariant relation.
@@ -587,13 +870,23 @@ export class OrdersService {
         },
       },
     });
-    if (!order) throw new NotFoundException(`Order ${id} not found`);
+    if (!order) {
+      this.logger.debug(`[ORDER DEBUG] transition NOT FOUND id=${id}`);
+      throw new NotFoundException(`Order ${id} not found`);
+    }
 
     const current = order.status as OrderStatus;
-    if (current === target) return this.findOne(id);
+    if (current === target) {
+      this.logger.debug(`[ORDER DEBUG] transition NOOP id=${id} already at ${target}`);
+      return this.findOne(id, auditedBy);
+    }
 
     const leavingRejected = current === ORDER_STATUS.REJECTED;
     const enteringRejected = target === ORDER_STATUS.REJECTED;
+
+    this.logger.debug(
+      `[ORDER DEBUG] transition id=${id} ${current} → ${target} leavingRejected=${leavingRejected} enteringRejected=${enteringRejected}`,
+    );
 
     const updated = await this.prisma.$transaction(async (tx) => {
       if (leavingRejected) {
@@ -631,13 +924,23 @@ export class OrdersService {
       });
     });
 
+    this.logger.debug(
+      `[ORDER DEBUG] transition SUCCESS id=${id} ${current} → ${target} orderNumber=${order.orderNumber}`,
+    );
+
     this.audit.log({
       module: AuditModule.ORDERS,
       event: AuditEvent.UPDATION,
       moduleId: order.id,
       referenceNumber: order.orderNumber,
-      action: `Order ${order.orderNumber} status ${current} → ${target}`,
-      formData: { from: current, to: target },
+      action: `Order ${order.orderNumber} status changed: ${current} → ${target}`,
+      formData: {
+        from: current,
+        to: target,
+        leavingRejected,
+        enteringRejected,
+        stockAdjusted: leavingRejected || enteringRejected,
+      },
       auditedBy,
     });
 
@@ -663,6 +966,8 @@ export class OrdersService {
   }
 
   async remove(id: string, auditedBy?: string) {
+    this.logger.debug(`[ORDER DEBUG] remove START id=${id}`);
+
     const order = await this.prisma.order.findUnique({
       where: { id },
       select: {
@@ -672,12 +977,17 @@ export class OrdersService {
         items: { select: { variantId: true, quantity: true } },
       },
     });
-    if (!order) throw new NotFoundException(`Order ${id} not found`);
+    if (!order) {
+      this.logger.debug(`[ORDER DEBUG] remove NOT FOUND id=${id}`);
+      throw new NotFoundException(`Order ${id} not found`);
+    }
 
     // Keep Shipmozo in sync: cancel the shipment there BEFORE we delete the
     // order row (afterwards its Shipmozo ids would be gone). Awaited but never
     // throws, and persist=false since the row is about to be removed.
-    this.logger.debug(`[ORDER DEBUG] deleting order ${order.orderNumber} — syncing Shipmozo cancel first`);
+    this.logger.debug(
+      `[ORDER DEBUG] deleting order ${order.orderNumber} — syncing Shipmozo cancel first`,
+    );
     await this.shipment.cancelForOrder(id, auditedBy, false);
 
     // A non-rejected order still holds its reserved stock; deleting it must
@@ -697,6 +1007,10 @@ export class OrdersService {
       await tx.order.delete({ where: { id } });
     });
 
+    this.logger.debug(
+      `[ORDER DEBUG] remove SUCCESS id=${id} orderNumber=${order.orderNumber} stockReleased=${releaseStock}`,
+    );
+
     this.audit.log({
       module: AuditModule.ORDERS,
       event: AuditEvent.DELETION,
@@ -712,22 +1026,26 @@ export class OrdersService {
 
   /** Approve an order; payment RECEIVED → complete, PENDING → dispatched on credit. */
   approve(id: string, paymentStatus: PaymentStatus, auditedBy?: string) {
-    return this.transition(
-      id,
+    this.logger.debug(
+      `[ORDER DEBUG] approve START id=${id} paymentStatus=${paymentStatus} auditedBy=${auditedBy ?? 'none'}`,
+    );
+    const target =
       paymentStatus === PAYMENT_STATUS.RECEIVED
         ? ORDER_STATUS.APPROVED_PAYMENT_RECEIVED
-        : ORDER_STATUS.APPROVED_PAYMENT_PENDING,
-      auditedBy,
-    );
+        : ORDER_STATUS.APPROVED_PAYMENT_PENDING;
+    this.logger.debug(`[ORDER DEBUG] approve delegating to transition id=${id} target=${target}`);
+    return this.transition(id, target, auditedBy);
   }
 
   /** Revert an order back to PENDING (re-reserving stock if it was rejected). */
   undo(id: string, auditedBy?: string) {
+    this.logger.debug(`[ORDER DEBUG] undo START id=${id} auditedBy=${auditedBy ?? 'none'}`);
     return this.transition(id, ORDER_STATUS.PENDING, auditedBy);
   }
 
   /** Reject an order and restore its stock to inventory. */
   reject(id: string, auditedBy?: string) {
+    this.logger.debug(`[ORDER DEBUG] reject START id=${id} auditedBy=${auditedBy ?? 'none'}`);
     return this.transition(id, ORDER_STATUS.REJECTED, auditedBy);
   }
 }

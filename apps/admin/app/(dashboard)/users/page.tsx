@@ -137,7 +137,12 @@ export default function UsersPage() {
 
   return (
     <div>
-      <h1 className="mb-6 text-2xl font-bold">Users</h1>
+      <h1 className="mb-6 text-2xl font-bold">
+        Users
+        {data && (
+          <span className="ml-2 text-base font-medium text-neutral-500">({data.meta.total})</span>
+        )}
+      </h1>
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <input

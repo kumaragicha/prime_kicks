@@ -2,23 +2,32 @@ import type {
   AdminOrderRow,
   AdminUserRow,
   AuthResponse,
+  CourierConfig,
+  CreditCustomer,
   Dimension,
+  DimensionCombination,
   Order,
   Paginated,
   PaymentStatus,
   Product,
   PublicUser,
+  ShipmozoSetting,
   SizeType,
 } from '@prime-kicks/types';
 import type {
+  CreateCreditCustomerSchema,
+  CreateDimensionCombinationSchema,
   CreateDimensionSchema,
   CreateOrderSchema,
   CreateProductSchema,
   CreateSizeSchema,
   CreateSizeTypeSchema,
   LoginSchema,
+  UpdateCreditCustomerSchema,
+  UpdateDimensionCombinationSchema,
   UpdateDimensionSchema,
   UpdateProductSchema,
+  UpdateShipmozoSettingSchema,
   UpdateSizeSchema,
   UpdateSizeTypeSchema,
 } from '@prime-kicks/validation';
@@ -60,6 +69,45 @@ function toQuery(params?: Record<string, string | number | undefined>): string {
   );
   if (entries.length === 0) return '';
   return `?${new URLSearchParams(entries.map(([k, v]) => [k, String(v)])).toString()}`;
+}
+
+/** Decode a JWT's `exp` (seconds) without verifying — for client-side staleness checks only. */
+function jwtExpirySeconds(token: string): number | null {
+  const payload = token.split('.')[1];
+  if (!payload) return null;
+  try {
+    const json = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/'))) as {
+      exp?: number;
+    };
+    return typeof json.exp === 'number' ? json.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+/** True when the access token is expired (or within a 10s skew of expiring). */
+function accessTokenExpired(token: string): boolean {
+  const exp = jwtExpirySeconds(token);
+  if (exp === null) return false; // Unparseable — let the server be the judge.
+  return Date.now() >= exp * 1000 - 10_000;
+}
+
+/**
+ * Refresh the access token BEFORE sending when it has already expired. Optional-
+ * auth endpoints (e.g. GET /products) answer an expired token as *anonymous* with
+ * a 200 — no 401 to trigger the reactive refresh — so admin-only fields (product
+ * pricing) silently come back stripped/zeroed. Refreshing up front keeps every
+ * request authenticated. If the session can't be recovered, surface a logout.
+ */
+async function ensureFreshAccessToken(): Promise<void> {
+  const access = tokenStore.access();
+  if (!access || !accessTokenExpired(access)) return;
+  if (!tokenStore.refresh()) {
+    emitLogout();
+    return;
+  }
+  const refreshed = await tryRefresh();
+  if (!refreshed) emitLogout();
 }
 
 async function rawFetch(path: string, init?: RequestInit): Promise<Response> {
@@ -110,6 +158,7 @@ function tryRefresh(): Promise<boolean> {
 }
 
 async function request<T>(path: string, init?: RequestInit, allowRetry = true): Promise<T> {
+  if (allowRetry) await ensureFreshAccessToken();
   let res = await rawFetch(path, init);
 
   if (res.status === 401 && allowRetry) {
@@ -154,6 +203,7 @@ async function uploadFile<T>(path: string, file: File): Promise<T> {
     });
   };
 
+  await ensureFreshAccessToken();
   let res = await send();
   if (res.status === 401) {
     const refreshed = await tryRefresh();
@@ -260,7 +310,13 @@ export type InsightsData = {
   stock: {
     outOfStockCount: number;
     lowStockCount: number;
-    low: Array<{ productId: string; title: string; brand: string; sizeLabel: string; stock: number }>;
+    low: Array<{
+      productId: string;
+      title: string;
+      brand: string;
+      sizeLabel: string;
+      stock: number;
+    }>;
     dead: Array<{ productId: string; title: string; brand: string; stock: number }>;
   };
 };
@@ -457,6 +513,145 @@ export const api = {
     request<Order>('/orders', { method: 'POST', body: JSON.stringify(body) }),
   deleteOrder: (id: string) =>
     request<{ id: string; deleted: boolean }>(`/orders/${id}`, { method: 'DELETE' }),
+
+  // Shipmozo shipments
+  shipmozoInfo: () =>
+    request<{ result: string; message: string; data: { Info?: string } }>('/shipmozo/info'),
+  pushShipment: (orderId: string) =>
+    request<{
+      shipmentStatus: string;
+      shipmozoOrderId: string | null;
+      shipmozoReferenceId: string | null;
+      courierPartner: string | null;
+      trackingId: string | null;
+      shipmentError: string | null;
+      shipmentPushedAt: string | null;
+    }>(`/shipmozo/orders/${orderId}/push`, { method: 'POST' }),
+  markManualShipment: (orderId: string, body: { courierPartner: string; trackingId: string }) =>
+    request<{
+      shipmentStatus: string;
+      shipmozoOrderId: string | null;
+      shipmozoReferenceId: string | null;
+      courierPartner: string | null;
+      trackingId: string | null;
+      shipmentError: string | null;
+      shipmentPushedAt: string | null;
+    }>(`/shipmozo/orders/${orderId}/manual-ship`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  attachShipmozoOrder: (orderId: string, body: { shipmozoOrderId: string }) =>
+    request<{
+      shipmentStatus: string;
+      shipmozoOrderId: string | null;
+      shipmozoReferenceId: string | null;
+      courierPartner: string | null;
+      trackingId: string | null;
+      shipmentError: string | null;
+      shipmentPushedAt: string | null;
+    }>(`/shipmozo/orders/${orderId}/attach-shipmozo`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  dropShipment: (orderId: string) =>
+    request<{
+      shipmentStatus: string;
+      shipmozoOrderId: string | null;
+      shipmozoReferenceId: string | null;
+      courierPartner: string | null;
+      trackingId: string | null;
+      shipmentError: string | null;
+      shipmentPushedAt: string | null;
+    }>(`/shipmozo/orders/${orderId}/drop`, { method: 'POST' }),
+  // Retry courier assignment on an already-pushed order — never re-pushes, so no
+  // duplicate Shipmozo order; tries configured couriers in priority order.
+  assignCourier: (orderId: string) =>
+    request<{
+      shipmentStatus: string;
+      shipmozoOrderId: string | null;
+      shipmozoReferenceId: string | null;
+      courierPartner: string | null;
+      trackingId: string | null;
+      shipmentError: string | null;
+      shipmentPushedAt: string | null;
+    }>(`/shipmozo/orders/${orderId}/assign-courier`, { method: 'POST' }),
+
+  // Dimension combinations
+  listCombinations: (includeInactive = false) =>
+    request<DimensionCombination[]>(
+      `/dimension-combinations${includeInactive ? '?includeInactive=true' : ''}`,
+    ),
+  createCombination: (body: CreateDimensionCombinationSchema) =>
+    request<DimensionCombination>('/dimension-combinations', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateCombination: (id: string, body: UpdateDimensionCombinationSchema) =>
+    request<DimensionCombination>(`/dimension-combinations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  deleteCombination: (id: string) =>
+    request<{ id: string; deleted: boolean }>(`/dimension-combinations/${id}`, {
+      method: 'DELETE',
+    }),
+
+  // Credit customers (non-login bulk/credit accounts)
+  listCreditCustomers: (params: { page?: number; pageSize?: number; search?: string } = {}) =>
+    request<Paginated<CreditCustomer>>(`/credit-customers${toQuery(params)}`),
+  getCreditCustomer: (id: string) => request<CreditCustomer>(`/credit-customers/${id}`),
+  createCreditCustomer: (body: CreateCreditCustomerSchema) =>
+    request<CreditCustomer>('/credit-customers', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateCreditCustomer: (id: string, body: UpdateCreditCustomerSchema) =>
+    request<CreditCustomer>(`/credit-customers/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  deleteCreditCustomer: (id: string) =>
+    request<{ id: string; deleted: boolean }>(`/credit-customers/${id}`, { method: 'DELETE' }),
+
+  // Settings — Shipmozo config
+  getShipmozoSettings: () => request<ShipmozoSetting>('/settings/shipmozo'),
+  updateShipmozoSettings: (body: UpdateShipmozoSettingSchema) =>
+    request<ShipmozoSetting>('/settings/shipmozo', {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  // Courier config
+  listCourierConfigs: () => request<CourierConfig[]>('/courier-config'),
+  getCourierConfig: (id: string) => request<CourierConfig>(`/courier-config/${id}`),
+  getCourierConfigByWeightSlab: (weightSlab: string) =>
+    request<CourierConfig>(`/courier-config/weight-slab/${weightSlab}`),
+  createCourierConfig: (body: {
+    weightSlab: string;
+    courierCompanyId: string;
+    courierCompanyServiceTypeId: string;
+    label?: string | null;
+    priority?: number;
+  }) =>
+    request<CourierConfig>('/courier-config', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  updateCourierConfig: (
+    id: string,
+    body: {
+      courierCompanyId?: string;
+      courierCompanyServiceTypeId?: string;
+      label?: string | null;
+      priority?: number;
+    },
+  ) =>
+    request<CourierConfig>(`/courier-config/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+  deleteCourierConfig: (id: string) =>
+    request<{ id: string; deleted: boolean }>(`/courier-config/${id}`, { method: 'DELETE' }),
 
   // Audit log
   listAuditLogs: (params?: AuditLogListParams) =>

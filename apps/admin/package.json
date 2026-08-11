@@ -12,6 +12,8 @@
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@hookform/resolvers": "^3.10.0",
     "@opennextjs/cloudflare": "^1.20.2",
     "@prime-kicks/types": "*",

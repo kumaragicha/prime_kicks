@@ -23,6 +23,25 @@
   --animate-check-pop: check-pop 0.4s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   --animate-check-draw: check-draw 0.5s 0.15s cubic-bezier(0.65, 0, 0.35, 1) both;
   --animate-rise: rise 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  --animate-marquee: marquee var(--duration, 40s) linear infinite;
+  --animate-marquee-vertical: marquee-vertical var(--duration, 40s) linear infinite;
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-100% - var(--gap)));
+  }
+}
+@keyframes marquee-vertical {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(calc(-100% - var(--gap)));
+  }
 }
 
 /* Keyframes cannot be expressed as utilities; referenced via animate-[<name>_...] and --animate-* tokens above. */

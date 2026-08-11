@@ -99,9 +99,10 @@ export function useProducts(params?: Record<string, string>) {
   });
 }
 
-/** Live paginated catalogue for the storefront. Refreshes in the background as
- *  stock changes — on window focus, plus a gentle poll (a 20s poll re-fetched
- *  every loaded page far too aggressively for a shoe catalogue). */
+/** Live paginated catalogue for the storefront. A background poll re-fetched
+ *  every loaded page on an interval — far too aggressive for a shoe catalogue
+ *  that rarely changes mid-session. We refresh on window focus only (and treat
+ *  data as fresh for a minute), which cuts steady-state API/bandwidth load. */
 export function useInfiniteProducts() {
   return useInfiniteQuery({
     queryKey: ['products', 'storefront'],
@@ -109,8 +110,7 @@ export function useInfiniteProducts() {
     initialPageParam: 1,
     getNextPageParam: (lastPage) =>
       lastPage.meta.page < lastPage.meta.totalPages ? lastPage.meta.page + 1 : undefined,
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 60_000,
     refetchOnWindowFocus: true,
   });
 }
@@ -143,6 +143,16 @@ export function useProduct(id: string) {
     queryKey: ['product', id],
     queryFn: () => api.getProduct(id),
     enabled: Boolean(id),
+  });
+}
+
+/** Up to 8 similar products for the product page's "You may also like" rail. */
+export function useSimilarProducts(id: string) {
+  return useQuery({
+    queryKey: ['product', id, 'similar'],
+    queryFn: () => api.getSimilarProducts(id),
+    enabled: Boolean(id),
+    staleTime: 60_000,
   });
 }
 

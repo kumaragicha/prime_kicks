@@ -1,13 +1,25 @@
 'use client';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import {
+  OrderStatusActions,
+  type OrderStatusAction,
+} from '@/components/order-status-actions';
 import { SettleButton } from '@/components/settle-button';
-import { usePaymentPendingUser, useSettlePayment } from '@/lib/hooks';
+import {
+  usePaymentPendingUser,
+  useSettlePayment,
+  useUpdateOrderStatus,
+} from '@/lib/hooks';
 import { useToast } from '@/lib/toast';
+import { ORDER_STATUS } from '@prime-kicks/types';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
+
+/** Reject is never offered here — the payments view is only about settling. */
+const HIDE_ON_PAYMENTS = [ORDER_STATUS.REJECTED];
 
 export default function PaymentDetailPage() {
   const params = useParams();
@@ -15,8 +27,13 @@ export default function PaymentDetailPage() {
   const userId = params.userId as string;
   const { data, isLoading, isError } = usePaymentPendingUser(userId);
   const settle = useSettlePayment();
+  const updateStatus = useUpdateOrderStatus();
   const toast = useToast();
   const [confirm, setConfirm] = useState(false);
+  const [statusChange, setStatusChange] = useState<{
+    order: { id: string; orderNumber: string };
+    action: OrderStatusAction;
+  } | null>(null);
 
   if (isLoading) return <p className="text-neutral-500">Loading…</p>;
   if (isError || !data) return <p className="text-red-600">Failed to load customer payments.</p>;
@@ -65,6 +82,7 @@ export default function PaymentDetailPage() {
                 <th className="px-4 py-3 font-medium text-neutral-600">Items</th>
                 <th className="px-4 py-3 font-medium text-neutral-600">Date</th>
                 <th className="px-4 py-3 text-right font-medium text-neutral-600">Total</th>
+                <th className="px-4 py-3 text-right font-medium text-neutral-600">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -85,6 +103,26 @@ export default function PaymentDetailPage() {
                   </td>
                   <td className="px-4 py-3 text-right font-medium">
                     {formatCurrency(o.total, o.currency)}
+                  </td>
+                  <td className="px-4 py-3">
+                    {/* Stop propagation so acting never opens the order detail. */}
+                    <div
+                      className="flex items-center justify-end gap-1"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <OrderStatusActions
+                        current={ORDER_STATUS.APPROVED_PAYMENT_PENDING}
+                        hideStatuses={HIDE_ON_PAYMENTS}
+                        disabled={updateStatus.isPending}
+                        stopPropagation
+                        onSelect={(action) =>
+                          setStatusChange({
+                            order: { id: o.id, orderNumber: o.orderNumber },
+                            action,
+                          })
+                        }
+                      />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -111,6 +149,38 @@ export default function PaymentDetailPage() {
             },
             onError: (e: Error) => toast.error(e.message || 'Failed to settle payments.'),
           });
+        }}
+      />
+
+      <ConfirmDialog
+        open={statusChange !== null}
+        title="Change order status?"
+        description={
+          statusChange
+            ? `"${statusChange.order.orderNumber}" — this will ${statusChange.action.effect}.`
+            : ''
+        }
+        error={updateStatus.error instanceof Error ? updateStatus.error.message : undefined}
+        isConfirming={updateStatus.isPending}
+        confirmLabel="Confirm"
+        confirmPendingLabel="Updating…"
+        confirmTone={statusChange?.action.tone === 'default' ? 'neutral' : statusChange?.action.tone}
+        onClose={() => {
+          setStatusChange(null);
+          updateStatus.reset();
+        }}
+        onConfirm={() => {
+          if (statusChange) {
+            updateStatus.mutate(
+              { id: statusChange.order.id, status: statusChange.action.status },
+              {
+                onSuccess: () => {
+                  setStatusChange(null);
+                  toast.success('Order status updated.');
+                },
+              },
+            );
+          }
         }}
       />
     </div>

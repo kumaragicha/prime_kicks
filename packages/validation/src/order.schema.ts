@@ -34,29 +34,67 @@ export const addressSchema = z.object({
  *  - the order is pre-approved (status follows paymentStatus)
  *  - the user's cart is NOT cleared
  */
-export const createOrderSchema = z.object({
-  items: z
-    .array(
-      z.object({
-        productId: z.string().min(1),
-        variantId: z.string().min(1),
-        // Upper bound keeps a single line from overflowing the Int price columns.
-        quantity: z.number().int().positive().max(100_000),
-      }),
-    )
-    .min(1, 'An order needs at least one item')
-    .max(500, 'An order cannot contain more than 500 line items'),
-  address: addressSchema,
-  // --- Admin-only fields (optional; when omitted the web/customer flow is used) ---
-  resellerId: z.string().min(1, 'Select a reseller').optional(),
-  orderType: orderTypeSchema.optional().default('SINGLE'),
-  paymentStatus: paymentStatusSchema.optional().default('PENDING'),
-  shippingStatus: paymentStatusSchema.optional().default('PENDING'),
-  shipping: z.number().int().nonnegative().max(10_000_000).optional().default(0),
-});
+export const createOrderSchema = z
+  .object({
+    items: z
+      .array(
+        z.object({
+          productId: z.string().min(1),
+          variantId: z.string().min(1),
+          // Upper bound keeps a single line from overflowing the Int price columns.
+          quantity: z.number().int().positive().max(100_000),
+          // Manual unit rate (₹). Required for bulk/credit orders, ignored otherwise
+          // (normal orders derive the price from the product).
+          unitPrice: z.number().int().positive().max(10_000_000).optional(),
+        }),
+      )
+      .min(1, 'An order needs at least one item')
+      .max(500, 'An order cannot contain more than 500 line items'),
+    address: addressSchema,
+    // --- Admin-only fields (optional; when omitted the web/customer flow is used) ---
+    resellerId: z.string().min(1, 'Select a reseller').optional(),
+    // A bulk order billed to a non-login CreditCustomer (mutually exclusive with resellerId).
+    creditCustomerId: z.string().min(1).optional(),
+    orderType: orderTypeSchema.optional().default('SINGLE'),
+    paymentStatus: paymentStatusSchema.optional().default('PENDING'),
+    shippingStatus: paymentStatusSchema.optional().default('PENDING'),
+    shipping: z.number().int().nonnegative().max(10_000_000).optional().default(0),
+  })
+  .superRefine((val, ctx) => {
+    if (val.resellerId && val.creditCustomerId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'An order cannot have both a reseller and a credit customer.',
+        path: ['creditCustomerId'],
+      });
+    }
+    // Bulk (credit-customer) orders require a manual rate on every line.
+    if (val.creditCustomerId) {
+      val.items.forEach((item, i) => {
+        if (item.unitPrice == null) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'A rate is required for each bulk order line.',
+            path: ['items', i, 'unitPrice'],
+          });
+        }
+      });
+    }
+  });
 
 export const updateOrderStatusSchema = z.object({
   status: orderStatusSchema,
+});
+
+/** Manually mark an order as shipped with a local courier + AWB (no Shipmozo). */
+export const manualShipmentSchema = z.object({
+  courierPartner: z.string().trim().min(1, 'Courier name is required').max(64),
+  trackingId: z.string().trim().min(1, 'AWB / tracking number is required').max(64),
+});
+
+/** Attach an existing Shipmozo order to ours by its Shipmozo order id. */
+export const attachShipmozoOrderSchema = z.object({
+  shipmozoOrderId: z.string().trim().min(1, 'Shipmozo order id is required').max(64),
 });
 
 export const orderQuerySchema = z.object({
@@ -73,4 +111,6 @@ export const orderQuerySchema = z.object({
 
 export type CreateOrderSchema = z.infer<typeof createOrderSchema>;
 export type UpdateOrderStatusSchema = z.infer<typeof updateOrderStatusSchema>;
+export type ManualShipmentSchema = z.infer<typeof manualShipmentSchema>;
+export type AttachShipmozoOrderSchema = z.infer<typeof attachShipmozoOrderSchema>;
 export type OrderQuerySchema = z.infer<typeof orderQuerySchema>;

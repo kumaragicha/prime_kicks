@@ -4,12 +4,14 @@ import { AnimatedLabel } from '@/components/added-label';
 import { Announcement } from '@/components/announcement';
 import { Icon } from '@/components/icon';
 import { LoginModal } from '@/components/login-modal';
+import { ProductCard, toStoreProduct } from '@/components/product-card';
 import { ProductVideo } from '@/components/product-video';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
 import { Toast } from '@/components/toast';
+// import TestimonialMarquee from '@/components/ui/marquee-01';
 import { ApiError, api } from '@/lib/api';
-import { notifyStore, useProduct } from '@/lib/hooks';
+import { notifyStore, useProduct, useSimilarProducts } from '@/lib/hooks';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -19,6 +21,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
   const { id } = use(params);
   const router = useRouter();
   const { data: product, isLoading, isError } = useProduct(id);
+  const { data: similar = [] } = useSimilarProducts(id);
   const [activeMedia, setActiveMedia] = useState(0);
   const [size, setSize] = useState('');
   const [message, setMessage] = useState('');
@@ -209,6 +212,9 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
                         className="w-full h-full block object-cover"
                         src={item.src}
                         alt={`${product.name} — ${item.label}`}
+                        loading={index === 0 ? 'eager' : 'lazy'}
+                        fetchPriority={index === 0 ? 'high' : 'auto'}
+                        decoding="async"
                       />
                     ) : (
                       <>
@@ -398,6 +404,44 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
           </div>
         </aside>
       </section>
+
+      {similar.length > 0 && (
+        <section className="max-w-[1480px] mx-auto px-[5.25vw] pb-[92px] max-[760px]:px-[15px] max-[760px]:pb-[58px]">
+          <div className="border-t border-line pt-[34px]">
+            <h2 className="text-[clamp(20px,2.4vw,30px)] tracking-[-.05em] leading-[1] m-0">
+              Similar products
+            </h2>
+            {/* Horizontal rail: up to 8 browse-only cards (no size/add-to-cart). */}
+            <div className="mt-[22px] flex gap-[16px] overflow-x-auto pb-[10px] [scroll-snap-type:x_mandatory] [scrollbar-width:thin] max-[760px]:gap-[12px]">
+              {similar.map((item, index) => (
+                <div
+                  key={item.id}
+                  className="flex-[0_0_240px] [scroll-snap-align:start] max-[760px]:flex-[0_0_62%]"
+                >
+                  <ProductCard
+                    product={toStoreProduct(item)}
+                    showActions={false}
+                    priority={index < 4}
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* Customer testimonials marquee — enable when ready.
+      <section className="max-w-[1480px] mx-auto px-[5.25vw] pb-[92px] max-[760px]:px-[15px] max-[760px]:pb-[58px]">
+        <div className="border-t border-line pt-[34px]">
+          <h2 className="text-[clamp(20px,2.4vw,30px)] tracking-[-.05em] leading-[1] m-0">
+            What our customers say
+          </h2>
+          <div className="mt-[22px]">
+            <TestimonialMarquee />
+          </div>
+        </div>
+      </section>
+      */}
 
       <SiteFooter />
       {loginOpen && (

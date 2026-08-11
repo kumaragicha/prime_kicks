@@ -23,11 +23,14 @@ export function DataTable<TData>({
   isFetching = false,
   emptyMessage,
   minWidthClass = 'min-w-[760px]',
+  onRowClick,
 }: {
   table: TanstackTable<TData>;
   isFetching?: boolean;
   emptyMessage: string;
   minWidthClass?: string;
+  /** When set, clicking a row calls this with the row's original data. */
+  onRowClick?: (row: TData) => void;
 }) {
   const rows = table.getRowModel().rows;
   const columnCount = table.getAllLeafColumns().length;
@@ -51,7 +54,13 @@ export function DataTable<TData>({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id} className="border-b border-neutral-100 last:border-0">
+            <tr
+              key={row.id}
+              className={`border-b border-neutral-100 last:border-0${
+                onRowClick ? ' cursor-pointer hover:bg-neutral-50' : ''
+              }`}
+              onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+            >
               {row.getVisibleCells().map((cell) => (
                 <td key={cell.id} className="px-4 py-3">
                   {flexRender(cell.column.columnDef.cell, cell.getContext())}

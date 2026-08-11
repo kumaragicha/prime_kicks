@@ -1,6 +1,11 @@
 'use client';
 
-import { ORDER_STATUS, type OrderStatus } from '@prime-kicks/types';
+import {
+  ORDER_STATUS,
+  SHIPMENT_STATUS,
+  type OrderStatus,
+  type ShipmentStatus,
+} from '@prime-kicks/types';
 import type { ReactNode } from 'react';
 import { CheckIcon, ClockIcon, CloseIcon, IconButton, UndoIcon } from './action-controls';
 
@@ -58,15 +63,39 @@ export function OrderStatusActions({
   onSelect,
   disabled = false,
   stopPropagation = false,
+  shipmentStatus,
+  hideStatuses = [],
 }: {
   current: OrderStatus;
   onSelect: (action: OrderStatusAction) => void;
   disabled?: boolean;
   stopPropagation?: boolean;
+  /** The order's shipment status — locks down transitions once it's shipped. */
+  shipmentStatus?: ShipmentStatus;
+  /** Transition targets to never render (e.g. hide "Reject" on the payments page). */
+  hideStatuses?: OrderStatus[];
 }) {
+  // Once a paid order has a courier assigned (shipped), the only sensible moves
+  // are undo (back to pending) or delete — so hide "payment pending" and
+  // "reject" for an APPROVED_PAYMENT_RECEIVED order whose shipment is ASSIGNED.
+  const lockedForShipped =
+    current === ORDER_STATUS.APPROVED_PAYMENT_RECEIVED &&
+    shipmentStatus === SHIPMENT_STATUS.ASSIGNED;
+
   return (
     <>
-      {ORDER_STATUS_ACTIONS.filter((action) => action.status !== current).map((action) => (
+      {ORDER_STATUS_ACTIONS.filter((action) => {
+        if (action.status === current) return false;
+        if (hideStatuses.includes(action.status)) return false;
+        if (
+          lockedForShipped &&
+          (action.status === ORDER_STATUS.APPROVED_PAYMENT_PENDING ||
+            action.status === ORDER_STATUS.REJECTED)
+        ) {
+          return false;
+        }
+        return true;
+      }).map((action) => (
         <IconButton
           key={action.status}
           label={action.label}

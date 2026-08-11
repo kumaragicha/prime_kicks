@@ -233,7 +233,7 @@ export function ProductForm({
           <option value="">No dimension</option>
           {dimensions?.map((d) => (
             <option key={d.id} value={d.id}>
-              {d.name} · {formatDimension(d)}
+              {d.name} · {d.weight} kg · {formatDimension(d)}
             </option>
           ))}
         </select>

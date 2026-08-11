@@ -46,6 +46,14 @@ export class ProductsController {
     return this.products.findOne(id, user);
   }
 
+  /** Similar-products rail for a product page (public; priced by role). */
+  @Public()
+  @UseGuards(OptionalJwtAuthGuard)
+  @Get(':id/similar')
+  findSimilar(@Param('id') id: string, @CurrentUser() user?: AuthenticatedUser) {
+    return this.products.findSimilar(id, user);
+  }
+
   @Roles('ADMIN', 'RESELLER')
   @Post()
   create(

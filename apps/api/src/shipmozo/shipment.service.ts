@@ -8,6 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { AuditEvent, AuditModule, OrderType, Prisma, ShipmentStatus } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import { CourierConfigService } from '../courier-config/courier-config.service';
 import { CombinationsService } from '../dimensions/combinations.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
@@ -27,6 +28,19 @@ const orderPushInclude = {
 } satisfies Prisma.OrderInclude;
 
 type OrderForPush = Prisma.OrderGetPayload<{ include: typeof orderPushInclude }>;
+
+/**
+ * A courier candidate for auto-assignment: an admin-configured courier for the
+ * order's weight slab that the rate calculator confirmed is available on this
+ * route. Assignment is attempted in the admin's priority order (index 0 first),
+ * falling through to the next on failure — so this is always an ordered list.
+ */
+type SelectedCourier = {
+  weightSlab: string;
+  courierCompanyId: string;
+  courierCompanyServiceTypeId: string;
+  label: string | null;
+};
 
 /**
  * Fallback shipment box for multi-unit orders: the "Extra large (Multiple shoes)"
@@ -58,6 +72,7 @@ export class ShipmentService {
     private readonly config: ConfigService,
     private readonly settings: SettingsService,
     private readonly combinations: CombinationsService,
+    private readonly courierConfigs: CourierConfigService,
   ) {}
 
   /** Warehouse id from env — supports the misspelled key that ships in .env. */
@@ -90,7 +105,7 @@ export class ShipmentService {
     // disabled, the order lives only in our system — no push, no failure.
     const settings = await this.settings.getShipmozo();
     this.logger.debug(
-      `[SHIPMOZO DEBUG] settings: enabled=${settings.enabled} autoAssignCourier=${settings.autoAssignCourier} warehouseId="${settings.warehouseId}"`,
+      `[SHIPMOZO DEBUG] settings: enabled=${settings.enabled} warehouseId="${settings.warehouseId}"`,
     );
     if (!settings.enabled) {
       this.logger.debug(
@@ -135,7 +150,7 @@ export class ShipmentService {
         order.shipmentStatus === ShipmentStatus.ASSIGNED)
     ) {
       this.logger.debug(
-        `[SHIPMOZO DEBUG] STOP — order ${order.orderNumber} already ${order.shipmentStatus} and force=false (idempotency skip). NOTE: auto-assign only runs on the SAME call as a fresh push; a re-push here is skipped so assign never fires.`,
+        `[SHIPMOZO DEBUG] STOP — order ${order.orderNumber} already ${order.shipmentStatus} and force=false (idempotency skip).`,
       );
       return this.pickShipment(order);
     }
@@ -164,16 +179,27 @@ export class ShipmentService {
       }
       const payload = this.buildPayload(order, warehouseId, resolved);
 
-      // Gate the push on a serviceability check: no point creating an order in
-      // the panel if the courier can't deliver to the destination pincode.
-      await this.assertServiceable(order);
+      // Auto-assign is only for small orders (≤ 4 units). Orders over 4 units
+      // ship in the Extra Large box and are handled/assigned manually, so we
+      // never auto-book a courier for them even when the admin has auto-assign
+      // on — they push and stay PUSHED for a person to assign.
+      const autoAssign = settings.autoAssignCourier && resolved.totalUnits <= 4;
+
+      // Rate Calculator is the serviceability and courier-policy gate. It
+      // returns live available services; choose only an admin-configured
+      // courier for the appropriate order-weight slab before creating the
+      // remote Shipmozo order. A configured courier is only *required* when
+      // we're going to auto-assign (we need one to assign); otherwise we just
+      // need the route to be serviceable, so a missing courier mapping must not
+      // fail an order the admin only intends to push.
+      const selectedCouriers = await this.selectConfiguredCouriers(order, resolved, autoAssign);
 
       this.logger.debug(`[SHIPMOZO DEBUG] calling push-order for ${order.orderNumber}...`);
       const res = await this.shipmozo.pushOrder(payload);
       this.logger.debug(
         `[SHIPMOZO DEBUG] push-order OK: shipmozoOrderId=${res.data.order_id ?? 'null'} referenceId=${res.data.reference_id ?? 'null'}`,
       );
-      const updated = await this.prisma.order.update({
+      const pushed = await this.prisma.order.update({
         where: { id: orderId },
         data: {
           shipmentStatus: ShipmentStatus.PUSHED,
@@ -190,48 +216,131 @@ export class ShipmentService {
         moduleId: order.id,
         referenceNumber: order.orderNumber,
         action: `Order ${order.orderNumber} pushed to Shipmozo (id ${res.data.order_id ?? '?'})`,
-        formData: { request: payload, response: res, resolvedNote: resolved.note ?? null },
+        formData: {
+          request: payload,
+          selectedCouriers,
+          response: res,
+          resolvedNote: resolved.note ?? null,
+          // Origin used for the serviceability check vs. the ship-from warehouse.
+          // These are separate settings; logging both makes any drift diagnosable.
+          origin: { pickupPincode: this.pickupPincode(), warehouseId },
+        },
         auditedBy,
       });
 
-      // Courier assignment: allowed only for orders of up to 4 units AND when
-      // the admin has enabled auto-assign in Shipmozo settings. Anything larger
-      // is pushed to the panel and assigned MANUALLY, so we never auto-call the
-      // assign API for it. On success the returned projection carries the newly
-      // assigned courier + AWB, so hand it back in place of the just-pushed one.
-      this.logger.debug(
-        `[SHIPMOZO DEBUG] auto-assign gate: autoAssignCourier=${settings.autoAssignCourier} totalUnits=${resolved.totalUnits} (<=4? ${resolved.totalUnits <= 4}) => willCallAssign=${settings.autoAssignCourier && resolved.totalUnits <= 4}`,
+      // Auto-assign only when it's enabled for this order (admin setting on AND
+      // ≤ 4 units) AND at least one configured courier is available on the route.
+      // (Otherwise selectedCouriers is empty — the route was serviceable but no
+      // courier mapping was required.)
+      if (!autoAssign || selectedCouriers.length === 0) {
+        const reason = !settings.autoAssignCourier
+          ? 'is OFF'
+          : resolved.totalUnits > 4
+            ? `skipped (${resolved.totalUnits} units > 4 — manual assignment)`
+            : 'ON but no configured courier';
+        this.logger.debug(
+          `[SHIPMOZO DEBUG] auto-assign ${reason} — order ${order.orderNumber} stays PUSHED (no courier assignment)`,
+        );
+        return pushed;
+      }
+      return this.tryAssignConfiguredCouriers(
+        orderId,
+        order.orderNumber,
+        res.data.order_id ?? null,
+        selectedCouriers,
+        auditedBy,
       );
-      if (settings.autoAssignCourier && resolved.totalUnits <= 4) {
-        this.logger.debug(`[SHIPMOZO DEBUG] ENTERING auto-assign for ${order.orderNumber}`);
-        const assigned = await this.tryAutoAssignCourier(
-          orderId,
-          order.orderNumber,
-          res.data.order_id ?? null,
-          auditedBy,
-        );
-        return assigned ?? updated;
-      }
-      if (settings.autoAssignCourier && resolved.totalUnits > 4) {
-        this.logger.debug(
-          `[SHIPMOZO DEBUG] SKIP auto-assign — ${resolved.totalUnits} units (>4), manual handling`,
-        );
-        this.logger.log(
-          `Order ${order.orderNumber} has ${resolved.totalUnits} units (>4) — courier assignment left for manual handling.`,
-        );
-      } else if (!settings.autoAssignCourier) {
-        this.logger.debug(
-          `[SHIPMOZO DEBUG] SKIP auto-assign — autoAssignCourier is OFF in Shipmozo settings. Turn it on to enable the assign flow.`,
-        );
-      }
-      return updated;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.debug(
-        `[SHIPMOZO DEBUG] EXCEPTION in push flow for ${order.orderNumber}: ${message} — recording FAILED (auto-assign never reached)`,
+        `[SHIPMOZO DEBUG] EXCEPTION in push flow for ${order.orderNumber}: ${message} — recording FAILED`,
       );
       this.logger.error(`Push to Shipmozo failed for ${order.orderNumber}: ${message}`);
-      return this.recordFailure(orderId, message, auditedBy, order.orderNumber);
+      const failed = await this.recordFailure(orderId, message, auditedBy, order.orderNumber);
+      // These are expected business gates (non-serviceable route or no approved
+      // courier), so surface them as a clear 400 to a manual push caller as
+      // well as persisting the failure for background order creation.
+      if (error instanceof BadRequestException) throw error;
+      return failed;
+    }
+  }
+
+  /**
+   * Retry courier assignment for an order that is ALREADY in the Shipmozo panel
+   * — a prior push succeeded but every configured courier failed to assign (e.g.
+   * each rejected the pincode at assign time), or an admin wants another attempt.
+   *
+   * Unlike a forced push this NEVER calls push-order again: it reuses the
+   * existing Shipmozo order id, so it can't create a duplicate remote order. It
+   * re-runs the rate calculator for a fresh candidate list, then walks it in the
+   * admin's priority order, stopping on the first success.
+   */
+  async retryAssignForOrder(orderId: string, auditedBy?: string) {
+    const order = await this.prisma.order.findUnique({
+      where: { id: orderId },
+      include: orderPushInclude,
+    });
+    if (!order) throw new NotFoundException(`Order ${orderId} not found`);
+
+    if (!this.shipmozo.isConfigured()) {
+      throw new ServiceUnavailableException('Shipmozo is not configured (missing API keys).');
+    }
+
+    // This path only (re)assigns a courier — it never pushes. The order must
+    // already live in the Shipmozo panel; if it was never pushed, the admin
+    // should push it first (which also attempts assignment).
+    if (!order.shipmozoOrderId) {
+      throw new BadRequestException(
+        `Order ${order.orderNumber} has not been pushed to Shipmozo yet — push it first.`,
+      );
+    }
+
+    // Already has a courier + tracking: re-assigning risks booking a second
+    // shipment. Block it — drop the shipment first if a change is really needed.
+    if (order.shipmentStatus === ShipmentStatus.ASSIGNED) {
+      throw new BadRequestException(
+        `Order ${order.orderNumber} already has a courier assigned. Drop the shipment first to reassign.`,
+      );
+    }
+
+    try {
+      const resolved = await this.resolveShipment(order);
+      // requireConfiguredCourier = true: an explicit assign request needs a usable
+      // courier for the route/slab, else there is nothing to assign.
+      const selectedCouriers = await this.selectConfiguredCouriers(order, resolved, true);
+      this.logger.debug(
+        `[SHIPMOZO DEBUG] retryAssign order=${order.orderNumber} reusing shipmozoOrderId=${order.shipmozoOrderId} candidates=${selectedCouriers.length}`,
+      );
+      return await this.tryAssignConfiguredCouriers(
+        orderId,
+        order.orderNumber,
+        order.shipmozoOrderId,
+        selectedCouriers,
+        auditedBy,
+      );
+    } catch (error) {
+      // Only errors thrown BEFORE the assign loop land here (resolve / rate-calc /
+      // no configured courier). The loop itself never throws — it records its own
+      // per-courier failures and returns.
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Retry courier assignment failed for ${order.orderNumber}: ${message}`);
+      const updated = await this.prisma.order.update({
+        where: { id: orderId },
+        data: { shipmentError: `Courier assignment retry failed: ${message}` },
+        select: shipmentSelect,
+      });
+      this.audit.log({
+        module: AuditModule.SHIPMENTS,
+        event: AuditEvent.UPDATION,
+        moduleId: orderId,
+        referenceNumber: order.orderNumber,
+        action: `Courier assignment retry failed for order ${order.orderNumber}`,
+        formData: { error: message },
+        auditedBy,
+      });
+      // Business gates (non-serviceable route / no configured courier) → clear 400.
+      if (error instanceof BadRequestException) throw error;
+      return updated;
     }
   }
 
@@ -326,18 +435,7 @@ export class ShipmentService {
 
     // Shipmozo's detail payload can be an object or a single-element array;
     // normalise, then pick whichever key spelling carries the courier / AWB.
-    const raw = Array.isArray(res.data) ? (res.data[0] ?? {}) : res.data;
-    const detail = (raw ?? {}) as Record<string, unknown>;
-    const asString = (v: unknown): string | null => {
-      if (v === null || v === undefined) return null;
-      const s = String(v).trim();
-      return s.length > 0 ? s : null;
-    };
-    const courier =
-      asString(detail.courier_company) ?? asString(detail.courier_name) ?? asString(detail.courier);
-    const awb =
-      asString(detail.awb_number) ?? asString(detail.tracking_number) ?? asString(detail.awb);
-    const referenceId = asString(detail.reference_id);
+    const { courier, awb, referenceId } = extractCourierAwb(res.data);
 
     const updated = await this.prisma.order.update({
       where: { id: orderId },
@@ -500,28 +598,35 @@ export class ShipmentService {
   }
 
   /**
-   * Throw if Shipmozo reports the destination pincode is not serviceable from
-   * the configured pickup pincode. Uses the rate-calculator endpoint: a courier
-   * list in `data` means the delivery pincode is serviceable. Skips the check
-   * (and allows the push) when the pickup pincode or the delivery pincode isn't
-   * a usable number, so a missing config never silently blocks every order.
+   * Rate calculation is both the serviceability check and courier-policy gate.
+   * `requireConfiguredCourier` controls the second half: when true (auto-assign
+   * on) a matching admin-configured courier for the weight slab is mandatory and
+   * its absence fails the push; when false (auto-assign off) a serviceable route
+   * is enough and the method returns `null` if no courier is configured.
+   *
+   * NOTE: serviceability is checked from SHIPMOZO_PICKUP_PINCODE while the push
+   * ships from the (separate) warehouse_id. These are independent settings — if
+   * they describe different origins the availability check is meaningless. Keep
+   * SHIPMOZO_PICKUP_PINCODE equal to the warehouse's pincode.
    */
-  private async assertServiceable(order: OrderForPush): Promise<void> {
+  private async selectConfiguredCouriers(
+    order: OrderForPush,
+    box: { weight: number; length: number; width: number; height: number },
+    requireConfiguredCourier: boolean,
+  ): Promise<SelectedCourier[]> {
     const pickup = this.pickupPincode();
     const deliveryDigits = order.pincode.replace(/\D/g, '');
     const delivery = deliveryDigits ? Number(deliveryDigits) : NaN;
 
     if (!pickup) {
-      this.logger.warn(
-        `SHIPMOZO_PICKUP_PINCODE not configured — skipping serviceability check for ${order.orderNumber}`,
+      throw new ServiceUnavailableException(
+        'SHIPMOZO_PICKUP_PINCODE is not configured; courier availability cannot be checked.',
       );
-      return;
     }
     if (!Number.isFinite(delivery) || delivery <= 0) {
-      this.logger.warn(
-        `Order ${order.orderNumber} has no usable delivery pincode — skipping serviceability check`,
+      throw new BadRequestException(
+        `Order ${order.orderNumber} has no valid delivery pincode for courier availability.`,
       );
-      return;
     }
 
     const payload: ShipmozoRateCalculatorPayload = {
@@ -534,13 +639,13 @@ export class ShipmentService {
       type_of_package: 'SPS',
       rov_type: 'ROV_OWNER',
       cod_amount: '',
-      weight: (order.items.reduce((sum, item) => sum + item.quantity, 0) * 1000) as number,
+      weight: box.weight,
       dimensions: [
         {
           no_of_box: '1',
-          length: '22',
-          width: '10',
-          height: '10',
+          length: String(box.length),
+          width: String(box.width),
+          height: String(box.height),
         },
       ],
     };
@@ -548,101 +653,194 @@ export class ShipmentService {
     const res = await this.shipmozo.rateCalculator(payload);
     const couriers = Array.isArray(res.data) ? res.data : [];
     if (couriers.length === 0) {
-      const message = `Delivery pincode ${delivery} is not serviceable from ${pickup}.`;
-      // When enforcement is on, block the push; otherwise log and proceed so a
-      // Shipmozo account still activating its couriers doesn't halt all orders.
-      if (this.enforceServiceability()) throw new Error(message);
-      this.logger.warn(`${message} Pushing anyway (SHIPMOZO_ENFORCE_SERVICEABILITY=false).`);
+      throw new BadRequestException(
+        `Delivery pincode ${delivery} is not serviceable from pickup pincode ${pickup}.`,
+      );
     }
-  }
-
-  /** Whether a not-serviceable result should block the push (default: true). */
-  private enforceServiceability(): boolean {
-    const raw = this.config.get<string>('SHIPMOZO_ENFORCE_SERVICEABILITY')?.trim().toLowerCase();
-    return raw !== 'false' && raw !== '0' && raw !== 'no';
+    // Collect EVERY service-type id the rate calculator reports as available on
+    // this route. Matching is on the service type ID: a courier option's `id`
+    // must equal a configured `courierCompanyServiceTypeId`.
+    const availableIds = new Set(
+      couriers.map((courier) => getCourierId(courier, ['id'])).filter((id): id is string => !!id),
+    );
+    const weightSlab = weightSlabForGrams(box.weight);
+    const configured = await this.courierConfigs.findByWeightSlab(weightSlab);
+    // Keep only the configured couriers this route actually offers, preserving
+    // the admin's priority order (findByWeightSlab returns priority-asc). This
+    // is the ordered fallback list assignment walks through. IDs are trimmed on
+    // both sides so a stray space in a config value can't silently miss a match,
+    // and a duplicated config row can't queue the same courier twice.
+    const seen = new Set<string>();
+    const candidates: SelectedCourier[] = [];
+    for (const config of configured) {
+      const serviceTypeId = config.courierCompanyServiceTypeId.trim();
+      if (!availableIds.has(serviceTypeId) || seen.has(serviceTypeId)) continue;
+      seen.add(serviceTypeId);
+      candidates.push({
+        weightSlab: config.weightSlab,
+        courierCompanyId: config.courierCompanyId.trim(),
+        courierCompanyServiceTypeId: serviceTypeId,
+        label: config.label,
+      });
+    }
+    this.logger.debug(
+      `[SHIPMOZO DEBUG] rate-calculator: ${couriers.length} service(s) available [${[...availableIds].join(', ') || 'none'}]; ` +
+        `${configured.length} configured for ${weightSlab} slab; ` +
+        `${candidates.length} usable candidate(s) in priority order: ` +
+        `${candidates.map((c) => c.label ?? c.courierCompanyServiceTypeId).join(' > ') || 'none'}`,
+    );
+    if (candidates.length === 0) {
+      // Auto-assign needs at least one courier to book; without one the push must fail.
+      if (requireConfiguredCourier) {
+        throw new BadRequestException(
+          `Standard courier is not available for the ${weightSlab} slab on this route.`,
+        );
+      }
+      // Auto-assign off: the route is serviceable, which is all we require.
+      // Push proceeds; courier gets assigned later (manually or on a forced push).
+      this.logger.debug(
+        `[SHIPMOZO DEBUG] no configured courier for ${weightSlab} slab on this route, but auto-assign is off — pushing without a courier`,
+      );
+      return [];
+    }
+    return candidates;
   }
 
   /**
-   * Auto courier-assignment. Runs after a successful push when the admin's
-   * "Auto-assign courier" setting is on and the order has ≤ 4 units. Calls the
-   * Shipmozo auto-assign-order endpoint, then persists the returned courier +
-   * AWB and moves the order to ShipmentStatus.ASSIGNED.
+   * Assign a courier after a successful push, trying each configured candidate
+   * in the admin's priority order until one succeeds.
    *
-   * Never throws — the push already succeeded, so an assign failure must not
-   * undo it: on failure the order stays PUSHED with the reason recorded in
-   * `shipmentError`. Returns the fresh shipment projection (assigned or the
-   * failure-annotated one), or null when there's nothing to call.
+   * The rate calculator can report a route as serviceable while a *specific*
+   * courier still rejects it at assign time (e.g. "<pincode> is non serviceable
+   * pincode"), so a single courier is not enough. Each assign failure is a
+   * `result:"0"` from Shipmozo — nothing was booked — so falling through to the
+   * next candidate is safe; we only stop on the first genuine success. If every
+   * candidate fails the order stays PUSHED with the per-courier errors recorded,
+   * ready for a manual retry.
    */
-  private async tryAutoAssignCourier(
+  private async tryAssignConfiguredCouriers(
     orderId: string,
     orderNumber: string,
     shipmozoOrderId: string | null,
+    selectedCouriers: SelectedCourier[],
     auditedBy?: string,
   ) {
     this.logger.debug(
-      `[SHIPMOZO DEBUG] tryAutoAssignCourier START order=${orderNumber} shipmozoOrderId=${shipmozoOrderId ?? 'null'}`,
+      `[SHIPMOZO DEBUG] assign configured courier START order=${orderNumber} shipmozoOrderId=${shipmozoOrderId ?? 'null'} candidates=${selectedCouriers.length}`,
     );
     if (!shipmozoOrderId) {
-      this.logger.debug(
-        `[SHIPMOZO DEBUG] STOP auto-assign — push returned NO Shipmozo order id, cannot call auto-assign-order`,
-      );
-      this.logger.warn(
-        `Cannot auto-assign courier for ${orderNumber}: push returned no Shipmozo order id.`,
-      );
-      return null;
+      return this.prisma.order.update({
+        where: { id: orderId },
+        data: { shipmentError: 'Courier assignment skipped: Shipmozo push returned no order ID.' },
+        select: shipmentSelect,
+      });
     }
 
-    try {
+    // Every failed attempt is recorded so a total failure explains what was tried.
+    const attempts: Array<{ courier: string; courierId: string; error: string }> = [];
+
+    for (const [i, candidate] of selectedCouriers.entries()) {
+      const courierLabel = candidate.label ?? candidate.courierCompanyServiceTypeId;
       this.logger.debug(
-        `[SHIPMOZO DEBUG] calling auto-assign-order API with order_id=${shipmozoOrderId}...`,
+        `[SHIPMOZO DEBUG] assign attempt ${i + 1}/${selectedCouriers.length} order=${orderNumber} ` +
+          `courier_id=${candidate.courierCompanyServiceTypeId} (${courierLabel}) → ${shipmozoOrderId}`,
       );
-      const res = await this.shipmozo.assignCourier(shipmozoOrderId);
-      this.logger.debug(
-        `[SHIPMOZO DEBUG] auto-assign-order OK: courier=${res.data.courier_company ?? 'null'} awb=${res.data.awb_number ?? 'null'} — saving ASSIGNED to DB`,
-      );
-      const updated = await this.prisma.order.update({
-        where: { id: orderId },
-        data: {
-          shipmentStatus: ShipmentStatus.ASSIGNED,
-          courierPartner: res.data.courier_company ?? null,
-          trackingId: res.data.awb_number ?? null,
-          shipmentError: null,
-        },
-        select: shipmentSelect,
-      });
-      this.audit.log({
-        module: AuditModule.SHIPMENTS,
-        event: AuditEvent.UPDATION,
-        moduleId: orderId,
-        referenceNumber: orderNumber,
-        action: `Courier "${res.data.courier_company ?? '?'}" assigned to order ${orderNumber} (AWB ${res.data.awb_number ?? '?'})`,
-        formData: { response: res },
-        auditedBy,
-      });
-      return updated;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.debug(
-        `[SHIPMOZO DEBUG] auto-assign-order API FAILED for ${orderNumber}: ${message} — order stays PUSHED, error saved`,
-      );
-      this.logger.error(`Auto-assign courier failed for ${orderNumber}: ${message}`);
-      // Push succeeded — keep the order PUSHED and just record why assign failed.
-      const updated = await this.prisma.order.update({
-        where: { id: orderId },
-        data: { shipmentError: `Courier auto-assign failed: ${message}` },
-        select: shipmentSelect,
-      });
-      this.audit.log({
-        module: AuditModule.SHIPMENTS,
-        event: AuditEvent.UPDATION,
-        moduleId: orderId,
-        referenceNumber: orderNumber,
-        action: `Courier auto-assign failed for order ${orderNumber}`,
-        formData: { error: message },
-        auditedBy,
-      });
-      return updated;
+
+      try {
+        const res = await this.shipmozo.assignCourier(
+          shipmozoOrderId,
+          candidate.courierCompanyServiceTypeId,
+        );
+        this.logger.debug(
+          `[SHIPMOZO DEBUG] assign-courier OK on attempt ${i + 1}: ` +
+            `courier=${res.data.courier_company ?? courierLabel} awb=${res.data.awb_number ?? 'null'}`,
+        );
+
+        // Assign occasionally returns success before the AWB is allocated. Rather
+        // than persist ASSIGNED with no tracking id, fetch the order detail once
+        // to pick up the AWB (and courier name) the panel has by now. Read-only,
+        // so a failure here is non-fatal — we just fall back to the assign body.
+        let courierPartner =
+          res.data.courier_company ?? candidate.label ?? candidate.courierCompanyId;
+        let awb = res.data.awb_number ?? null;
+        if (!awb) {
+          try {
+            const detail = await this.shipmozo.getOrderDetail(shipmozoOrderId);
+            const extracted = extractCourierAwb(detail.data);
+            awb = extracted.awb ?? awb;
+            courierPartner = extracted.courier ?? courierPartner;
+            this.logger.debug(
+              `[SHIPMOZO DEBUG] assign returned no AWB — get-order-detail fallback awb=${awb ?? 'still null'}`,
+            );
+          } catch (detailError) {
+            const message =
+              detailError instanceof Error ? detailError.message : String(detailError);
+            this.logger.warn(
+              `AWB follow-up (get-order-detail) failed for ${orderNumber}: ${message}`,
+            );
+          }
+        }
+
+        const updated = await this.prisma.order.update({
+          where: { id: orderId },
+          data: {
+            shipmentStatus: ShipmentStatus.ASSIGNED,
+            courierPartner,
+            trackingId: awb,
+            shipmentError: null,
+          },
+          select: shipmentSelect,
+        });
+        this.audit.log({
+          module: AuditModule.SHIPMENTS,
+          event: AuditEvent.UPDATION,
+          moduleId: orderId,
+          referenceNumber: orderNumber,
+          action:
+            `Configured courier assigned to order ${orderNumber} via "${courierPartner}" ` +
+            `on attempt ${i + 1}/${selectedCouriers.length} (AWB ${res.data.awb_number ?? awb ?? '?'})`,
+          formData: { selectedCourier: candidate, attempt: i + 1, priorFailures: attempts, response: res },
+          auditedBy,
+        });
+        return updated;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        attempts.push({
+          courier: courierLabel,
+          courierId: candidate.courierCompanyServiceTypeId,
+          error: message,
+        });
+        this.logger.warn(
+          `Courier assign attempt ${i + 1}/${selectedCouriers.length} failed for ${orderNumber} ` +
+            `via "${courierLabel}": ${message}`,
+        );
+        // Fall through to the next configured courier (if any).
+      }
     }
+
+    // Every candidate failed — keep the order PUSHED and record why each failed
+    // so an admin can retry or fix the courier configuration.
+    const summary = attempts.map((a) => `${a.courier}: ${a.error}`).join(' | ');
+    this.logger.error(
+      `All ${selectedCouriers.length} configured courier(s) failed to assign for ${orderNumber}: ${summary}`,
+    );
+    const updated = await this.prisma.order.update({
+      where: { id: orderId },
+      data: {
+        shipmentError: `Courier assignment failed after ${selectedCouriers.length} attempt(s): ${summary}`,
+      },
+      select: shipmentSelect,
+    });
+    this.audit.log({
+      module: AuditModule.SHIPMENTS,
+      event: AuditEvent.UPDATION,
+      moduleId: orderId,
+      referenceNumber: orderNumber,
+      action: `Configured courier assignment failed for order ${orderNumber} after trying ${selectedCouriers.length} courier(s)`,
+      formData: { attempts },
+      auditedBy,
+    });
+    return updated;
   }
 
   /** Project a loaded order onto the shipment-fields shape (matches shipmentSelect). */
@@ -871,6 +1069,49 @@ export class ShipmentService {
 function digitsOr(value: string): number | string {
   const digits = value.replace(/\D/g, '');
   return digits.length > 0 && digits.length <= 15 ? Number(digits) : value;
+}
+
+/** Map a shipment's gram weight to the admin's fixed configuration slabs. */
+function weightSlabForGrams(weight: number): '1kg' | '2kg' | '5kg' {
+  if (weight <= 1000) return '1kg';
+  if (weight <= 2000) return '2kg';
+  return '5kg';
+}
+
+/**
+ * Pull the courier name, AWB and reference id out of a Shipmozo detail/assign
+ * payload, tolerating both the object and single-element-array shapes and the
+ * several key spellings Shipmozo uses. Returns nulls for anything absent.
+ */
+function extractCourierAwb(data: unknown): {
+  courier: string | null;
+  awb: string | null;
+  referenceId: string | null;
+} {
+  const raw = Array.isArray(data) ? (data[0] ?? {}) : data;
+  const detail = (raw ?? {}) as Record<string, unknown>;
+  const asString = (v: unknown): string | null => {
+    if (v === null || v === undefined) return null;
+    const s = String(v).trim();
+    return s.length > 0 ? s : null;
+  };
+  return {
+    courier:
+      asString(detail.courier_company) ??
+      asString(detail.courier_name) ??
+      asString(detail.courier),
+    awb: asString(detail.awb_number) ?? asString(detail.tracking_number) ?? asString(detail.awb),
+    referenceId: asString(detail.reference_id),
+  };
+}
+
+/** Read a Shipmozo courier identifier despite its snake/camel case variants. */
+function getCourierId(courier: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    const value = courier[key];
+    if (typeof value === 'string' || typeof value === 'number') return String(value).trim();
+  }
+  return null;
 }
 
 /**

@@ -1,12 +1,13 @@
 import { Module } from '@nestjs/common';
 import { DimensionsModule } from '../dimensions/dimensions.module';
+import { CourierConfigModule } from '../courier-config/courier-config.module';
 import { SettingsModule } from '../settings/settings.module';
 import { ShipmentService } from './shipment.service';
 import { ShipmozoController } from './shipmozo.controller';
 import { ShipmozoService } from './shipmozo.service';
 
 @Module({
-  imports: [SettingsModule, DimensionsModule],
+  imports: [SettingsModule, DimensionsModule, CourierConfigModule],
   controllers: [ShipmozoController],
   providers: [ShipmozoService, ShipmentService],
   exports: [ShipmentService, ShipmozoService],

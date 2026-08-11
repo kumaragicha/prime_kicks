@@ -422,4 +422,87 @@ Pincode: 400001
     expect(result.altMobileNo).toBe('9123456789'); // Second number as alternative
     expect(result.pincode).toBe('400001');
   });
+
+  it('parses flexible labels and preserves the first two phone numbers in order', () => {
+    const addressBlock = `Name= kartik chorvadi
+Full addresh=raj mahal road koli samaj complax veraval
+City= veraval
+State= gujrat
+Pin code= 362265
+Alternative contact: +91 63521-84172
+Phone no.: 98765 43210`;
+
+    const result = service.parseAddressBlock(addressBlock);
+
+    expect(result.name).toBe('kartik chorvadi');
+    expect(result.line1).toBe('raj mahal road koli samaj complax veraval');
+    expect(result.city).toBe('veraval');
+    expect(result.state).toBe('gujrat');
+    expect(result.pincode).toBe('362265');
+    // The first valid number wins even when its label says "Alternative".
+    expect(result.mobileNo).toBe('6352184172');
+    expect(result.altMobileNo).toBe('9876543210');
+  });
+
+  it('parses the Kartik Chorvadi address format', () => {
+    const result = service.parseAddressBlock(`Name= kartik chorvadi
+Full addresh=raj mahal road koli samaj complax veraval
+City= veraval
+State= gujrat
+Pin code= 362265
+Phone no.= 6352184172`);
+
+    expect(result).toMatchObject({
+      name: 'kartik chorvadi',
+      line1: 'raj mahal road koli samaj complax veraval',
+      city: 'veraval',
+      state: 'gujrat',
+      pincode: '362265',
+      mobileNo: '6352184172',
+      altMobileNo: '',
+    });
+  });
+
+  it('should parse block 16 - Vetsuno Lohe (labeled, alt number + trailing size line)', () => {
+    const result = service.parseAddressBlock(`Name - Vetsuno Lohe
+Address - capital view girls pg Jotsoma
+Landmark -Near Kohima Science College
+City -kohima
+State-nagaland
+pincod-797002
+Number - 9366399248
+Alternative no -8415021868
+Size (39) with box`);
+
+    expect(result.name).toBe('Vetsuno Lohe');
+    expect(result.line1).toBe('capital view girls pg Jotsoma');
+    // Landmark is folded into line 2 (Shipmozo has no landmark field).
+    expect(result.line2).toContain('Near Kohima Science College');
+    expect(result.city).toBe('kohima');
+    expect(result.state).toBe('nagaland');
+    expect(result.pincode).toBe('797002');
+    expect(result.mobileNo).toBe('9366399248');
+    expect(result.altMobileNo).toBe('8415021868');
+    // The trailing product-spec line must never leak into any field.
+    expect(JSON.stringify(result)).not.toMatch(/size|\bbox\b|\b39\b/i);
+  });
+
+  it('should parse block 17 - Francis Lalruattluanga (labeled, no alt number)', () => {
+    const result = service.parseAddressBlock(`Name - Francis Lalruattluanga
+Address - Chaltlang Ruam Veng
+Landmark - Near Badminton Inn
+City - Aizawl
+State- Mizoram
+pincode - 796012
+Number - 8974730240`);
+
+    expect(result.name).toBe('Francis Lalruattluanga');
+    expect(result.line1).toBe('Chaltlang Ruam Veng');
+    expect(result.line2).toContain('Near Badminton Inn');
+    expect(result.city).toBe('Aizawl');
+    expect(result.state).toBe('Mizoram');
+    expect(result.pincode).toBe('796012');
+    expect(result.mobileNo).toBe('8974730240');
+    expect(result.altMobileNo).toBe('');
+  });
 });

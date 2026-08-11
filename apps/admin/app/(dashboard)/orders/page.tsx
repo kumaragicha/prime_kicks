@@ -1,38 +1,18 @@
 'use client';
 
-import { DeleteIcon, IconButton } from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CreateOrderForm } from '@/components/create-order-form';
 import { DateRangePicker } from '@/components/date-range-picker';
-import {
-  OrderStatusActions,
-  type OrderStatusAction,
-} from '@/components/order-status-actions';
-import { controlClass, DataTable, Pagination, selectClass } from '@/components/table-controls';
+import { type OrderStatusAction } from '@/components/order-status-actions';
+import { OrdersTable } from '@/components/orders-table';
+import { controlClass, Pagination, selectClass } from '@/components/table-controls';
 import { useDebouncedValue, useDeleteOrder, useOrders, useUpdateOrderStatus } from '@/lib/hooks';
-import { ORDER_STATUS, type AdminOrderRow, type OrderStatus } from '@prime-kicks/types';
-import { Badge } from '@prime-kicks/ui';
-import { formatCurrency } from '@prime-kicks/utils';
-import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { ORDER_STATUS, type AdminOrderRow } from '@prime-kicks/types';
+import { useState } from 'react';
 
-const columnHelper = createColumnHelper<AdminOrderRow>();
 const PAGE_SIZE = 10;
 
-const STATUS_COLORS: Record<string, 'neutral' | 'success' | 'warning' | 'danger'> = {
-  PENDING: 'warning',
-  APPROVED_PAYMENT_RECEIVED: 'success',
-  APPROVED_PAYMENT_PENDING: 'neutral',
-  REJECTED: 'danger',
-};
-
-function StatusBadge({ status }: { status: string }) {
-  return <Badge tone={STATUS_COLORS[status] ?? 'neutral'}>{status}</Badge>;
-}
-
 export default function OrdersPage() {
-  const router = useRouter();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
@@ -64,82 +44,6 @@ export default function OrdersPage() {
       setter(v);
       setPage(1);
     };
-
-  const columns = useMemo(
-    () => [
-      columnHelper.accessor('orderNumber', {
-        header: 'Order',
-        cell: (c) => {
-          const id = c.row.original.id;
-          const orderNumber = c.getValue();
-          return (
-            <button
-              type="button"
-              className="text-blue-600 hover:underline cursor-pointer"
-              onClick={() => router.push(`/orders/${id}`)}
-            >
-              {orderNumber}
-            </button>
-          );
-        },
-      }),
-      columnHelper.accessor('userName', { header: 'Customer' }),
-      columnHelper.accessor('status', {
-        header: 'Status',
-        cell: (c) => <StatusBadge status={c.getValue()} />,
-      }),
-      columnHelper.accessor('itemsCount', { header: 'Items' }),
-      columnHelper.accessor('total', {
-        header: 'Total',
-        cell: (c) => formatCurrency(c.getValue(), c.row.original.currency),
-      }),
-      columnHelper.accessor('createdAt', {
-        header: 'Date',
-        cell: (c) =>
-          new Date(c.getValue()).toLocaleDateString('en-IN', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-          }),
-      }),
-      columnHelper.display({
-        id: 'actions',
-        header: () => <div className="text-right">Action</div>,
-        cell: (c) => {
-          const order = c.row.original;
-          return (
-            <div
-              className="flex justify-end gap-1 items-center"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <OrderStatusActions
-                current={order.status as OrderStatus}
-                stopPropagation
-                onSelect={(action) => setStatusChange({ order, action })}
-              />
-              <IconButton
-                label="Delete"
-                tone="danger"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setOrderToDelete(order);
-                }}
-              >
-                <DeleteIcon />
-              </IconButton>
-            </div>
-          );
-        },
-      }),
-    ],
-    [],
-  );
-
-  const table = useReactTable({
-    data: data?.data ?? [],
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
 
   return (
     <div>
@@ -195,10 +99,14 @@ export default function OrdersPage() {
 
       {data && (
         <>
-          <DataTable
-            table={table}
+          <OrdersTable
+            orders={data.data}
             isFetching={isFetching}
             emptyMessage="No orders match your filters."
+            indexOffset={(page - 1) * PAGE_SIZE}
+            updatePending={updateStatus.isPending}
+            onStatusAction={(order, action) => setStatusChange({ order, action })}
+            onDelete={(order) => setOrderToDelete(order)}
           />
 
           <Pagination

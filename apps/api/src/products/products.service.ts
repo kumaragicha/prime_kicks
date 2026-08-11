@@ -154,6 +154,61 @@ export class ProductsService {
     return shapeProduct(product, user);
   }
 
+  /**
+   * Products to show in the "Similar products" rail on a product page, in
+   * priority order (up to {@link SIMILAR_LIMIT}, never repeating a product):
+   *   1. Same brand AND a shared model keyword — e.g. "Samba Black" surfaces the
+   *      brand's other "Samba …" (White, Maroon). The keyword is the first word
+   *      of the name (sneaker names are model-first), matched anywhere in name.
+   *   2. Any other product from the same brand.
+   *   3. Products from other brands (newest first) to fill the remaining slots.
+   * Returns [] for a missing/deleted product rather than throwing, so the rail
+   * simply doesn't render.
+   */
+  async findSimilar(id: string, user?: AuthenticatedUser) {
+    const SIMILAR_LIMIT = 8;
+    const current = await this.prisma.product.findFirst({
+      where: { id, deletedAt: null },
+      select: { id: true, name: true, brand: true, brandId: true },
+    });
+    if (!current) return [];
+
+    const collected: ProductWithRelations[] = [];
+    const seen = new Set<string>([current.id]);
+
+    // Match the brand by relation id when present, else by the free-text brand.
+    const sameBrand: Prisma.ProductWhereInput = current.brandId
+      ? { brandId: current.brandId }
+      : { brand: { equals: current.brand, mode: 'insensitive' } };
+
+    const pull = async (where: Prisma.ProductWhereInput) => {
+      const remaining = SIMILAR_LIMIT - collected.length;
+      if (remaining <= 0) return;
+      const rows = await this.prisma.product.findMany({
+        where: { deletedAt: null, id: { notIn: Array.from(seen) }, ...where },
+        include: storefrontInclude,
+        take: remaining,
+        orderBy: { createdAt: 'desc' },
+      });
+      for (const row of rows) {
+        seen.add(row.id);
+        collected.push(row);
+      }
+    };
+
+    // Tier 1 — same brand + shared model keyword (first word of the name).
+    const modelKeyword = current.name.trim().split(/\s+/)[0] ?? '';
+    if (modelKeyword.length >= 2) {
+      await pull({ ...sameBrand, name: { contains: modelKeyword, mode: 'insensitive' } });
+    }
+    // Tier 2 — anything else from the same brand.
+    await pull(sameBrand);
+    // Tier 3 — other brands, newest first, to top up the rail.
+    await pull({});
+
+    return collected.map((row) => shapeProduct(row, user));
+  }
+
   async create(input: CreateProductSchema, auditedBy?: string) {
     const { variants, brandId, productTypeIds, categoryIds, tagIds, ...data } = input;
     const brand = await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } });
