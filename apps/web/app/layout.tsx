@@ -4,7 +4,8 @@ import { Providers } from './providers';
 
 export const metadata: Metadata = {
   title: 'Prime Kicks',
-  description: 'Buy and sell authenticated sneakers.',
+  description:
+    'Elevate your shoe game with Prime Kicks. Discover premium-quality shoes where exceptional style meets unmatched comfort',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

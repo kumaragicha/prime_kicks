@@ -41,6 +41,9 @@ export interface Product {
 
   releaseYear: number | null;
 
+  /** When false the product is hidden from the storefront but stays in the admin. */
+  isActive: boolean;
+
   // Sizing
   sizeTypeId: string;
   sizeType: SizeType;

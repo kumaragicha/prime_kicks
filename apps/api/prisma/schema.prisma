@@ -262,6 +262,10 @@ model Product {
 
   releaseYear Int?
 
+  // When false the product is hidden from the storefront (all non-admin reads
+  // filter `isActive: true`) but stays visible and editable in the admin.
+  isActive Boolean @default(true)
+
   // Sizing — one size type per product, with per-size stock in variants
   sizeType   SizeType         @relation(fields: [sizeTypeId], references: [id])
   sizeTypeId String

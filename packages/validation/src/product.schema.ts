@@ -31,6 +31,9 @@ export const createProductSchema = z.object({
 
   releaseYear: z.number().int().min(1970).max(2100).nullable().default(null),
 
+  // Storefront visibility — inactive products are hidden from non-admin reads.
+  isActive: z.boolean().default(true),
+
   // Sizing
   sizeTypeId: z.string().min(1, 'Pick a size type'),
   variants: z.array(productVariantInputSchema).default([]),

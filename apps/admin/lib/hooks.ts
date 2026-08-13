@@ -109,6 +109,18 @@ export function useUpdateProduct(id: string) {
   });
 }
 
+export function useSetProductActive() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      api.updateProduct(id, { isActive }),
+    onSuccess: (_data, { id }) => {
+      qc.invalidateQueries({ queryKey: ['products'] });
+      qc.invalidateQueries({ queryKey: ['product', id] });
+    },
+  });
+}
+
 export function useDeleteProduct() {
   const qc = useQueryClient();
   return useMutation({

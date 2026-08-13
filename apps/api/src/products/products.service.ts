@@ -79,8 +79,13 @@ export class ProductsService {
   async findAll(query: ProductQuerySchema, user?: AuthenticatedUser) {
     const { page, pageSize, brandId, categoryId, tagId, tag, sizeTypeId, size, search } = query;
 
+    // Only ADMIN sees deactivated products; every other caller (reseller,
+    // customer, anonymous storefront) is limited to active ones.
+    const activeOnly = user?.role !== 'ADMIN';
+
     const buildWhere = (withSearch: boolean): Prisma.ProductWhereInput => ({
       deletedAt: null,
+      ...(activeOnly ? { isActive: true } : {}),
       ...(brandId ? { brandId } : {}),
       ...(categoryId ? { categories: { some: { id: categoryId } } } : {}),
       ...(tagId ? { tags: { some: { id: tagId } } } : {}),
@@ -145,7 +150,7 @@ export class ProductsService {
 
   async findOne(id: string, user?: AuthenticatedUser) {
     const product = await this.prisma.product.findFirst({
-      where: { id, deletedAt: null },
+      where: { id, deletedAt: null, ...(user?.role === 'ADMIN' ? {} : { isActive: true }) },
       include: storefrontInclude,
     });
     if (!product) {
@@ -185,7 +190,7 @@ export class ProductsService {
       const remaining = SIMILAR_LIMIT - collected.length;
       if (remaining <= 0) return;
       const rows = await this.prisma.product.findMany({
-        where: { deletedAt: null, id: { notIn: Array.from(seen) }, ...where },
+        where: { deletedAt: null, isActive: true, id: { notIn: Array.from(seen) }, ...where },
         include: storefrontInclude,
         take: remaining,
         orderBy: { createdAt: 'desc' },

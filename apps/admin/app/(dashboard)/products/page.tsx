@@ -1,11 +1,18 @@
 'use client';
 
-import { DeleteIcon, EditIcon, IconButton, IconLink } from '@/components/action-controls';
+import { DeleteIcon, EditIcon, IconButton, IconLink, Toggle } from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { controlClass, DataTable, Pagination, selectClass } from '@/components/table-controls';
-import { useDebouncedValue, useDeleteProduct, useProducts, useSizeTypes } from '@/lib/hooks';
+import {
+  useDebouncedValue,
+  useDeleteProduct,
+  useProducts,
+  useSetProductActive,
+  useSizeTypes,
+} from '@/lib/hooks';
+import { useToast } from '@/lib/toast';
 import type { Product } from '@prime-kicks/types';
-import { Button } from '@prime-kicks/ui';
+import { Badge, Button } from '@prime-kicks/ui';
 import { formatCurrency } from '@prime-kicks/utils';
 import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import Link from 'next/link';
@@ -32,6 +39,8 @@ export default function ProductsPage() {
     sizeTypeId: sizeTypeId || undefined,
   });
   const deleteProduct = useDeleteProduct();
+  const setActive = useSetProductActive();
+  const toast = useToast();
 
   const resetTo =
     <T,>(setter: (v: T) => void) =>
@@ -80,6 +89,14 @@ export default function ProductsPage() {
         header: 'Customer',
         cell: (c) => formatCurrency(c.getValue() ?? 0, c.row.original.currency),
       }),
+      columnHelper.accessor('isActive', {
+        header: 'Status',
+        cell: (c) => (
+          <Badge tone={c.getValue() ? 'success' : 'danger'}>
+            {c.getValue() ? 'Active' : 'Inactive'}
+          </Badge>
+        ),
+      }),
       columnHelper.display({
         id: 'actions',
         header: () => <div className="text-right">Action</div>,
@@ -90,6 +107,17 @@ export default function ProductsPage() {
             className="flex justify-end gap-1 items-center"
             onClick={(e) => e.stopPropagation()}
           >
+            <Toggle
+              checked={c.row.original.isActive}
+              label={`${c.row.original.isActive ? 'Deactivate' : 'Activate'} ${c.row.original.name}`}
+              disabled={setActive.isPending}
+              onCheckedChange={(isActive) =>
+                setActive.mutate(
+                  { id: c.row.original.id, isActive },
+                  { onError: (e: Error) => toast.error(e.message) },
+                )
+              }
+            />
             <IconLink
               href={`/products/${c.row.original.id}/edit`}
               label={`Edit ${c.row.original.name}`}
@@ -107,7 +135,7 @@ export default function ProductsPage() {
         ),
       }),
     ],
-    [],
+    [setActive, toast],
   );
 
   const table = useReactTable({
