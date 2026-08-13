@@ -275,6 +275,14 @@ export function useInsights(days: number) {
   });
 }
 
+export function useInventory() {
+  return useQuery({
+    queryKey: ['inventory'],
+    queryFn: () => api.getInventory(),
+    placeholderData: (prev) => prev,
+  });
+}
+
 export function useOrders(params?: OrderListParams) {
   return useQuery({
     queryKey: ['orders', params ?? {}],

@@ -127,6 +127,18 @@ const NAV: Array<{ href: string; label: string; icon: ReactNode; adminOnly: bool
     ),
   },
   {
+    href: '/inventory',
+    label: 'Inventory',
+    adminOnly: true,
+    icon: (
+      <Icon>
+        <path d="M20 8v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8" />
+        <path d="M2 4h20v4H2z" />
+        <path d="M10 12h4" />
+      </Icon>
+    ),
+  },
+  {
     href: '/analytics',
     label: 'Analytics',
     adminOnly: true,

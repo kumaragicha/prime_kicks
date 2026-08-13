@@ -110,6 +110,153 @@ export class AnalyticsService {
   }
 
   /**
+   * Inventory snapshot for the dedicated Inventory page. Everything reflects the
+   * *current* stock state (not a time window): headline stock KPIs, the money
+   * tied up in stock (at inhouse cost) and what it could realise (customer /
+   * reseller price), a per-brand rollup, and a full per-product table the admin
+   * can search and sort client-side. Only live products (deletedAt IS NULL) are
+   * counted. "Dead stock" = has units but no non-rejected sale in the last
+   * {@link DEAD_STOCK_DAYS} days.
+   */
+  async inventory() {
+    const now = new Date();
+    const deadSince = new Date(now.getTime() - DEAD_STOCK_DAYS * DAY_MS);
+
+    const [products, soldRecently] = await Promise.all([
+      this.prisma.product.findMany({
+        where: { deletedAt: null },
+        select: {
+          id: true,
+          sku: true,
+          name: true,
+          brand: true,
+          isActive: true,
+          inhouseCost: true,
+          customerPrice: true,
+          resellerPrice: true,
+          variants: { select: { stock: true, size: { select: { label: true } } } },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.orderItem.findMany({
+        where: { order: { ...NOT_REJECTED, createdAt: { gte: deadSince } } },
+        select: { productId: true },
+        distinct: ['productId'],
+      }),
+    ]);
+
+    const soldIds = new Set(soldRecently.map((r) => r.productId));
+
+    // Running totals for the KPI strip.
+    let totalUnits = 0;
+    let totalVariants = 0;
+    let inhouseValue = 0;
+    let retailValue = 0;
+    let resellerValue = 0;
+    let activeProducts = 0;
+    let outOfStockProducts = 0;
+    let deadStockProducts = 0;
+    let outOfStockVariants = 0;
+    let lowStockVariants = 0;
+
+    const brandMap = new Map<
+      string,
+      { brand: string; products: number; units: number; inhouseValue: number; retailValue: number }
+    >();
+
+    const rows = products.map((p) => {
+      const units = p.variants.reduce((n, v) => n + v.stock, 0);
+      const lowVariants = p.variants.filter((v) => v.stock > 0 && v.stock <= LOW_STOCK_THRESHOLD).length;
+      const oosVariants = p.variants.filter((v) => v.stock <= 0).length;
+      const productInhouse = units * p.inhouseCost;
+      const productRetail = units * p.customerPrice;
+      const productReseller = units * p.resellerPrice;
+
+      totalUnits += units;
+      totalVariants += p.variants.length;
+      inhouseValue += productInhouse;
+      retailValue += productRetail;
+      resellerValue += productReseller;
+      outOfStockVariants += oosVariants;
+      lowStockVariants += lowVariants;
+      if (p.isActive) activeProducts += 1;
+
+      const isDead = units > 0 && !soldIds.has(p.id);
+      if (isDead) deadStockProducts += 1;
+
+      // Product-level status for the table's status column / filter.
+      let status: 'out' | 'low' | 'ok';
+      if (units <= 0) {
+        status = 'out';
+        outOfStockProducts += 1;
+      } else if (lowVariants > 0 || units <= LOW_STOCK_THRESHOLD) {
+        status = 'low';
+      } else {
+        status = 'ok';
+      }
+
+      const brand = p.brand || '—';
+      const b = brandMap.get(brand) ?? {
+        brand,
+        products: 0,
+        units: 0,
+        inhouseValue: 0,
+        retailValue: 0,
+      };
+      b.products += 1;
+      b.units += units;
+      b.inhouseValue += productInhouse;
+      b.retailValue += productRetail;
+      brandMap.set(brand, b);
+
+      return {
+        productId: p.id,
+        sku: p.sku,
+        title: p.name,
+        brand,
+        isActive: p.isActive,
+        variants: p.variants.length,
+        units,
+        lowVariants,
+        outOfStockVariants: oosVariants,
+        inhouseCost: p.inhouseCost,
+        customerPrice: p.customerPrice,
+        resellerPrice: p.resellerPrice,
+        inhouseValue: productInhouse,
+        retailValue: productRetail,
+        status,
+        isDead,
+        sizes: p.variants
+          .map((v) => ({ sizeLabel: v.size.label, stock: v.stock }))
+          .sort((a, b) => a.sizeLabel.localeCompare(b.sizeLabel, undefined, { numeric: true })),
+      };
+    });
+
+    return {
+      generatedAt: now.toISOString(),
+      lowStockThreshold: LOW_STOCK_THRESHOLD,
+      deadStockDays: DEAD_STOCK_DAYS,
+      summary: {
+        totalProducts: products.length,
+        activeProducts,
+        inactiveProducts: products.length - activeProducts,
+        totalVariants,
+        totalUnits,
+        inhouseValue,
+        retailValue,
+        resellerValue,
+        potentialProfit: retailValue - inhouseValue,
+        outOfStockProducts,
+        deadStockProducts,
+        outOfStockVariants,
+        lowStockVariants,
+      },
+      byBrand: [...brandMap.values()].sort((a, b) => b.inhouseValue - a.inhouseValue),
+      products: rows.sort((a, b) => b.inhouseValue - a.inhouseValue),
+    };
+  }
+
+  /**
    * Rich analytics for the dedicated Analytics page. `days` sets the trend/KPI
    * window (the KPI strip compares it against the immediately preceding window
    * of equal length). Breakdowns (top products/brands/sizes/locations, brand

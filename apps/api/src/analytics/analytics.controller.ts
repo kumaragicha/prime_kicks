@@ -19,4 +19,11 @@ export class AnalyticsController {
   insights(@Query('days') days?: string) {
     return this.analytics.insights(Number(days ?? 30));
   }
+
+  /** Current stock snapshot for the Inventory page (admin only). */
+  @Roles('ADMIN')
+  @Get('inventory')
+  inventory() {
+    return this.analytics.inventory();
+  }
 }

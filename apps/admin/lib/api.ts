@@ -321,6 +321,57 @@ export type InsightsData = {
   };
 };
 
+/** One product's row in the Inventory table. */
+export type InventoryProductRow = {
+  productId: string;
+  sku: string;
+  title: string;
+  brand: string;
+  isActive: boolean;
+  variants: number;
+  units: number;
+  lowVariants: number;
+  outOfStockVariants: number;
+  inhouseCost: number;
+  customerPrice: number;
+  resellerPrice: number;
+  inhouseValue: number;
+  retailValue: number;
+  status: 'out' | 'low' | 'ok';
+  isDead: boolean;
+  sizes: Array<{ sizeLabel: string; stock: number }>;
+};
+
+/** Payload backing the Inventory page — a current stock snapshot. */
+export type InventoryData = {
+  generatedAt: string;
+  lowStockThreshold: number;
+  deadStockDays: number;
+  summary: {
+    totalProducts: number;
+    activeProducts: number;
+    inactiveProducts: number;
+    totalVariants: number;
+    totalUnits: number;
+    inhouseValue: number;
+    retailValue: number;
+    resellerValue: number;
+    potentialProfit: number;
+    outOfStockProducts: number;
+    deadStockProducts: number;
+    outOfStockVariants: number;
+    lowStockVariants: number;
+  };
+  byBrand: Array<{
+    brand: string;
+    products: number;
+    units: number;
+    inhouseValue: number;
+    retailValue: number;
+  }>;
+  products: InventoryProductRow[];
+};
+
 /** One customer's outstanding receivable (approved orders awaiting payment). */
 export type PaymentPendingUser = {
   userId: string;
@@ -495,6 +546,7 @@ export const api = {
   // Orders
   getDashboard: () => request<DashboardData>('/analytics/dashboard'),
   getInsights: (days: number) => request<InsightsData>(`/analytics/insights?days=${days}`),
+  getInventory: () => request<InventoryData>('/analytics/inventory'),
   listOrders: (params?: OrderListParams) =>
     request<Paginated<AdminOrderRow>>(`/orders${toQuery(params)}`),
   getOrder: (id: string) => request<Order>(`/orders/${id}`),
