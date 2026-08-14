@@ -81,10 +81,20 @@ export function HeroCarousel({ slides }: { slides: HeroSlide[] }) {
             }`}
             aria-hidden={!isActive}
           >
+            {/* Desktop (landscape) image — hidden on phones. */}
             <div
-              className="absolute inset-0 bg-cover bg-[center_42%] max-[800px]:bg-[58%_center]"
+              className="absolute inset-0 bg-cover bg-[center_42%] max-[800px]:hidden"
               style={{
                 backgroundImage: `url(${slide.imageUrl})`,
+                transform: isActive && !reduceMotion.current ? 'scale(1.06)' : 'scale(1.02)',
+                transition: 'transform 6s ease-out',
+              }}
+            />
+            {/* Mobile (portrait) image — shown only on phones; falls back to desktop. */}
+            <div
+              className="absolute inset-0 hidden bg-cover bg-[58%_center] max-[800px]:block"
+              style={{
+                backgroundImage: `url(${slide.mobileImageUrl || slide.imageUrl})`,
                 transform: isActive && !reduceMotion.current ? 'scale(1.06)' : 'scale(1.02)',
                 transition: 'transform 6s ease-out',
               }}

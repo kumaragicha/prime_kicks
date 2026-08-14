@@ -10,6 +10,7 @@ export type StoreFilters = {
 export type HeroSlide = {
   id: string;
   imageUrl: string;
+  mobileImageUrl: string;
   title: string;
   subtitle: string;
   ctaLabel: string;

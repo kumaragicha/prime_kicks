@@ -48,6 +48,7 @@ export function TagCollection({
 
   // "View all" reuses the search + filter path, keyed on the tag's id.
   const tagId = filters?.tags?.find((entry) => entry.name === tag)?.id;
+  const viewAllHref = tagId ? `/search?tagId=${tagId}` : '/search';
 
   // Nothing to show and nothing pending — drop the section entirely.
   if (!isLoading && !isError && products.length === 0) return null;
@@ -63,8 +64,8 @@ export function TagCollection({
         </h2>
         {products.length > 0 && (
           <Link
-            href={tagId ? `/search?tagId=${tagId}` : '/search'}
-            className="shrink-0 text-white bg-ink border border-[rgba(255,255,255,0.3)] rounded-[8px] no-underline uppercase text-[11px] font-bold tracking-[.09em] py-[11px] px-[15px] inline-flex gap-[16px] items-center transition-[transform,background] duration-200 hover:translate-x-[5px] hover:bg-[#31302d] [&_svg]:w-[16px] [&_svg]:h-[16px]"
+            href={viewAllHref}
+            className="shrink-0 text-white bg-ink border border-[rgba(255,255,255,0.3)] rounded-[8px] no-underline uppercase text-[11px] font-bold tracking-[.09em] py-[11px] px-[15px] inline-flex gap-[16px] items-center transition-[transform,background] duration-200 hover:translate-x-[5px] hover:bg-[#31302d] [&_svg]:w-[16px] [&_svg]:h-[16px] max-[800px]:hidden"
           >
             View all <Icon name="arrow" />
           </Link>
@@ -83,6 +84,19 @@ export function TagCollection({
         {isLoading &&
           Array.from({ length: limit }, (_, index) => <ProductSkeleton key={index} />)}
       </div>
+
+      {/* Mobile: "View all" sits below the cards, centered — no scrolling back
+          up to the heading. Hidden on desktop where the header button is used. */}
+      {products.length > 0 && (
+        <div className="hidden justify-center pt-[22px] max-[800px]:flex">
+          <Link
+            href={viewAllHref}
+            className="text-white bg-ink border border-[rgba(255,255,255,0.3)] rounded-[8px] no-underline uppercase text-[11px] font-bold tracking-[.09em] py-[12px] px-[20px] inline-flex gap-[16px] items-center transition-[transform,background] duration-200 hover:bg-[#31302d] [&_svg]:w-[16px] [&_svg]:h-[16px]"
+          >
+            View all <Icon name="arrow" />
+          </Link>
+        </div>
+      )}
       {isError && (
         <div className="text-center text-[13px] text-[#666] pt-[40px] px-0 pb-[70px]">
           <p>{`We couldn't load this section. Check that the product API is running.`}</p>

@@ -14,6 +14,7 @@ export class HeroService {
       select: {
         id: true,
         imageUrl: true,
+        mobileImageUrl: true,
         title: true,
         subtitle: true,
         ctaLabel: true,
@@ -38,6 +39,7 @@ export class HeroService {
       this.prisma.heroSlide.createMany({
         data: body.slides.map((slide, index) => ({
           imageUrl: slide.imageUrl,
+          mobileImageUrl: slide.mobileImageUrl,
           title: slide.title,
           subtitle: slide.subtitle,
           ctaLabel: slide.ctaLabel,

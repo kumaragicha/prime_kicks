@@ -71,6 +71,7 @@ const ReviewCard = ({
     <Card className="relative h-full w-64 cursor-pointer overflow-hidden border-line bg-paper p-4 shadow-none">
       <CardContent className="flex flex-col gap-2 p-0">
         <div className="flex flex-row items-center gap-2">
+          {/* eslint-disable-next-line @next/next/no-img-element -- tiny decorative avatar, not worth next/image + remote-pattern config */}
           <img className="rounded-full" width="32" height="32" alt="" src={profile} />
           <div className="flex flex-col">
             <p className="text-sm font-medium text-ink">{name}</p>

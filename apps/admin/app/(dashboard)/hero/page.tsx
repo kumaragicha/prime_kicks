@@ -9,7 +9,18 @@ import { Button } from '@prime-kicks/ui';
 import { useEffect, useState } from 'react';
 
 const MAX_SLIDES = 4;
-const EMPTY: HeroSlideInput = { imageUrl: '', title: '', subtitle: '', ctaLabel: '', ctaHref: '' };
+const EMPTY: HeroSlideInput = {
+  imageUrl: '',
+  mobileImageUrl: '',
+  title: '',
+  subtitle: '',
+  ctaLabel: '',
+  ctaHref: '',
+};
+
+/** Crop frames: wide banner on desktop, taller portrait on phones. */
+const DESKTOP_ASPECT = 16 / 7;
+const MOBILE_ASPECT = 4 / 5;
 
 export default function HeroPage() {
   const { data, isLoading, isError } = useHeroSlides();
@@ -25,6 +36,7 @@ export default function HeroPage() {
       setSlides(
         data.map((s) => ({
           imageUrl: s.imageUrl,
+          mobileImageUrl: s.mobileImageUrl ?? '',
           title: s.title,
           subtitle: s.subtitle,
           ctaLabel: s.ctaLabel,
@@ -128,15 +140,32 @@ export default function HeroPage() {
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2">
-              <div>
-                <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">
-                  Image
-                </label>
-                <ImageUploader
-                  value={slide.imageUrl ? [slide.imageUrl] : []}
-                  max={1}
-                  onChange={(urls) => patch(i, { imageUrl: urls[0] ?? '' })}
-                />
+              <div className="flex flex-col gap-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    Desktop image · landscape
+                  </label>
+                  <ImageUploader
+                    value={slide.imageUrl ? [slide.imageUrl] : []}
+                    max={1}
+                    aspect={DESKTOP_ASPECT}
+                    onChange={(urls) => patch(i, { imageUrl: urls[0] ?? '' })}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-medium uppercase tracking-wide text-neutral-500">
+                    Mobile image · portrait{' '}
+                    <span className="font-normal normal-case text-neutral-400">
+                      — optional, falls back to desktop
+                    </span>
+                  </label>
+                  <ImageUploader
+                    value={slide.mobileImageUrl ? [slide.mobileImageUrl] : []}
+                    max={1}
+                    aspect={MOBILE_ASPECT}
+                    onChange={(urls) => patch(i, { mobileImageUrl: urls[0] ?? '' })}
+                  />
+                </div>
               </div>
 
               <div className="flex flex-col gap-3">

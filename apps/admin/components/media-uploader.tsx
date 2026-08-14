@@ -28,10 +28,13 @@ export function ImageUploader({
   value,
   onChange,
   max = 4,
+  aspect = STORE_ASPECT,
 }: {
   value: string[];
   onChange: (urls: string[]) => void;
   max?: number;
+  /** Crop frame (width / height). Defaults to the store product-card ratio. */
+  aspect?: number;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(0);
@@ -210,7 +213,7 @@ export function ImageUploader({
         <ImageCropModal
           key={cropQueue.length}
           file={cropQueue[0]}
-          aspect={STORE_ASPECT}
+          aspect={aspect}
           title={cropQueue.length > 1 ? `Adjust photo (${cropQueue.length} left)` : 'Adjust photo'}
           onApply={uploadCropped}
           onCancel={skipCropped}
@@ -232,6 +235,12 @@ export function VideoUploader({
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [urlDraft, setUrlDraft] = useState('');
+  // Track the URL we uploaded in THIS session. Only that one is safe to
+  // hard-delete on remove — a pasted/reused URL may belong to another product,
+  // so removing it here must not delete the shared file from storage.
+  const freshUploadRef = useRef<string | null>(null);
 
   async function handleFile(files: FileList | null) {
     const file = files?.[0];
@@ -240,6 +249,7 @@ export function VideoUploader({
     setUploading(true);
     try {
       const { url } = await api.uploadVideo(file);
+      freshUploadRef.current = url;
       onChange(url);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Upload failed.');
@@ -249,11 +259,39 @@ export function VideoUploader({
     }
   }
 
+  /** Attach a video by pasting an existing URL — no upload, so files are reused. */
+  function applyUrl() {
+    const url = urlDraft.trim();
+    if (!url) return;
+    if (!/^https?:\/\//i.test(url)) {
+      setError('Enter a full URL starting with http:// or https://');
+      return;
+    }
+    setError('');
+    freshUploadRef.current = null; // pasted → not ours to delete
+    setUrlDraft('');
+    onChange(url);
+  }
+
+  async function copyUrl() {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setError('Could not copy — select the URL and copy manually.');
+    }
+  }
+
   function removeVideo() {
     const url = value;
+    const wasFreshUpload = url != null && url === freshUploadRef.current;
+    freshUploadRef.current = null;
     onChange(null);
-    // Best-effort: also remove the object from the bucket so nothing orphans.
-    if (url) {
+    // Only delete from the bucket if WE uploaded this file this session. A
+    // pasted/reused URL may be shared with another product — just unlink it.
+    if (url && wasFreshUpload) {
       api.deleteUpload(url).catch(() => setError("Removed, but couldn't delete the file from storage."));
     }
   }
@@ -261,38 +299,86 @@ export function VideoUploader({
   return (
     <div className="flex flex-col gap-2">
       {value ? (
-        <div className="relative overflow-hidden rounded-md border border-neutral-200 bg-black">
-          <video
-            src={value}
-            controls
-            playsInline
-            preload="metadata"
-            className="max-h-64 w-full"
-          />
+        <>
+          <div className="relative overflow-hidden rounded-md border border-neutral-200 bg-black">
+            <video
+              src={value}
+              controls
+              playsInline
+              preload="metadata"
+              className="max-h-64 w-full"
+            />
+            <button
+              type="button"
+              onClick={removeVideo}
+              className="absolute right-2 top-2 flex h-7 items-center gap-1 rounded-full bg-black/60 px-3 text-xs text-white"
+            >
+              Remove
+            </button>
+          </div>
+
+          {/* Copyable URL — paste it into another product to reuse the same video. */}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              readOnly
+              value={value}
+              onFocus={(e) => e.currentTarget.select()}
+              className="min-w-0 flex-1 rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1.5 text-xs text-neutral-700"
+            />
+            <button
+              type="button"
+              onClick={copyUrl}
+              className="shrink-0 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-800 transition hover:border-neutral-900"
+            >
+              {copied ? 'Copied ✓' : 'Copy URL'}
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
           <button
             type="button"
-            onClick={removeVideo}
-            className="absolute right-2 top-2 flex h-7 items-center gap-1 rounded-full bg-black/60 px-3 text-xs text-white"
+            onClick={() => inputRef.current?.click()}
+            disabled={uploading}
+            className="flex h-28 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-neutral-300 bg-white text-neutral-500 transition hover:border-neutral-900 hover:text-neutral-900 disabled:opacity-60"
           >
-            Remove
+            {uploading ? (
+              <Spinner />
+            ) : (
+              <>
+                <span className="text-xl leading-none">＋</span>
+                <span className="text-sm">Add video</span>
+              </>
+            )}
           </button>
-        </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={uploading}
-          className="flex h-28 flex-col items-center justify-center gap-1 rounded-md border border-dashed border-neutral-300 bg-white text-neutral-500 transition hover:border-neutral-900 hover:text-neutral-900 disabled:opacity-60"
-        >
-          {uploading ? (
-            <Spinner />
-          ) : (
-            <>
-              <span className="text-xl leading-none">＋</span>
-              <span className="text-sm">Add video</span>
-            </>
-          )}
-        </button>
+
+          {/* Or reuse an existing video by pasting its URL — no re-upload. */}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={urlDraft}
+              onChange={(e) => setUrlDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  applyUrl();
+                }
+              }}
+              placeholder="…or paste a video URL"
+              disabled={uploading}
+              className="min-w-0 flex-1 rounded-md border border-neutral-200 px-2 py-1.5 text-xs text-neutral-700 disabled:opacity-60"
+            />
+            <button
+              type="button"
+              onClick={applyUrl}
+              disabled={uploading || !urlDraft.trim()}
+              className="shrink-0 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-800 transition hover:border-neutral-900 disabled:opacity-40"
+            >
+              Use URL
+            </button>
+          </div>
+        </>
       )}
 
       <input
@@ -303,7 +389,9 @@ export function VideoUploader({
         onChange={(e) => handleFile(e.target.files)}
       />
 
-      <p className="text-xs text-neutral-500">MP4 or WebM · one video.</p>
+      <p className="text-xs text-neutral-500">
+        MP4 or WebM · one video · or paste a URL to reuse a video from another product.
+      </p>
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );

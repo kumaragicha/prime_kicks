@@ -3,6 +3,7 @@ import './globals.css';
 import { Providers } from './providers';
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://primekicks.in'),
   title: 'Prime Kicks',
   description:
     'Elevate your shoe game with Prime Kicks. Discover premium-quality shoes where exceptional style meets unmatched comfort',

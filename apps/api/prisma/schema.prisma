@@ -562,6 +562,8 @@ model OrderItem {
 model HeroSlide {
   id        String  @id @default(cuid())
   imageUrl  String
+  /// Optional portrait/mobile crop. Empty means fall back to imageUrl.
+  mobileImageUrl String @default("")
   title     String  @default("")
   subtitle  String  @default("")
   ctaLabel  String  @default("")

@@ -252,6 +252,7 @@ export type OrderListParams = {
 /** A hero-carousel slide as edited in the admin. */
 export type HeroSlideInput = {
   imageUrl: string;
+  mobileImageUrl: string;
   title: string;
   subtitle: string;
   ctaLabel: string;
