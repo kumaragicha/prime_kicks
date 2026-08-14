@@ -411,6 +411,7 @@ model ShipmozoSetting {
   autoAssignCourier Boolean  @default(false) // true → auto-run courier assignment after a successful push
   warehouseId       String   @default("") // overrides SHIPMOZO_WEARHOUSE_ID env when set
   skipStates        String[] @default([]) // orders shipping to these states are NOT pushed to Shipmozo
+  autoAssignSkipUserIds String[] @default([]) // orders owned by these users push only — never auto-assign a courier
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 }

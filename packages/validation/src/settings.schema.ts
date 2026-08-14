@@ -8,6 +8,8 @@ export const updateShipmozoSettingSchema = z.object({
   warehouseId: z.string().trim().max(64).optional(),
   // States (shipping address) whose orders must NOT be pushed to Shipmozo.
   skipStates: z.array(z.string().trim().min(1).max(64)).max(50).optional(),
+  // Users whose orders push to Shipmozo but never auto-assign a courier.
+  autoAssignSkipUserIds: z.array(z.string().trim().min(1).max(64)).max(500).optional(),
 });
 
 export type UpdateShipmozoSettingSchema = z.infer<typeof updateShipmozoSettingSchema>;

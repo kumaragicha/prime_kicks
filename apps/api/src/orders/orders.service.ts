@@ -171,9 +171,13 @@ export class OrdersService {
    * syncs the Shipmozo cancel exactly like a manual admin rejection.
    */
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { timeZone: 'Asia/Kolkata' })
-  async autoCancelStalePendingOrders() {
-    if (this.autoCancelling) return;
+  async autoCancelStalePendingOrders(trigger = 'cron'): Promise<number> {
+    if (this.autoCancelling) {
+      this.logger.warn(`Auto-cancel sweep (${trigger}) skipped — a previous run is still active.`);
+      return 0;
+    }
     this.autoCancelling = true;
+    let cancelled = 0;
     try {
       const cutoff = new Date(Date.now() - OrdersService.PENDING_ORDER_TTL_MS);
       const stale = await this.prisma.order.findMany({
@@ -182,8 +186,6 @@ export class OrdersService {
         orderBy: { createdAt: 'asc' },
         take: 200,
       });
-      if (stale.length === 0) return;
-      this.logger.log(`Auto-cancelling ${stale.length} order(s) unpaid and PENDING for >48h.`);
       for (const order of stale) {
         try {
           // Re-check just before acting: an admin may have approved it since the
@@ -194,6 +196,7 @@ export class OrdersService {
           });
           if (fresh?.status !== ORDER_STATUS.PENDING) continue;
           await this.transition(order.id, ORDER_STATUS.REJECTED, 'system:auto-cancel');
+          cancelled += 1;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
           this.logger.error(`Auto-cancel failed for ${order.orderNumber}: ${message}`);
@@ -201,10 +204,13 @@ export class OrdersService {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Auto-cancel sweep failed: ${message}`);
+      this.logger.error(`Auto-cancel sweep (${trigger}) failed: ${message}`);
     } finally {
       this.autoCancelling = false;
     }
+    // Heartbeat: always logged (even on a quiet night) so the run is verifiable.
+    this.logger.log(`Auto-cancel sweep (${trigger}) finished — ${cancelled} order(s) cancelled.`);
+    return cancelled;
   }
 
   /** Create an order.

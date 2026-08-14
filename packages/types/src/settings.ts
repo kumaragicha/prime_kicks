@@ -5,6 +5,8 @@ export type ShipmozoSetting = {
   autoAssignCourier: boolean;
   warehouseId: string;
   skipStates: string[];
+  /** Users whose orders push to Shipmozo but never auto-assign a courier. */
+  autoAssignSkipUserIds: string[];
   createdAt: string;
   updatedAt: string;
 };

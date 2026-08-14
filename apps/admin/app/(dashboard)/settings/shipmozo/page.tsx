@@ -37,11 +37,14 @@ export default function ShipmozoSettingsPage() {
 
   const [warehouseId, setWarehouseId] = useState('');
   const [skipStates, setSkipStates] = useState<string[]>([]);
+  const [skipUserIds, setSkipUserIds] = useState<string[]>([]);
+  const [userIdInput, setUserIdInput] = useState('');
   // Seed the local inputs once the settings load.
   useEffect(() => {
     if (data) {
       setWarehouseId(data.warehouseId ?? '');
       setSkipStates(data.skipStates ?? []);
+      setSkipUserIds(data.autoAssignSkipUserIds ?? []);
     }
   }, [data]);
 
@@ -82,6 +85,33 @@ export default function ShipmozoSettingsPage() {
     const next = skipStates.filter((s) => s !== state);
     setSkipStates(next);
     persistSkipStates(next);
+  };
+
+  // Per-user auto-assign skip: these users' orders push to Shipmozo but never
+  // auto-assign a courier (they stay PUSHED for manual assignment).
+  const persistSkipUserIds = (next: string[]) =>
+    update.mutate(
+      { autoAssignSkipUserIds: next },
+      { onSuccess: () => success('Auto-assign skip users updated.'), onError },
+    );
+
+  const addSkipUserId = () => {
+    const value = userIdInput.trim();
+    if (!value) return;
+    if (skipUserIds.includes(value)) {
+      setUserIdInput('');
+      return;
+    }
+    const next = [...skipUserIds, value];
+    setSkipUserIds(next);
+    setUserIdInput('');
+    persistSkipUserIds(next);
+  };
+
+  const removeSkipUserId = (id: string) => {
+    const next = skipUserIds.filter((u) => u !== id);
+    setSkipUserIds(next);
+    persistSkipUserIds(next);
   };
 
   return (
@@ -183,6 +213,61 @@ export default function ShipmozoSettingsPage() {
               ) : (
                 <p className="text-xs text-neutral-400">
                   No states skipped — all orders are pushed.
+                </p>
+              )}
+            </div>
+          </Row>
+
+          <Row
+            title="Skip auto-assign for users"
+            description="Orders owned by these users are pushed to Shipmozo but never auto-assign a courier — they stay PUSHED for manual assignment. Note: all web CUSTOMER orders already skip auto-assign."
+          >
+            <div className="flex w-64 flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <input
+                  className={fieldClass}
+                  value={userIdInput}
+                  onChange={(e) => setUserIdInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addSkipUserId();
+                    }
+                  }}
+                  placeholder="Paste a user ID…"
+                  disabled={update.isPending}
+                />
+                <Button
+                  size="sm"
+                  onClick={addSkipUserId}
+                  disabled={update.isPending || !userIdInput.trim()}
+                >
+                  Add
+                </Button>
+              </div>
+              {skipUserIds.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {skipUserIds.map((id) => (
+                    <span
+                      key={id}
+                      className="inline-flex items-center gap-1 rounded-full bg-neutral-100 px-2.5 py-1 font-mono text-xs text-neutral-700"
+                    >
+                      {id}
+                      <button
+                        type="button"
+                        aria-label={`Remove ${id}`}
+                        className="text-neutral-400 hover:text-red-600 disabled:opacity-50"
+                        disabled={update.isPending}
+                        onClick={() => removeSkipUserId(id)}
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-neutral-400">
+                  No users skipped — auto-assign follows the global rules.
                 </p>
               )}
             </div>

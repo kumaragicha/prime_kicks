@@ -25,6 +25,8 @@ const orderPushInclude = {
     include: { product: { include: { dimension: true } } },
     orderBy: { id: 'asc' },
   },
+  // Owner role decides whether auto-assign is allowed (CUSTOMER orders push only).
+  user: { select: { role: true } },
 } satisfies Prisma.OrderInclude;
 
 type OrderForPush = Prisma.OrderGetPayload<{ include: typeof orderPushInclude }>;
@@ -183,7 +185,20 @@ export class ShipmentService {
       // ship in the Extra Large box and are handled/assigned manually, so we
       // never auto-book a courier for them even when the admin has auto-assign
       // on — they push and stay PUSHED for a person to assign.
-      const autoAssign = settings.autoAssignCourier && resolved.totalUnits <= 4;
+      //
+      // Two further push-only rules sit on top of the global toggle:
+      //   • CUSTOMER-role (web) orders never auto-assign — they push and wait
+      //     for a person to assign the courier.
+      //   • Orders owned by a user in the admin's auto-assign skip list
+      //     (settings.autoAssignSkipUserIds) push only, same as above.
+      const isCustomerOrder = order.user?.role === 'CUSTOMER';
+      const isSkippedUser =
+        !!order.userId && (settings.autoAssignSkipUserIds ?? []).includes(order.userId);
+      const autoAssign =
+        settings.autoAssignCourier &&
+        resolved.totalUnits <= 4 &&
+        !isCustomerOrder &&
+        !isSkippedUser;
 
       // Rate Calculator is the serviceability and courier-policy gate. It
       // returns live available services; choose only an admin-configured
@@ -235,9 +250,13 @@ export class ShipmentService {
       if (!autoAssign || selectedCouriers.length === 0) {
         const reason = !settings.autoAssignCourier
           ? 'is OFF'
-          : resolved.totalUnits > 4
-            ? `skipped (${resolved.totalUnits} units > 4 — manual assignment)`
-            : 'ON but no configured courier';
+          : isCustomerOrder
+            ? 'skipped (CUSTOMER order — push only)'
+            : isSkippedUser
+              ? 'skipped (user in auto-assign skip list — push only)'
+              : resolved.totalUnits > 4
+                ? `skipped (${resolved.totalUnits} units > 4 — manual assignment)`
+                : 'ON but no configured courier';
         this.logger.debug(
           `[SHIPMOZO DEBUG] auto-assign ${reason} — order ${order.orderNumber} stays PUSHED (no courier assignment)`,
         );

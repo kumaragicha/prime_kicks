@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, Headers, Param, Patch, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { PaymentStatus } from '@prime-kicks/types';
 import type {
   CreateOrderSchema,
@@ -12,13 +24,37 @@ import {
 } from '@prime-kicks/validation';
 import type { AuthenticatedUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { OrdersService } from './orders.service';
 
 @Controller('orders')
 export class OrdersController {
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly config: ConfigService,
+  ) {}
+
+  /**
+   * Runs the stale-PENDING auto-cancel sweep on demand. Meant to be called by an
+   * external scheduler (server crontab / systemd timer) at 00:00 IST, so the job
+   * no longer depends on the Node process being alive at the exact minute.
+   *
+   * Public (no JWT) but gated by the `x-cron-secret` header matching
+   * INTERNAL_CRON_SECRET. Fails closed: if the secret env is unset, every call
+   * is rejected.
+   */
+  @Public()
+  @Post('internal/auto-cancel')
+  async runAutoCancelSweep(@Headers('x-cron-secret') secret?: string) {
+    const expected = this.config.get<string>('INTERNAL_CRON_SECRET');
+    if (!expected || secret !== expected) {
+      throw new UnauthorizedException('Invalid or missing cron secret.');
+    }
+    const cancelled = await this.orders.autoCancelStalePendingOrders('http');
+    return { ok: true, cancelled };
+  }
 
   /** Create an order — single endpoint for both web (customer) and admin (reseller) flows.
    *  When the body includes `resellerId`, the order is treated as admin-created.
