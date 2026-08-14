@@ -117,7 +117,7 @@ export function OrderSuccess({ orderNumber }: { orderNumber: string }) {
             href={WHATSAPP_URL}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-[10px] rounded-[8px] bg-[#25D366] px-[20px] py-[13px] text-[10px] font-bold uppercase tracking-[.08em] text-[#0b141a] no-underline transition-transform duration-200 hover:-translate-y-[2px] [&_svg]:h-[17px] [&_svg]:w-[17px]"
+            className="inline-flex items-center gap-[10px] rounded-[8px] bg-accent px-[20px] py-[13px] text-[10px] font-bold uppercase tracking-[.08em] text-white no-underline transition-[transform,background] duration-200 hover:-translate-y-[2px] hover:bg-[#a67f45] [&_svg]:h-[17px] [&_svg]:w-[17px]"
           >
             <WhatsAppIcon /> Share order on WhatsApp
           </a>

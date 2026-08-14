@@ -81,9 +81,15 @@ function SearchResults() {
             'Search products'
           )}
         </h1>
-        <form className="flex max-w-[620px] border border-ink h-[48px] mb-[20px]" action="/search">
+        <form
+          className="flex items-center gap-[10px] max-w-[620px] h-[54px] mb-[20px] rounded-full border border-line bg-white pl-[20px] pr-[7px] shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] duration-200 focus-within:border-ink focus-within:shadow-[0_4px_16px_rgba(0,0,0,0.07)]"
+          action="/search"
+        >
+          <span className="shrink-0 text-[#a29e95] [&_svg]:w-[18px] [&_svg]:h-[18px]" aria-hidden="true">
+            <Icon name="search" />
+          </span>
           <input
-            className="min-w-0 flex-1 border-0 bg-white px-[14px] text-[13px] focus:outline focus:outline-2 focus:outline-ink focus:outline-offset-2"
+            className="min-w-0 flex-1 border-0 bg-transparent text-[14px] text-ink placeholder:text-[#a29e95] focus:outline-none"
             name="q"
             defaultValue={query}
             placeholder="Search products"
@@ -94,7 +100,7 @@ function SearchResults() {
           {tagId && <input type="hidden" name="tagId" value={tagId} />}
           {size && <input type="hidden" name="size" value={size} />}
           <button
-            className="border-0 bg-ink text-white rounded-[8px] px-[19px] uppercase tracking-[.08em] text-[10px] font-bold"
+            className="shrink-0 inline-flex h-[40px] items-center gap-[8px] rounded-full bg-ink px-[24px] text-[10px] font-bold uppercase tracking-[.09em] text-white transition-colors duration-200 hover:bg-[#383838] max-[800px]:px-[18px]"
             type="submit"
           >
             Search

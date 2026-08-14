@@ -85,16 +85,18 @@ export function TagCollection({
           Array.from({ length: limit }, (_, index) => <ProductSkeleton key={index} />)}
       </div>
 
-      {/* Mobile: "View all" sits below the cards, centered — no scrolling back
-          up to the heading. Hidden on desktop where the header button is used. */}
+      {/* Mobile: "View all" sits on a hairline rule below the cards — a clean
+          separator, no scrolling back up. Hidden on desktop (header button). */}
       {products.length > 0 && (
-        <div className="hidden justify-center pt-[22px] max-[800px]:flex">
+        <div className="hidden items-center gap-[14px] pt-[26px] max-[800px]:flex">
+          <span className="h-px flex-1 bg-line" />
           <Link
             href={viewAllHref}
-            className="text-white bg-ink border border-[rgba(255,255,255,0.3)] rounded-[8px] no-underline uppercase text-[11px] font-bold tracking-[.09em] py-[12px] px-[20px] inline-flex gap-[16px] items-center transition-[transform,background] duration-200 hover:bg-[#31302d] [&_svg]:w-[16px] [&_svg]:h-[16px]"
+            className="inline-flex shrink-0 items-center gap-[9px] whitespace-nowrap uppercase no-underline text-[12px] font-bold tracking-[.08em] text-ink transition-opacity duration-200 hover:opacity-60 [&_svg]:h-[15px] [&_svg]:w-[15px] [&_svg]:text-accent"
           >
             View all <Icon name="arrow" />
           </Link>
+          <span className="h-px flex-1 bg-line" />
         </div>
       )}
       {isError && (

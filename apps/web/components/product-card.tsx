@@ -228,7 +228,7 @@ export function ProductCard({
                 />
               </button>
               <button
-                className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[0.55rem] font-bold transition duration-200 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-ink bg-ink text-white flex justify-center gap-[4px] items-center hover:bg-[#383838] [&_svg]:w-[12px] max-[800px]:[&_svg]:w-[16px]"
+                className="h-[37px] rounded-[8px] uppercase tracking-[.06em] text-[0.55rem] font-bold transition duration-200 active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40 max-[800px]:h-[34px] border border-accent bg-accent text-white flex justify-center gap-[4px] items-center hover:bg-[#a67f45] hover:border-[#a67f45] [&_svg]:w-[12px] max-[800px]:[&_svg]:w-[16px]"
                 onClick={() => handleAdd('book')}
                 disabled={!product.sizes.length}
                 aria-label="Buy now"
