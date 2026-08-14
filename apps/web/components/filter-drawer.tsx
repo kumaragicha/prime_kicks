@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Icon } from '@/components/icon';
 import { useFilters } from '@/lib/hooks';
 
@@ -46,18 +46,14 @@ export function FilterDrawer() {
   const [categoryId, setCategoryId] = useState('');
   const [tagId, setTagId] = useState('');
   const [size, setSize] = useState('');
-  const [appliedCount, setAppliedCount] = useState(0);
 
-  // Reflect already-applied filters on the pill badge.
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    setAppliedCount(
-      (params.get('brandId') ? 1 : 0) +
-        (params.get('categoryId') ? 1 : 0) +
-        (params.get('tagId') ? 1 : 0) +
-        (params.get('size') ? 1 : 0),
-    );
-  }, []);
+  // Pill badge reflects the filters currently in the URL. Derived from
+  // useSearchParams so it re-renders on every navigation — applying filters
+  // from the drawer AND removing a chip on the search page both update it live.
+  const searchParams = useSearchParams();
+  const appliedCount = (['brandId', 'categoryId', 'tagId', 'size'] as const).filter((key) =>
+    searchParams.get(key),
+  ).length;
 
   // Open from other triggers (e.g. the "Fresh drops" header button) via a shared event.
   useEffect(() => {

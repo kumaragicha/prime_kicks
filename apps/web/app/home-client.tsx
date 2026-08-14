@@ -13,7 +13,7 @@ import { ApiError, api, type HeroSlide } from '@/lib/api';
 import { HeroCarousel } from '@/components/hero-carousel';
 import { notifyStore, useAuthCart, useHeroSlides } from '@/lib/hooks';
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 
 /**
  * Curated homepage sections, each backed by a merchandising tag. `id` is the
@@ -130,7 +130,9 @@ export function HomeClient({ initialHeroSlides }: { initialHeroSlides: HeroSlide
       ))}
       <SiteFooter />
       <Toast message={toast} visible={toastVisible} />
-      <FilterDrawer />
+      <Suspense fallback={null}>
+        <FilterDrawer />
+      </Suspense>
       {loginOpen && (
         <LoginModal
           onClose={() => {
