@@ -639,6 +639,7 @@ export class OrdersService {
         userName: ownerName(order),
         // Credit-customer (bulk) orders have no login role; surface them as CREDIT.
         userRole: order.user?.role ?? 'CREDIT',
+        deliveryName: order.addressName ?? null,
         status: order.status,
         shipmentStatus: order.shipmentStatus,
         trackingId: order.trackingId,

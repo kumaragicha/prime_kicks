@@ -90,6 +90,10 @@ export function OrdersTable({
         cell: (c) => {
           const role = c.row.original.userRole;
           const label = role ? role.charAt(0) + role.slice(1).toLowerCase() : null;
+          // The delivery recipient is often not the person who placed the
+          // order, so surface the shipping contact name whenever it differs.
+          const deliveryName = c.row.original.deliveryName;
+          const showDelivery = deliveryName && deliveryName !== c.getValue();
           return (
             <div className="flex flex-col">
               <span>{c.getValue()}</span>
@@ -98,6 +102,11 @@ export function OrdersTable({
                   className={`mt-0.5 text-xs ${role === 'RESELLER' ? 'text-purple-600' : 'text-neutral-500'}`}
                 >
                   {label}
+                </span>
+              )}
+              {showDelivery && (
+                <span className="mt-0.5 text-xs text-neutral-500">
+                  Deliver to: {deliveryName}
                 </span>
               )}
             </div>

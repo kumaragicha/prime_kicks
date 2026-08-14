@@ -104,6 +104,9 @@ export interface AdminOrderRow {
   /** Order owner's account role — shown under the name. 'CREDIT' = a bulk
    *  credit-customer account (not a login user). */
   userRole: UserRole | 'CREDIT';
+  /** Delivery/recipient contact name (from the shipping address). Shown under
+   *  the orderer's name for reseller orders, where the two often differ. */
+  deliveryName: string | null;
   status: OrderStatus;
   shipmentStatus: ShipmentStatus;
   /** AWB / tracking number once a courier is assigned, else null. */

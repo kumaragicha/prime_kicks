@@ -33,6 +33,11 @@ const storefrontInclude = {
   },
 } satisfies Prisma.ProductInclude;
 
+// Storefront callers never see a product with nothing in stock — a product
+// whose variants are all at stock 0 (or has no variants) is hidden entirely,
+// rather than surfaced as a "sold out" card. ADMIN is exempt.
+const inStock: Prisma.ProductWhereInput = { variants: { some: { stock: { gt: 0 } } } };
+
 type ProductWithRelations = Prisma.ProductGetPayload<{ include: typeof productInclude }>;
 
 /** Add a computed `totalStock` (sum of all variant stock) to a product. */
@@ -85,7 +90,7 @@ export class ProductsService {
 
     const buildWhere = (withSearch: boolean): Prisma.ProductWhereInput => ({
       deletedAt: null,
-      ...(activeOnly ? { isActive: true } : {}),
+      ...(activeOnly ? { isActive: true, ...inStock } : {}),
       ...(brandId ? { brandId } : {}),
       ...(categoryId ? { categories: { some: { id: categoryId } } } : {}),
       ...(tagId ? { tags: { some: { id: tagId } } } : {}),
@@ -190,7 +195,7 @@ export class ProductsService {
 
   async findOne(id: string, user?: AuthenticatedUser) {
     const product = await this.prisma.product.findFirst({
-      where: { id, deletedAt: null, ...(user?.role === 'ADMIN' ? {} : { isActive: true }) },
+      where: { id, deletedAt: null, ...(user?.role === 'ADMIN' ? {} : { isActive: true, ...inStock }) },
       include: storefrontInclude,
     });
     if (!product) {
@@ -230,7 +235,7 @@ export class ProductsService {
       const remaining = SIMILAR_LIMIT - collected.length;
       if (remaining <= 0) return;
       const rows = await this.prisma.product.findMany({
-        where: { deletedAt: null, isActive: true, id: { notIn: Array.from(seen) }, ...where },
+        where: { deletedAt: null, isActive: true, ...inStock, id: { notIn: Array.from(seen) }, ...where },
         include: storefrontInclude,
         take: remaining,
         orderBy: { createdAt: 'desc' },
