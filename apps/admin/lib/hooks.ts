@@ -62,6 +62,15 @@ export function useProduct(id: string) {
   });
 }
 
+/** Existing model names for the product-form autocomplete, scoped to a brand. */
+export function useProductModels(brandId?: string) {
+  return useQuery({
+    queryKey: ['product-models', brandId ?? ''],
+    queryFn: () => api.listProductModels(brandId),
+    placeholderData: (prev) => prev,
+  });
+}
+
 export const useBrands = () => useQuery({ queryKey: ['brands'], queryFn: api.listBrands });
 export const useProductTypes = () =>
   useQuery({ queryKey: ['product-types'], queryFn: api.listProductTypes });

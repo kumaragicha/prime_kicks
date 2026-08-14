@@ -21,6 +21,7 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
     sku: product.sku,
     name: product.name,
     brandId: product.brandId ?? '',
+    model: product.model ?? null,
     productTypeIds: product.productTypes.map((type) => type.id),
     categoryIds: product.categories.map((category) => category.id),
     tagIds: product.tags?.map((tag) => tag.id) ?? [],

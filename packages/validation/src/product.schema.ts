@@ -11,6 +11,15 @@ export const createProductSchema = z.object({
   sku: z.string().default(''),
   name: z.string().min(1, 'Name is required'),
   brandId: z.string().min(1, 'Pick a brand'),
+  // Optional style/model shared across colorways (e.g. "Samba"). Trimmed;
+  // blank normalises to null so it doesn't create an empty group.
+  model: z
+    .string()
+    .trim()
+    .max(80, 'Model is too long')
+    .nullable()
+    .default(null)
+    .transform((v) => (v ? v : null)),
   productTypeIds: z.array(z.string().min(1)).min(1, 'Pick at least one product type'),
   categoryIds: z.array(z.string().min(1)).min(1, 'Pick at least one category'),
   tagIds: z.array(z.string().min(1)).default([]),

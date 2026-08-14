@@ -2,9 +2,13 @@
 
 import { useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import { ImageCropModal } from './image-crop-modal';
 
 const IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp';
 const VIDEO_ACCEPT = 'video/mp4,video/webm';
+
+/** Target frame the storefront shows product photos in (card is aspect-[1/1.05]). */
+const STORE_ASPECT = 1 / 1.05;
 
 /** Small centered circular spinner shown while a file uploads. */
 function Spinner({ size = 22 }: { size?: number }) {
@@ -34,6 +38,8 @@ export function ImageUploader({
   const [error, setError] = useState('');
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
+  // Files waiting to be cropped-into-frame before upload (one modal at a time).
+  const [cropQueue, setCropQueue] = useState<File[]>([]);
 
   // Live ref to the latest value so sequential awaits append correctly.
   const currentRef = useRef(value);
@@ -51,33 +57,35 @@ export function ImageUploader({
     onChange(next);
   }
 
-  async function handleFiles(files: FileList | null) {
+  /** Pick files → queue them for the crop-into-frame step (not uploaded yet). */
+  function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
     setError('');
     const picked = Array.from(files).slice(0, remaining);
     if (files.length > remaining) {
       setError(`You can add ${max} photos in total.`);
     }
-    setUploading((n) => n + picked.length);
-    // Upload all picked files in parallel — they're independent, so there's no
-    // reason to wait for each round-trip. Order is preserved by keeping the
-    // results in the picked order and appending the successful ones in one go.
-    const settled = await Promise.all(
-      picked.map(async (file) => {
-        try {
-          const { url } = await api.uploadImage(file);
-          return url;
-        } catch (err) {
-          setError(err instanceof Error ? err.message : 'Upload failed.');
-          return null;
-        } finally {
-          setUploading((n) => n - 1);
-        }
-      }),
-    );
-    const uploaded = settled.filter((url): url is string => url !== null);
-    if (uploaded.length > 0) onChange([...currentRef.current, ...uploaded]);
+    setCropQueue(picked);
     if (inputRef.current) inputRef.current.value = '';
+  }
+
+  /** Upload one already-cropped file, then advance the crop queue. */
+  async function uploadCropped(cropped: File) {
+    setUploading((n) => n + 1);
+    try {
+      const { url } = await api.uploadImage(cropped);
+      onChange([...currentRef.current, url]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed.');
+    } finally {
+      setUploading((n) => n - 1);
+      setCropQueue((q) => q.slice(1));
+    }
+  }
+
+  /** Skip the current file in the crop queue without uploading it. */
+  function skipCropped() {
+    setCropQueue((q) => q.slice(1));
   }
 
   function removeAt(index: number) {
@@ -91,7 +99,20 @@ export function ImageUploader({
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="grid grid-cols-4 gap-2">
+      {/*
+        Accept reorder-drops anywhere in the grid — tiles, gaps, and the "Add
+        photo" tile — so a released drag is always a valid drop and the browser
+        never cancels it (a cancelled drag synthesises a stray click).
+      */}
+      <div
+        className="grid grid-cols-4 gap-2"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragIndex(null);
+          setOverIndex(null);
+        }}
+      >
         {value.map((url, i) => (
           <div
             key={url}
@@ -101,6 +122,7 @@ export function ImageUploader({
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
               e.preventDefault();
+              e.stopPropagation();
               if (dragIndex !== null) move(dragIndex, i);
               setDragIndex(null);
               setOverIndex(null);
@@ -151,10 +173,16 @@ export function ImageUploader({
           </div>
         ))}
 
-        {value.length + uploading < max && (
+        {value.length + uploading < max && cropQueue.length === 0 && (
           <button
             type="button"
             onClick={() => inputRef.current?.click()}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragIndex(null);
+              setOverIndex(null);
+            }}
             className="flex aspect-square flex-col items-center justify-center gap-1 rounded-md border border-dashed border-neutral-300 bg-white text-neutral-500 transition hover:border-neutral-900 hover:text-neutral-900"
           >
             <span className="text-xl leading-none">+</span>
@@ -177,6 +205,17 @@ export function ImageUploader({
         {value.length > 1 && ' Drag to reorder — the first image is the cover shown on the store.'}
       </p>
       {error && <p className="text-xs text-red-600">{error}</p>}
+
+      {cropQueue[0] && (
+        <ImageCropModal
+          key={cropQueue.length}
+          file={cropQueue[0]}
+          aspect={STORE_ASPECT}
+          title={cropQueue.length > 1 ? `Adjust photo (${cropQueue.length} left)` : 'Adjust photo'}
+          onApply={uploadCropped}
+          onCancel={skipCropped}
+        />
+      )}
     </div>
   );
 }

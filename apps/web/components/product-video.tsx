@@ -3,23 +3,16 @@
 import { Icon } from '@/components/icon';
 import { useRef, useState } from 'react';
 
-async function downloadVideo(url: string, filename: string) {
-  try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-    const blobUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(blobUrl);
-  } catch (error) {
-    console.error('Download failed:', error);
-    // Fallback: open in new tab
-    window.open(url, '_blank');
-  }
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
+
+/**
+ * Download via the API's media proxy, which serves the file with a
+ * Content-Disposition: attachment header. The CDN itself has no CORS policy,
+ * so fetching it from the browser fails (and a plain link just opens a tab) —
+ * the proxy is the only path that reliably triggers a real download.
+ */
+function downloadVideo(url: string) {
+  window.location.href = `${API_URL}/uploads/download?url=${encodeURIComponent(url)}`;
 }
 
 /**
@@ -67,8 +60,7 @@ export function ProductVideo({
         type="button"
         onClick={(e) => {
           e.stopPropagation();
-          const filename = src.split('/').pop() || 'product-video.mp4';
-          void downloadVideo(src, filename);
+          downloadVideo(src);
         }}
         aria-label="Download video"
         className="absolute bottom-[14px] left-[14px] z-10 flex h-[42px] w-[42px] items-center justify-center rounded-full bg-accent text-white shadow-[0_6px_18px_rgba(0,0,0,0.35)] transition-transform duration-200 hover:scale-110 [&_svg]:h-[18px] [&_svg]:w-[18px]"

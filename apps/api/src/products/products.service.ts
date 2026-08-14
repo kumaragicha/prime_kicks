@@ -105,47 +105,87 @@ export class ProductsService {
         : {}),
     });
 
-    let where = buildWhere(true);
+    // Colorways of a model sit together because they share `groupSortAt` (the
+    // group's newest createdAt, maintained on write — see recomputeGroupSort).
+    // Ordering by it puts the freshest model first, then the group's own
+    // fields keep its colorways adjacent and newest-first. This is a plain
+    // indexed ORDER BY … LIMIT — no per-request grouping/sorting of the whole
+    // catalog, so response time stays flat as the catalog grows.
+    const orderBy: Prisma.ProductOrderByWithRelationInput[] = [
+      { groupSortAt: 'desc' },
+      { brandId: 'asc' },
+      { model: 'asc' },
+      { createdAt: 'desc' },
+      { id: 'desc' },
+    ];
 
-    const [rows, total] = await Promise.all([
-      this.prisma.product.findMany({
-        where,
-        include: storefrontInclude,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.product.count({ where }),
-    ]);
-
-    // Fallback: if the search returned no results, show all products (ignoring search).
-    if (search && rows.length === 0) {
-      where = buildWhere(false);
-      const [fallbackRows, fallbackTotal] = await Promise.all([
+    const runPage = async (where: Prisma.ProductWhereInput) =>
+      Promise.all([
         this.prisma.product.findMany({
           where,
           include: storefrontInclude,
+          orderBy,
           skip: (page - 1) * pageSize,
           take: pageSize,
-          orderBy: { createdAt: 'desc' },
         }),
         this.prisma.product.count({ where }),
       ]);
-      return {
-        data: fallbackRows.map((row) => shapeProduct(row, user)),
-        meta: {
-          page,
-          pageSize,
-          total: fallbackTotal,
-          totalPages: Math.ceil(fallbackTotal / pageSize),
-        },
-      };
+
+    let [rows, total] = await runPage(buildWhere(true));
+
+    // Fallback: a search that matches nothing shows the full catalog instead.
+    if (search && total === 0) {
+      [rows, total] = await runPage(buildWhere(false));
     }
 
     return {
       data: rows.map((row) => shapeProduct(row, user)),
       meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     };
+  }
+
+  /**
+   * Recompute `groupSortAt` for a colorway group so its members share one sort
+   * timestamp = the group's newest `createdAt`. Called after any write that can
+   * change a group's membership or recency (create / model or brand change /
+   * soft-delete / restore). A no-model product is its own group and simply
+   * keeps `groupSortAt = createdAt` (the column default), so nothing to do.
+   *
+   * Runs as a single correlated UPDATE — O(group size), not O(catalog).
+   */
+  private async recomputeGroupSort(brandId: string | null, model: string | null): Promise<void> {
+    const trimmed = model?.trim();
+    if (!brandId || !trimmed) return; // solo product → default groupSortAt = createdAt
+
+    await this.prisma.$executeRaw(Prisma.sql`
+      UPDATE "Product" g
+      SET "groupSortAt" = sub.mx
+      FROM (
+        SELECT MAX("createdAt") AS mx
+        FROM "Product"
+        WHERE "deletedAt" IS NULL
+          AND "brandId" = ${brandId}
+          AND lower(trim("model")) = lower(${trimmed})
+      ) sub
+      WHERE g."deletedAt" IS NULL
+        AND g."brandId" = ${brandId}
+        AND lower(trim(g."model")) = lower(${trimmed})
+    `);
+  }
+
+  /**
+   * Distinct model names for the admin's autocomplete, most-used first.
+   * Optionally scoped to a brand so suggestions stay relevant to the selection.
+   */
+  async listModels(brandId?: string): Promise<string[]> {
+    const grouped = await this.prisma.product.groupBy({
+      by: ['model'],
+      where: { deletedAt: null, model: { not: null }, ...(brandId ? { brandId } : {}) },
+      _count: { _all: true },
+      orderBy: { _count: { model: 'desc' } },
+      take: 200,
+    });
+    return grouped.map((g) => g.model).filter((m): m is string => !!m && m.trim().length > 0);
   }
 
   async findOne(id: string, user?: AuthenticatedUser) {
@@ -241,6 +281,8 @@ export class ProductsService {
         },
         include: productInclude,
       });
+      // New product is the group's newest → refresh the group's shared sort key.
+      await this.recomputeGroupSort(brandId, data.model ?? null);
       this.audit.log({
         module: AuditModule.PRODUCTS,
         event: AuditEvent.CREATION,
@@ -264,7 +306,13 @@ export class ProductsService {
   }
 
   async update(id: string, input: UpdateProductSchema, auditedBy?: string) {
-    await this.ensureExists(id);
+    // Capture the pre-update group so we can refresh both it and the new one
+    // if the model/brand moves the product between groups.
+    const before = await this.prisma.product.findFirst({
+      where: { id, deletedAt: null },
+      select: { brandId: true, model: true },
+    });
+    if (!before) throw new NotFoundException(`Product ${id} not found`);
     const { variants, brandId, productTypeIds, categoryIds, tagIds, ...data } = input;
     const brand = brandId
       ? await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } })
@@ -316,6 +364,15 @@ export class ProductsService {
       return tx.product.findUniqueOrThrow({ where: { id }, include: productInclude });
     });
 
+    // Refresh the group sort key. If the product moved groups (brand/model
+    // changed) both the old and new groups need recomputing.
+    const newBrandId = brandId ?? before.brandId;
+    const newModel = data.model !== undefined ? data.model : before.model;
+    await this.recomputeGroupSort(before.brandId, before.model);
+    if (newBrandId !== before.brandId || (newModel ?? '') !== (before.model ?? '')) {
+      await this.recomputeGroupSort(newBrandId, newModel);
+    }
+
     this.audit.log({
       module: AuditModule.PRODUCTS,
       event: AuditEvent.UPDATION,
@@ -337,7 +394,7 @@ export class ProductsService {
   async remove(id: string, auditedBy?: string) {
     const product = await this.prisma.product.findFirst({
       where: { id, deletedAt: null },
-      select: { id: true, sku: true, name: true },
+      select: { id: true, sku: true, name: true, brandId: true, model: true },
     });
     if (!product) throw new NotFoundException(`Product ${id} not found`);
     // Free the SKU (it's unique) so a new product can reuse it, while keeping
@@ -346,6 +403,8 @@ export class ProductsService {
       where: { id },
       data: { deletedAt: new Date(), sku: `${product.sku}::deleted::${id}` },
     });
+    // Removing a colorway can lower its group's newest date — refresh the rest.
+    await this.recomputeGroupSort(product.brandId, product.model);
     this.audit.log({
       module: AuditModule.PRODUCTS,
       event: AuditEvent.DELETION,

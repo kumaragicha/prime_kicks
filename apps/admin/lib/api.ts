@@ -486,6 +486,8 @@ export const api = {
   listProducts: (params?: ProductListParams) =>
     request<Paginated<Product>>(`/products${toQuery(params)}`),
   getProduct: (id: string) => request<Product>(`/products/${id}`),
+  listProductModels: (brandId?: string) =>
+    request<string[]>(`/products/models${brandId ? `?brandId=${encodeURIComponent(brandId)}` : ''}`),
   createProduct: (body: CreateProductSchema) =>
     request<Product>('/products', { method: 'POST', body: JSON.stringify(body) }),
   updateProduct: (id: string, body: UpdateProductSchema) =>

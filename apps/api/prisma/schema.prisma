@@ -248,6 +248,15 @@ model Product {
   brand       String
   brandRef    Brand? @relation(fields: [brandId], references: [id])
   brandId     String?
+  // Style/model name shared across colorways, e.g. "Samba" for both
+  // "Adidas Samba Green" and "Adidas Samba Black". Free text; grouping in the
+  // catalog is by (brand + lower(model)) so a model's colorways list together.
+  model       String?
+  // Denormalised sort key = the group's newest createdAt (maintained on write).
+  // Colorways of a model share one value so the catalog lists them adjacently
+  // with a plain indexed ORDER BY — no per-request grouping. Defaults to the
+  // row's own createdAt for solo (no-model) products.
+  groupSortAt DateTime @default(now())
   description String @default("")
 
   // Media
@@ -289,6 +298,10 @@ model Product {
   @@index([brandId])
   @@index([sizeTypeId])
   @@index([dimensionId])
+  // Backs catalog grouping of a model's colorways (brand + model).
+  @@index([brandId, model])
+  // Backs the catalog listing order (groupSortAt desc, then group fields).
+  @@index([groupSortAt])
   // Backs the storefront/admin catalog: `where deletedAt IS NULL order by createdAt desc`.
   @@index([deletedAt, createdAt])
 }

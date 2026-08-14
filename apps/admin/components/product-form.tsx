@@ -5,6 +5,7 @@ import {
   useBrands,
   useCategories,
   useDimensions,
+  useProductModels,
   useProductTypes,
   useSizeTypes,
   useTags,
@@ -35,6 +36,7 @@ const emptyDefaults: DefaultValues<CreateProductSchema> = {
   sku: '',
   name: '',
   brandId: '',
+  model: null,
   productTypeIds: [],
   categoryIds: [],
   tagIds: [],
@@ -92,6 +94,10 @@ export function ProductForm({
     [sizeTypes, selectedTypeId],
   );
 
+  // Model autocomplete suggestions, scoped to the currently-selected brand.
+  const selectedBrandId = watch('brandId');
+  const { data: modelSuggestions } = useProductModels(selectedBrandId || undefined);
+
   const totalStock = Object.values(stockBySize).reduce((sum, n) => sum + (n || 0), 0);
 
   const submit = handleSubmit(async (values) => {
@@ -124,6 +130,17 @@ export function ProductForm({
             </option>
           ))}
         </select>
+      </Field>
+      <Field label="Model (groups colorways)" error={errors.model?.message}>
+        <input
+          className={fieldClass}
+          list="product-model-suggestions"
+          placeholder="e.g. Samba — same model groups colorways together"
+          {...register('model')}
+        />
+        <datalist id="product-model-suggestions">
+          {modelSuggestions?.map((m) => <option key={m} value={m} />)}
+        </datalist>
       </Field>
       <Field label="Types" error={errors.productTypeIds?.message as string | undefined}>
         <div className="grid grid-cols-2 gap-2">
@@ -287,11 +304,15 @@ function Field({
   error?: string;
   children: React.ReactNode;
 }) {
+  // A <div>, deliberately NOT a <label>: clicking anywhere inside a <label>
+  // forwards a synthetic click to its first form control. With composite
+  // children (photo grid, video, checkbox groups) that stray click landed on
+  // whatever control came first — deleting photos and popping the file picker.
   return (
-    <label className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1">
       <span className="text-sm font-medium text-neutral-700">{label}</span>
       {children}
       {error && <span className="text-xs text-red-600">{error}</span>}
-    </label>
+    </div>
   );
 }

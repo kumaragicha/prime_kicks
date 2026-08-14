@@ -39,6 +39,16 @@ export class ProductsController {
     return this.products.findAll(query, user);
   }
 
+  /**
+   * Distinct model names for the product-form autocomplete. Declared before the
+   * `:id` route so "models" isn't captured as a product id.
+   */
+  @Roles('ADMIN', 'RESELLER')
+  @Get('models')
+  listModels(@Query('brandId') brandId?: string) {
+    return this.products.listModels(brandId);
+  }
+
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')

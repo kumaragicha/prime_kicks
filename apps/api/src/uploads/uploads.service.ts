@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import sharp from 'sharp';
 import { StorageService } from '../storage/storage.service';
@@ -102,6 +102,26 @@ export class UploadsService {
     }
     const deleted = await this.storage.deleteByUrl(url);
     return { deleted };
+  }
+
+  /**
+   * Stream a media object for a forced browser download. The CDN has no CORS
+   * policy so the storefront can't fetch it cross-origin — proxying it here
+   * with a Content-Disposition: attachment header makes the browser download
+   * instead of opening a tab. Only our own `products/` URLs resolve.
+   */
+  async download(url?: string) {
+    if (!url || typeof url !== 'string') {
+      throw new BadRequestException('A media url is required.');
+    }
+    let obj: Awaited<ReturnType<StorageService['getByUrl']>>;
+    try {
+      obj = await this.storage.getByUrl(url);
+    } catch {
+      throw new NotFoundException('Media not found.');
+    }
+    if (!obj) throw new BadRequestException('Not a Prime Kicks media URL.');
+    return obj;
   }
 }
 

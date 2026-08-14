@@ -1,7 +1,8 @@
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DeleteObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, GetObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
+import type { Readable } from 'node:stream';
 
 type R2Config = {
   client: S3Client;
@@ -84,6 +85,31 @@ export class StorageService {
     });
     await upload.done();
     return `${publicUrl}/${key}`;
+  }
+
+  /**
+   * Fetch an object's stream given its public CDN URL, for proxied downloads
+   * (the CDN has no CORS policy, so browsers can't fetch it cross-origin).
+   * Same namespace guard as {@link deleteByUrl}: only URLs under our own
+   * `products/` prefix resolve — anything else returns null (never an open
+   * proxy). Returns the body stream plus the metadata needed for headers.
+   */
+  async getByUrl(
+    url: string,
+  ): Promise<{ body: Readable; contentType?: string; contentLength?: number } | null> {
+    const { client, bucket, publicUrl } = this.getConfig();
+    const prefix = `${publicUrl}/`;
+    if (!url.startsWith(prefix)) return null;
+
+    const key = decodeURIComponent(url.slice(prefix.length).split(/[?#]/)[0]!);
+    if (!key.startsWith('products/')) return null;
+
+    const res = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+    return {
+      body: res.Body as Readable,
+      contentType: res.ContentType,
+      contentLength: res.ContentLength,
+    };
   }
 
   /**

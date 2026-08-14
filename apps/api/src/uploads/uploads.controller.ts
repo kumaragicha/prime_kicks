@@ -3,12 +3,17 @@ import {
   Body,
   Controller,
   Delete,
+  Get,
   Post,
+  Query,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
+import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { ACCEPTED_IMAGE_MIME, ACCEPTED_VIDEO_MIME, UploadsService } from './uploads.service';
 
@@ -62,5 +67,30 @@ export class UploadsController {
   @Delete()
   deleteMedia(@Body('url') url?: string) {
     return this.uploads.delete(url);
+  }
+}
+
+/**
+ * Public media-download proxy, in its own controller so it doesn't inherit
+ * UploadsController's class-level roles. The storefront links here to force a
+ * browser download of CDN media (the CDN itself has no CORS/attachment
+ * headers, so a direct link just opens in a tab).
+ */
+@Public()
+@Controller('uploads')
+export class MediaDownloadController {
+  constructor(private readonly uploads: UploadsService) {}
+
+  @Get('download')
+  async download(@Query('url') url: string | undefined, @Res({ passthrough: true }) res: Response) {
+    const { body, contentType, contentLength } = await this.uploads.download(url);
+    // The key is products/<subdir>/<uuid>.<ext>; its basename is already a
+    // safe header value (uuid + extension, no quotes/controls).
+    const filename = url!.split(/[?#]/)[0]!.split('/').pop() || 'download';
+    res.setHeader('Content-Type', contentType ?? 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    if (contentLength) res.setHeader('Content-Length', String(contentLength));
+    res.setHeader('Cache-Control', 'no-store');
+    return new StreamableFile(body);
   }
 }

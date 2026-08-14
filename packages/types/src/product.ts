@@ -16,6 +16,8 @@ export interface Product {
   name: string;
   brand: string;
   brandId: string | null;
+  /** Style/model shared across colorways, e.g. "Samba". Null when ungrouped. */
+  model: string | null;
   productTypes: { id: string; name: string; isActive: boolean }[];
   categories: { id: string; name: string; isActive: boolean }[];
   tags: { id: string; name: string; isActive: boolean }[];
