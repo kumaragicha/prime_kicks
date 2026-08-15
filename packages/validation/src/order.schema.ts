@@ -50,7 +50,11 @@ export const createOrderSchema = z
       )
       .min(1, 'An order needs at least one item')
       .max(500, 'An order cannot contain more than 500 line items'),
-    address: addressSchema,
+    // Pickup orders (reseller selects "I'll pick up" at checkout) don't need a
+    // shipping address — the customer collects the order in store. The service
+    // defaults to false when omitted.
+    isPickup: z.boolean().optional(),
+    address: addressSchema.optional(),
     // --- Admin-only fields (optional; when omitted the web/customer flow is used) ---
     resellerId: z.string().min(1, 'Select a reseller').optional(),
     // A bulk order billed to a non-login CreditCustomer (mutually exclusive with resellerId).
@@ -61,6 +65,14 @@ export const createOrderSchema = z
     shipping: z.number().int().nonnegative().max(10_000_000).optional().default(0),
   })
   .superRefine((val, ctx) => {
+    // Shipping orders must carry a delivery address; pickup orders must not.
+    if (!val.isPickup && !val.address) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'A shipping address is required.',
+        path: ['address'],
+      });
+    }
     if (val.resellerId && val.creditCustomerId) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -104,8 +116,14 @@ export const orderQuerySchema = z.object({
   status: orderStatusSchema.optional(),
   // Inclusive created-at range as IST calendar days (YYYY-MM-DD). endDate
   // covers the whole day. Resolved to UTC instants in the service layer.
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  startDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
+  endDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .optional(),
   sort: z.enum(['newest', 'oldest']).default('newest'),
 });
 

@@ -1,10 +1,7 @@
 'use client';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
-import {
-  OrderStatusActions,
-  type OrderStatusAction,
-} from '@/components/order-status-actions';
+import { OrderStatusActions, type OrderStatusAction } from '@/components/order-status-actions';
 import { ShipmentPanel } from '@/components/shipment-panel';
 import { useOrder, useUpdateOrderStatus } from '@/lib/hooks';
 import { ORDER_STATUS, PAYMENT_STATUS, type OrderStatus } from '@prime-kicks/types';
@@ -139,22 +136,33 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          {/* Shipping Address */}
-          <div className="border border-neutral-200 rounded-lg p-5 bg-white">
-            <h2 className="text-sm font-semibold text-neutral-900 mb-3">Shipping Address</h2>
-            <div className="text-sm text-neutral-700 space-y-1">
-              <p className="font-medium text-neutral-900">{order.address.name}</p>
-              <p>{order.address.line1}</p>
-              {order.address.line2 && <p>{order.address.line2}</p>}
-              {order.address.landmark && <p>{order.address.landmark}</p>}
-              <p>
-                {order.address.city}, {order.address.state} - {order.address.pincode}
-              </p>
-              <p className="pt-1">{order.address.mobileNo}</p>
-              {order.address.altMobileNo && <p>Alt: {order.address.altMobileNo}</p>}
-              {order.address.email && <p>{order.address.email}</p>}
+          {order.isPickup ? (
+            <div className="border border-neutral-200 rounded-lg p-5 bg-white">
+              <h2 className="text-sm font-semibold text-neutral-900 mb-3">Fulfilment</h2>
+              <div className="flex items-center gap-2">
+                <Badge tone="blue">Store pickup</Badge>
+                <span className="text-sm text-neutral-600">
+                  Customer will collect this order in store — no shipping required.
+                </span>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="border border-neutral-200 rounded-lg p-5 bg-white">
+              <h2 className="text-sm font-semibold text-neutral-900 mb-3">Shipping Address</h2>
+              <div className="text-sm text-neutral-700 space-y-1">
+                <p className="font-medium text-neutral-900">{order.address?.name}</p>
+                <p>{order.address?.line1}</p>
+                {order.address?.line2 && <p>{order.address.line2}</p>}
+                {order.address?.landmark && <p>{order.address.landmark}</p>}
+                <p>
+                  {order.address?.city}, {order.address?.state} - {order.address?.pincode}
+                </p>
+                <p className="pt-1">{order.address?.mobileNo}</p>
+                {order.address?.altMobileNo && <p>Alt: {order.address.altMobileNo}</p>}
+                {order.address?.email && <p>{order.address.email}</p>}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Sidebar: summary + customer/date, stays in view while scrolling items */}
@@ -203,12 +211,14 @@ export default function OrderDetailPage() {
             </div>
           </div>
 
-          {/* Shipmozo shipment */}
-          <ShipmentPanel
-            orderId={order.id}
-            shipment={order.shipment}
-            state={order.address.state}
-          />
+          {/* Shipmozo shipment — hidden for pickup orders (no courier involved) */}
+          {!order.isPickup && (
+            <ShipmentPanel
+              orderId={order.id}
+              shipment={order.shipment}
+              state={order.address?.state ?? ''}
+            />
+          )}
         </aside>
       </div>
 
@@ -216,9 +226,7 @@ export default function OrderDetailPage() {
       <ConfirmDialog
         open={pendingAction !== null}
         title="Change order status?"
-        description={
-          pendingAction ? `This will ${pendingAction.effect}.` : ''
-        }
+        description={pendingAction ? `This will ${pendingAction.effect}.` : ''}
         error={updateStatus.error instanceof Error ? updateStatus.error.message : undefined}
         isConfirming={updateStatus.isPending}
         confirmLabel="Confirm"

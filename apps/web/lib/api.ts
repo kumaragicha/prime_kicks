@@ -224,8 +224,7 @@ export const api = {
     return optionalAuthRequest<Paginated<Product>>(`/products${qs}`);
   },
   getProduct: (id: string) => optionalAuthRequest<Product>(`/products/${id}`),
-  getSimilarProducts: (id: string) =>
-    optionalAuthRequest<Product[]>(`/products/${id}/similar`),
+  getSimilarProducts: (id: string) => optionalAuthRequest<Product[]>(`/products/${id}/similar`),
   getFilters: () => request<StoreFilters>('/filters'),
   getHeroSlides: () => request<HeroSlide[]>('/hero'),
   addToCart: (productId: string, variantId: string) =>
@@ -244,7 +243,9 @@ export const api = {
   createOrder: (
     body: {
       items: Array<{ productId: string; variantId: string; quantity: number }>;
-      address: {
+      /** Pickup orders are collected in store — no shipping address needed. */
+      isPickup?: boolean;
+      address?: {
         name: string;
         email?: string;
         altMobileNo?: string;

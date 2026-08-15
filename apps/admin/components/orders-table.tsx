@@ -96,7 +96,10 @@ export function OrdersTable({
           const showDelivery = deliveryName && deliveryName !== c.getValue();
           return (
             <div className="flex flex-col">
-              <span>{c.getValue()}</span>
+              <div className="flex items-center gap-1.5">
+                <span>{c.getValue()}</span>
+                {c.row.original.isPickup && <Badge tone="blue">Pickup</Badge>}
+              </div>
               {label && (
                 <span
                   className={`mt-0.5 text-xs ${role === 'RESELLER' ? 'text-purple-600' : 'text-neutral-500'}`}
@@ -105,9 +108,7 @@ export function OrdersTable({
                 </span>
               )}
               {showDelivery && (
-                <span className="mt-0.5 text-xs text-neutral-500">
-                  Deliver to: {deliveryName}
-                </span>
+                <span className="mt-0.5 text-xs text-neutral-500">Deliver to: {deliveryName}</span>
               )}
             </div>
           );

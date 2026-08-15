@@ -51,8 +51,11 @@ export default function CartPage() {
   const [placing, setPlacing] = useState(false);
   const [addressBlock, setAddressBlock] = useState('');
   const [parsing, setParsing] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [isPickup, setIsPickup] = useState(false);
   // Idempotency key for the in-flight checkout; survives retries, cleared on success.
   const idempotencyKeyRef = useRef<string | null>(null);
+  const isReseller = userRole === 'RESELLER';
 
   function notify(text: string) {
     setToast(text);
@@ -61,7 +64,10 @@ export default function CartPage() {
 
   const load = useCallback(async () => {
     try {
-      setCart(await api.getCart());
+      const [cartResult, meResult] = await Promise.allSettled([api.getCart(), api.me()]);
+      if (cartResult.status === 'fulfilled') setCart(cartResult.value);
+      else if (cartResult.status === 'rejected') throw cartResult.reason;
+      if (meResult.status === 'fulfilled') setUserRole(meResult.value.role);
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') {
         window.localStorage.setItem('prime-kicks-open-login', 'true');
@@ -150,8 +156,7 @@ export default function CartPage() {
     const err = errors[field];
     const isPhone = field === 'mobileNo' || field === 'altMobileNo';
     const isNumeric = isPhone || field === 'pincode';
-    const maxLength =
-      isPhone ? 10 : field === 'pincode' ? 6 : field === 'line1' ? 100 : undefined;
+    const maxLength = isPhone ? 10 : field === 'pincode' ? 6 : field === 'line1' ? 100 : undefined;
     return (
       <div key={`${field}-${errKey}`}>
         <input
@@ -211,7 +216,8 @@ export default function CartPage() {
 
   async function placeOrder() {
     if (!cart || cart.items.length === 0) return;
-    const fieldErrors = validateAddress(address);
+    // Pickup orders collect in store — no shipping address required, so skip validation.
+    const fieldErrors = isPickup ? {} : validateAddress(address);
     const firstError = Object.values(fieldErrors)[0];
     if (firstError) {
       setErrors(fieldErrors);
@@ -238,7 +244,8 @@ export default function CartPage() {
             variantId: item.variant.id,
             quantity: item.quantity,
           })),
-          address,
+          isPickup,
+          address: isPickup ? undefined : address,
         },
         idempotencyKeyRef.current,
       );
@@ -533,10 +540,30 @@ export default function CartPage() {
                   <p className="m-0 mb-[22px] text-[10px] tracking-[.16em] uppercase font-bold">
                     Order summary
                   </p>
-                  <div className="flex justify-between gap-[20px] text-[12px] py-[11px]">
-                    <span className="text-[#666]">Subtotal</span>
-                    <strong>{formatCurrency(subtotal)}</strong>
-                  </div>
+
+                  {/* Product names — shown on the shipping/address step */}
+                  {step === 2 && (
+                    <div className="grid gap-[12px] mb-[18px] pb-[18px]">
+                      {cart.items.map((item) => (
+                        <div className="flex justify-between gap-[16px] items-start" key={item.id}>
+                          <div className="grid gap-[2px]">
+                            <p className="m-0 text-[12px] font-bold leading-snug">
+                              {item.product.name}
+                            </p>
+                            <span className="text-[11px] text-[#777]">
+                              Size {item.variant.size.label} · Qty {item.quantity}
+                            </span>
+                          </div>
+                          <strong className="text-[12px] whitespace-nowrap">
+                            {formatCurrency(
+                              item.product.price * item.quantity,
+                              item.product.currency,
+                            )}
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
 
                   <section className="flex justify-between gap-[20px] mt-[7px] border-t border-t-[#d6d1c7] pt-[18px] pb-[11px] text-[14px]">
                     <span>Total</span>
@@ -548,13 +575,47 @@ export default function CartPage() {
               {/* Actions block — always below the summary on mobile */}
               <div className="grid gap-[14px] content-start col-start-2 row-start-2 max-[760px]:col-auto max-[760px]:row-auto max-[760px]:order-3">
                 {step === 1 ? (
-                  /* Step 1: proceed to shipping */
-                  <button
-                    className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] [&_svg]:w-[14px]"
-                    onClick={goToShipping}
-                  >
-                    Continue to shipping <Icon name="arrow" />
-                  </button>
+                  /* Step 1: proceed to shipping (or straight to pickup for resellers) */
+                  <>
+                    {isReseller && (
+                      <label className="flex items-center gap-[10px] border border-line rounded-[10px] p-[14px] bg-white cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={isPickup}
+                          onChange={(e) => setIsPickup(e.target.checked)}
+                          className="w-[16px] h-[16px] accent-[#111]"
+                        />
+                        <span className="text-[12px] font-bold leading-snug">
+                          Pickup or Label ?
+                        </span>
+                      </label>
+                    )}
+                    {isPickup ? (
+                      <button
+                        className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] select-none transition-opacity duration-150 disabled:opacity-50 [&_svg]:w-[14px]"
+                        disabled={placing}
+                        onClick={placeOrder}
+                      >
+                        {placing ? (
+                          <>
+                            <i className="w-[15px] h-[15px] border-2 border-white/30 border-t-white rounded-full animate-[spin_0.8s_linear_infinite]" />{' '}
+                            Placing order…
+                          </>
+                        ) : (
+                          <>
+                            <Icon name="bag" /> Place order
+                          </>
+                        )}
+                      </button>
+                    ) : (
+                      <button
+                        className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] [&_svg]:w-[14px]"
+                        onClick={goToShipping}
+                      >
+                        Continue to shipping <Icon name="arrow" />
+                      </button>
+                    )}
+                  </>
                 ) : (
                   <>
                     {/* Address verification line */}

@@ -478,6 +478,9 @@ model Order {
   total    Int
   currency String @default("INR")
 
+  // Fulfilment method: false (default) = ship to the address, true = customer picks up in store.
+  isPickup Boolean @default(false)
+
   // Shipping address
   addressName        String
   addressEmail       String?  // optional — not all customers provide an email

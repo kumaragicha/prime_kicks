@@ -100,11 +100,14 @@ function OrderCard({ order }: { order: Order }) {
         <span className="text-[10px] uppercase font-bold tracking-[.08em] text-[#777]">
           {order.items.length} item{order.items.length > 1 ? 's' : ''}
         </span>
-        <span className="text-[15px] font-bold">
-          {formatCurrency(order.total, order.currency)}
-        </span>
+        <span className="text-[15px] font-bold">{formatCurrency(order.total, order.currency)}</span>
       </div>
-      {order.address && (
+      {order.isPickup && (
+        <div className="mt-[10px] pt-[10px] border-t border-line">
+          <p className="m-0 text-[11px] font-bold text-ink">📦 Store pickup</p>
+        </div>
+      )}
+      {!order.isPickup && order.address && (
         <details className="group mt-[10px] pt-[10px] border-t border-line">
           <summary className="flex items-center justify-between gap-[10px] cursor-pointer list-none [&::-webkit-details-marker]:hidden">
             <span className="flex items-baseline gap-[6px] min-w-0">
@@ -164,14 +167,30 @@ function OrderCard({ order }: { order: Order }) {
             >
               {copied ? (
                 <>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
                     <path d="M20 6 9 17l-5-5" />
                   </svg>
                   Copied
                 </>
               ) : (
                 <>
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
                   </svg>
@@ -194,9 +213,7 @@ export default function OrdersPage() {
   // unapproved (PENDING) and approved-on-credit (APPROVED_PAYMENT_PENDING).
   // Only surfaced when there's something owed.
   const pendingOrders = (orders ?? []).filter(
-    (o) =>
-      o.status === ORDER_STATUS.PENDING ||
-      o.status === ORDER_STATUS.APPROVED_PAYMENT_PENDING,
+    (o) => o.status === ORDER_STATUS.PENDING || o.status === ORDER_STATUS.APPROVED_PAYMENT_PENDING,
   );
   const pendingTotal = pendingOrders.reduce((sum, o) => sum + o.total, 0);
   const pendingCurrency = pendingOrders[0]?.currency ?? 'INR';

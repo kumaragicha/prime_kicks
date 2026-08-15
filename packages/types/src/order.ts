@@ -91,7 +91,9 @@ export interface Order {
   shipping: number;
   total: number;
   currency: 'INR';
-  address: OrderAddress;
+  /** True when the customer will pick the order up in store (no shipment). */
+  isPickup: boolean;
+  address: OrderAddress | null;
   shipment: OrderShipment;
   createdAt: string;
   updatedAt: string;
@@ -104,6 +106,8 @@ export interface AdminOrderRow {
   /** Order owner's account role — shown under the name. 'CREDIT' = a bulk
    *  credit-customer account (not a login user). */
   userRole: UserRole | 'CREDIT';
+  /** True when the order is collected in store (no shipment needed). */
+  isPickup: boolean;
   /** Delivery/recipient contact name (from the shipping address). Shown under
    *  the orderer's name for reseller orders, where the two often differ. */
   deliveryName: string | null;

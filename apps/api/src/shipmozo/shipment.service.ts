@@ -119,6 +119,15 @@ export class ShipmentService {
 
     // Bulk orders are shipped manually (no Shipmozo). The admin creates the
     // shipment in the Shipmozo panel by hand and attaches it, so never auto-push.
+    // Pickup orders are collected in store — never push to Shipmozo.
+    if (order.isPickup) {
+      this.logger.debug(
+        `[SHIPMOZO DEBUG] STOP — order ${order.orderNumber} is store pickup (no Shipmozo push)`,
+      );
+      this.logger.log(`Order ${order.orderNumber} is a pickup order — not pushing to Shipmozo`);
+      return this.pickShipment(order);
+    }
+
     if (order.orderType === OrderType.BULK) {
       this.logger.debug(
         `[SHIPMOZO DEBUG] STOP — order ${order.orderNumber} is BULK (manual shipping, no Shipmozo push)`,
@@ -818,7 +827,12 @@ export class ShipmentService {
           action:
             `Configured courier assigned to order ${orderNumber} via "${courierPartner}" ` +
             `on attempt ${i + 1}/${selectedCouriers.length} (AWB ${res.data.awb_number ?? awb ?? '?'})`,
-          formData: { selectedCourier: candidate, attempt: i + 1, priorFailures: attempts, response: res },
+          formData: {
+            selectedCourier: candidate,
+            attempt: i + 1,
+            priorFailures: attempts,
+            response: res,
+          },
           auditedBy,
         });
         return updated;
@@ -1116,9 +1130,7 @@ function extractCourierAwb(data: unknown): {
   };
   return {
     courier:
-      asString(detail.courier_company) ??
-      asString(detail.courier_name) ??
-      asString(detail.courier),
+      asString(detail.courier_company) ?? asString(detail.courier_name) ?? asString(detail.courier),
     awb: asString(detail.awb_number) ?? asString(detail.tracking_number) ?? asString(detail.awb),
     referenceId: asString(detail.reference_id),
   };

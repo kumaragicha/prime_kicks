@@ -82,8 +82,10 @@ function mapOrderItems(items: OrderWithDetails['items']) {
   }));
 }
 
-/** Map an order's flattened shipping-address columns to the nested DTO shape. */
+/** Map an order's flattened shipping-address columns to the nested DTO shape.
+ *  Pickup orders have no shipping address — return null. */
 function mapOrderAddress(order: OrderWithDetails) {
+  if (order.isPickup) return null;
   return {
     name: order.addressName,
     email: order.addressEmail,
@@ -135,6 +137,7 @@ function toOrderDto(order: OrderWithDetails) {
     shipping: order.shipping,
     total: order.total,
     currency: order.currency,
+    isPickup: order.isPickup,
     address: mapOrderAddress(order),
     shipment: mapShipment(order, true),
     createdAt: order.createdAt.toISOString(),
@@ -405,6 +408,35 @@ export class OrdersService {
 
     const addr = input.address;
 
+    // Pickup orders (reseller selects in-store collection) don't collect a
+    // shipping address. The DB address columns are non-nullable, so persist
+    // empty fallbacks for pickup so the schema stays intact.
+    const addressData = addr
+      ? {
+          addressName: addr.name,
+          addressEmail: addr.email || null,
+          addressMobileNo: addr.mobileNo,
+          addressAltMobileNo: addr.altMobileNo || null,
+          addressLine1: addr.line1,
+          addressLine2: addr.line2 ?? '',
+          landmark: addr.landmark ?? '',
+          pincode: addr.pincode,
+          city: addr.city,
+          state: addr.state,
+        }
+      : {
+          addressName: '',
+          addressEmail: null,
+          addressMobileNo: '',
+          addressAltMobileNo: null,
+          addressLine1: '',
+          addressLine2: '',
+          landmark: '',
+          pincode: '',
+          city: '',
+          state: '',
+        };
+
     // Create the order in a transaction, retrying only on an order-number
     // collision (regenerate + retry) and resolving an idempotency-key race to
     // the winning order. An explicit timeout keeps a large basket's sequential
@@ -450,16 +482,8 @@ export class OrdersService {
                 subtotal,
                 shipping,
                 total,
-                addressName: addr.name,
-                addressEmail: addr.email || null,
-                addressMobileNo: addr.mobileNo,
-                addressAltMobileNo: addr.altMobileNo || null,
-                addressLine1: addr.line1,
-                addressLine2: addr.line2 ?? '',
-                landmark: addr.landmark ?? '',
-                pincode: addr.pincode,
-                city: addr.city,
-                state: addr.state,
+                isPickup: input.isPickup ?? false,
+                ...addressData,
                 items: {
                   create: itemsWithDetails.map((item) => ({
                     productId: item.productId,
@@ -527,30 +551,33 @@ export class OrdersService {
       auditedBy,
     });
 
-    // Push the freshly-created order to Shipmozo in the BACKGROUND. Checkout
-    // latency is never coupled to the courier API: the response returns
+    // Pickup orders are collected in store — no courier is involved, so skip
+    // the Shipmozo push entirely. Shipping orders push in the BACKGROUND.
+    // Checkout latency is never coupled to the courier API: the response returns
     // immediately and the push resolves on its own. It runs only after the
     // order transaction has committed, and pushForOrder records any courier-side
     // error on the order itself rather than throwing — so a slow or failing
     // Shipmozo can neither delay, block, nor roll back a successful checkout.
     // The admin can retry from the order page if the background push fails.
-    this.logger.debug(
-      `[ORDER DEBUG] launching BACKGROUND Shipmozo push for order ${order.orderNumber} (id=${order.id})`,
-    );
-    void this.shipment
-      .pushForOrder(order.id, auditedBy)
-      .then((shipment) => {
-        this.logger.debug(
-          `[ORDER DEBUG] background push finished for ${order.orderNumber}: status=${shipment.shipmentStatus} tracking=${shipment.trackingId ?? 'none'} courier=${shipment.courierPartner ?? 'none'} error=${shipment.shipmentError ?? 'none'}`,
-        );
-      })
-      .catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
-        this.logger.debug(
-          `[ORDER DEBUG] background push THREW for ${order.orderNumber}: ${message}`,
-        );
-        this.logger.error(`Background Shipmozo push threw for ${order.orderNumber}: ${message}`);
-      });
+    if (!order.isPickup) {
+      this.logger.debug(
+        `[ORDER DEBUG] launching BACKGROUND Shipmozo push for order ${order.orderNumber} (id=${order.id})`,
+      );
+      void this.shipment
+        .pushForOrder(order.id, auditedBy)
+        .then((shipment) => {
+          this.logger.debug(
+            `[ORDER DEBUG] background push finished for ${order.orderNumber}: status=${shipment.shipmentStatus} tracking=${shipment.trackingId ?? 'none'} courier=${shipment.courierPartner ?? 'none'} error=${shipment.shipmentError ?? 'none'}`,
+          );
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.debug(
+            `[ORDER DEBUG] background push THREW for ${order.orderNumber}: ${message}`,
+          );
+          this.logger.error(`Background Shipmozo push threw for ${order.orderNumber}: ${message}`);
+        });
+    }
 
     return dto;
   }
@@ -645,7 +672,8 @@ export class OrdersService {
         userName: ownerName(order),
         // Credit-customer (bulk) orders have no login role; surface them as CREDIT.
         userRole: order.user?.role ?? 'CREDIT',
-        deliveryName: order.addressName ?? null,
+        isPickup: order.isPickup,
+        deliveryName: order.isPickup ? null : (order.addressName ?? null),
         status: order.status,
         shipmentStatus: order.shipmentStatus,
         trackingId: order.trackingId,
