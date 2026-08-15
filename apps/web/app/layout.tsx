@@ -5,9 +5,18 @@ import { Providers } from './providers';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://primekicks.in'),
-  title: 'Prime Kicks',
+  title: {
+    default: 'Prime Kicks | Premium Sneakers & Footwear',
+    template: '%s | Prime Kicks',
+  },
   description:
-    'Elevate your shoe game with Prime Kicks. Discover premium-quality shoes where exceptional style meets unmatched comfort',
+    'Discover premium sneakers and footwear at Prime Kicks. Shop the latest styles, new drops and exclusive collections.',
+
+  applicationName: 'Prime Kicks',
+  robots: {
+    index: true,
+    follow: true,
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
