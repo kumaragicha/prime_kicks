@@ -567,7 +567,7 @@ export class AuthService {
   private refreshSecret(): string {
     const secret = this.config.get<string>('JWT_REFRESH_SECRET');
     if (!secret) {
-      throw new Error('JWT_REFRESH_SECRET is not set.');
+      throw new Error('JWT_REFRESH_SECRET is not set');
     }
     return secret;
   }
