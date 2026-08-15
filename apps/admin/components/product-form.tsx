@@ -1,6 +1,7 @@
 'use client';
 
 import { ImageUploader, VideoUploader } from '@/components/media-uploader';
+import { QuantityStepper } from '@/components/quantity-stepper';
 import {
   useBrands,
   useCategories,
@@ -139,7 +140,9 @@ export function ProductForm({
           {...register('model')}
         />
         <datalist id="product-model-suggestions">
-          {modelSuggestions?.map((m) => <option key={m} value={m} />)}
+          {modelSuggestions?.map((m) => (
+            <option key={m} value={m} />
+          ))}
         </datalist>
       </Field>
       <Field label="Types" error={errors.productTypeIds?.message as string | undefined}>
@@ -226,17 +229,11 @@ export function ProductForm({
             {selectedType.sizes.map((size) => (
               <label key={size.id} className="flex flex-col gap-1">
                 <span className="text-xs text-neutral-600">{formatSize(size)}</span>
-                <input
-                  type="number"
+                <QuantityStepper
+                  value={stockBySize[size.id] ?? 0}
+                  onChange={(val) => setStockBySize((prev) => ({ ...prev, [size.id]: val }))}
                   min={0}
-                  className={fieldClass}
-                  value={stockBySize[size.id] ?? ''}
-                  onChange={(e) =>
-                    setStockBySize((prev) => ({
-                      ...prev,
-                      [size.id]: e.target.value === '' ? 0 : Number(e.target.value),
-                    }))
-                  }
+                  label={`stock for ${formatSize(size)}`}
                 />
               </label>
             ))}

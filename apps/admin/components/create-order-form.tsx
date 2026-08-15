@@ -1,5 +1,6 @@
 'use client';
 
+import { QuantityStepper } from '@/components/quantity-stepper';
 import {
   useCreateOrder,
   useDebouncedValue,
@@ -216,13 +217,13 @@ export function CreateOrderForm({ open, onClose }: { open: boolean; onClose: () 
           {/* Quantity */}
           <div>
             <label className="mb-1 block text-sm font-medium text-neutral-700">Quantity</label>
-            <input
-              type="number"
-              min={1}
-              className={fieldClass}
+            <QuantityStepper
               value={quantity}
-              onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value) || 1))}
+              onChange={setQuantity}
+              min={1}
+              max={selectedVariant?.stock}
               disabled={!selectedVariantId}
+              label="quantity"
             />
             {selectedVariant && (
               <p className="mt-1 text-xs text-neutral-500">Available: {selectedVariant.stock}</p>
