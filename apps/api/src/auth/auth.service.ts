@@ -6,20 +6,26 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { createHash, randomBytes, randomInt } from 'node:crypto';
-import { compare, hash } from 'bcryptjs';
-import { AuditEvent, AuditModule, Prisma, type PendingRegistration, type User } from '@prisma/client';
 import type {
   LoginSchema,
   RegisterSchema,
   RegisterStartSchema,
   VerifyEmailOtpSchema,
 } from '@prime-kicks/validation';
+import {
+  AuditEvent,
+  AuditModule,
+  Prisma,
+  type PendingRegistration,
+  type User,
+} from '@prisma/client';
+import { compare, hash } from 'bcryptjs';
+import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { AuditLogService } from '../audit-log/audit-log.service';
-import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 import { buildOtpEmail } from '../mail/templates/otp.template';
 import { buildPasswordResetEmail } from '../mail/templates/password-reset.template';
+import { PrismaService } from '../prisma/prisma.service';
 import type { JwtPayload } from './auth.types';
 
 const SALT_ROUNDS = 10;
@@ -561,7 +567,7 @@ export class AuthService {
   private refreshSecret(): string {
     const secret = this.config.get<string>('JWT_REFRESH_SECRET');
     if (!secret) {
-      throw new Error('JWT_REFRESH_SECRET is not set');
+      throw new Error('JWT_REFRESH_SECRET is not set.');
     }
     return secret;
   }
