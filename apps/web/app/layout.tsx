@@ -6,7 +6,7 @@ import { Providers } from './providers';
 export const metadata: Metadata = {
   metadataBase: new URL('https://primekicks.in'),
   title: {
-    default: 'Prime Kicks | Premium Sneakers & Footwear',
+    default: 'Prime Kicks | Premium Sneakers & Footwear.',
     template: '%s | Prime Kicks',
   },
   description:
