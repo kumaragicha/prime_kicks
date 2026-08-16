@@ -40,9 +40,7 @@ function SearchResults() {
 
   // Pagination / accumulated results
   const [page, setPage] = useState(1);
-  const [items, setItems] = useState<
-    ReturnType<typeof toStoreProduct>[] extends never ? any[] : any[]
-  >([]);
+  const [items, setItems] = useState<any[]>([]);
   const [hasMore, setHasMore] = useState(true);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
@@ -58,6 +56,9 @@ function SearchResults() {
 
   const { data, isLoading, isError, refetch } = useProducts(queryParams);
 
+  const isInitialLoading = isLoading && page === 1;
+  const isLoadingMore = isLoading && page > 1;
+
   // Reset pagination whenever the search/filters change
   useEffect(() => {
     setPage(1);
@@ -65,25 +66,36 @@ function SearchResults() {
     setHasMore(true);
   }, [query, brandId, categoryId, tagId, size]);
 
-  // Append incoming page data to the accumulated list
+  // Append incoming page data to the accumulated list, and decide
+  // hasMore using the API's own meta.page / meta.totalPages
   useEffect(() => {
     if (!data) return;
     setItems((prev) => (page === 1 ? data.data : [...prev, ...data.data]));
-    if (data.data.length < PAGE_SIZE) {
-      setHasMore(false);
-    }
+
+    const currentPage = data.meta?.page ?? page;
+    const totalPages = data.meta?.totalPages ?? 1;
+    setHasMore(currentPage < totalPages);
   }, [data, page]);
 
-  // Observe the sentinel to trigger loading the next page
+  // Keep latest hasMore / isLoading in refs so the observer callback
+  // always reads fresh values without needing the observer to be recreated
+  const hasMoreRef = useRef(hasMore);
+  const isLoadingRef = useRef(isLoading);
   useEffect(() => {
-    if (!hasMore || isLoading) return;
+    hasMoreRef.current = hasMore;
+    isLoadingRef.current = isLoading;
+  }, [hasMore, isLoading]);
+
+  // Create the IntersectionObserver ONCE and keep it alive for the
+  // component's lifetime, instead of tearing it down on every loading change
+  useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
-        if (entry?.isIntersecting) {
+        if (entry?.isIntersecting && hasMoreRef.current && !isLoadingRef.current) {
           setPage((p) => p + 1);
         }
       },
@@ -92,7 +104,7 @@ function SearchResults() {
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, [hasMore, isLoading]);
+  }, []);
 
   const brandName = filters?.brands.find((brand) => brand.id === brandId)?.name;
   const categoryName = filters?.categories.find((category) => category.id === categoryId)?.name;
@@ -111,9 +123,6 @@ function SearchResults() {
     tagName ? { key: 'tagId', label: tagName } : null,
     size ? { key: 'size', label: `Size ${size}` } : null,
   ].filter((entry): entry is { key: string; label: string } => entry !== null);
-
-  const isInitialLoading = isLoading && page === 1;
-  const isLoadingMore = isLoading && page > 1;
 
   return (
     <main className="min-h-screen">
@@ -213,10 +222,10 @@ function SearchResults() {
           ))}
         </div>
 
-        {/* Sentinel for infinite scroll */}
-        {hasMore && !isInitialLoading && items.length > 0 && (
-          <div ref={sentinelRef} className="h-[1px]" />
-        )}
+        {/* Sentinel for infinite scroll — always rendered so the ref is stable.
+            The observer callback itself checks hasMore, so once the last page
+            is reached this simply stops triggering further page increments. */}
+        <div ref={sentinelRef} className="h-[1px]" />
 
         {isLoadingMore && (
           <div className="flex items-center justify-center gap-[10px] py-[30px] text-[12px] text-[#666] text-center">
