@@ -7,7 +7,9 @@ import { ProductCard, toStoreProduct } from '@/components/product-card';
 import { SiteHeader } from '@/components/site-header';
 import { useFilters, useProducts } from '@/lib/hooks';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Suspense } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
+
+const PAGE_SIZE = 20;
 
 export default function SearchPage() {
   return (
@@ -36,13 +38,61 @@ function SearchResults() {
   const tagId = params.get('tagId') ?? '';
   const size = params.get('size') ?? '';
 
-  const queryParams: Record<string, string> = { pageSize: '48' };
+  // Pagination / accumulated results
+  const [page, setPage] = useState(1);
+  const [items, setItems] = useState<
+    ReturnType<typeof toStoreProduct>[] extends never ? any[] : any[]
+  >([]);
+  const [hasMore, setHasMore] = useState(true);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const queryParams: Record<string, string> = {
+    pageSize: String(PAGE_SIZE),
+    page: String(page),
+  };
   if (query) queryParams.search = query;
   if (brandId) queryParams.brandId = brandId;
   if (categoryId) queryParams.categoryId = categoryId;
   if (tagId) queryParams.tagId = tagId;
   if (size) queryParams.size = size;
+
   const { data, isLoading, isError, refetch } = useProducts(queryParams);
+
+  // Reset pagination whenever the search/filters change
+  useEffect(() => {
+    setPage(1);
+    setItems([]);
+    setHasMore(true);
+  }, [query, brandId, categoryId, tagId, size]);
+
+  // Append incoming page data to the accumulated list
+  useEffect(() => {
+    if (!data) return;
+    setItems((prev) => (page === 1 ? data.data : [...prev, ...data.data]));
+    if (data.data.length < PAGE_SIZE) {
+      setHasMore(false);
+    }
+  }, [data, page]);
+
+  // Observe the sentinel to trigger loading the next page
+  useEffect(() => {
+    if (!hasMore || isLoading) return;
+    const el = sentinelRef.current;
+    if (!el) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry?.isIntersecting) {
+          setPage((p) => p + 1);
+        }
+      },
+      { rootMargin: '600px' },
+    );
+
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hasMore, isLoading]);
 
   const brandName = filters?.brands.find((brand) => brand.id === brandId)?.name;
   const categoryName = filters?.categories.find((category) => category.id === categoryId)?.name;
@@ -61,6 +111,9 @@ function SearchResults() {
     tagName ? { key: 'tagId', label: tagName } : null,
     size ? { key: 'size', label: `Size ${size}` } : null,
   ].filter((entry): entry is { key: string; label: string } => entry !== null);
+
+  const isInitialLoading = isLoading && page === 1;
+  const isLoadingMore = isLoading && page > 1;
 
   return (
     <main className="min-h-screen">
@@ -85,7 +138,10 @@ function SearchResults() {
           className="flex items-center gap-[10px] max-w-[620px] h-[54px] mb-[20px] rounded-full border border-line bg-white pl-[20px] pr-[7px] shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] duration-200 focus-within:border-ink focus-within:shadow-[0_4px_16px_rgba(0,0,0,0.07)]"
           action="/search"
         >
-          <span className="shrink-0 text-[#a29e95] [&_svg]:w-[18px] [&_svg]:h-[18px]" aria-hidden="true">
+          <span
+            className="shrink-0 text-[#a29e95] [&_svg]:w-[18px] [&_svg]:h-[18px]"
+            aria-hidden="true"
+          >
             <Icon name="search" />
           </span>
           <input
@@ -124,7 +180,7 @@ function SearchResults() {
             ))}
           </div>
         )}
-        {isLoading && (
+        {isInitialLoading && (
           <div className="min-h-[135px] flex items-center justify-center gap-[10px] text-[12px] text-[#666] text-center">
             <i className="w-[15px] h-[15px] border-2 border-[#ccc] border-t-[#111] rounded-full animate-[spin_0.8s_linear_infinite]" />{' '}
             Searching the catalogue
@@ -141,13 +197,13 @@ function SearchResults() {
             </button>
           </div>
         )}
-        {!isLoading && !isError && data?.data.length === 0 && (
+        {!isInitialLoading && !isError && items.length === 0 && (
           <div className="min-h-[135px] flex items-center justify-center gap-[10px] text-[12px] text-[#666] text-center">
             No products match this search. Try a different name or brand.
           </div>
         )}
         <div className="grid grid-cols-4 gap-x-[16px] gap-y-[27px] max-[800px]:grid-cols-2 max-[800px]:gap-x-[10px] max-[800px]:gap-y-[28px] min-[801px]:max-[1100px]:grid-cols-3 pt-[3px]">
-          {data?.data.map((product) => (
+          {items.map((product) => (
             <ProductCard
               key={product.id}
               isHomePage
@@ -156,6 +212,24 @@ function SearchResults() {
             />
           ))}
         </div>
+
+        {/* Sentinel for infinite scroll */}
+        {hasMore && !isInitialLoading && items.length > 0 && (
+          <div ref={sentinelRef} className="h-[1px]" />
+        )}
+
+        {isLoadingMore && (
+          <div className="flex items-center justify-center gap-[10px] py-[30px] text-[12px] text-[#666] text-center">
+            <i className="w-[15px] h-[15px] border-2 border-[#ccc] border-t-[#111] rounded-full animate-[spin_0.8s_linear_infinite]" />{' '}
+            Loading more
+          </div>
+        )}
+
+        {!hasMore && items.length > 0 && (
+          <div className="py-[30px] text-center text-[11px] uppercase tracking-[.1em] text-[#999]">
+            You’ve reached the end of the results
+          </div>
+        )}
       </section>
       <FilterDrawer />
     </main>
