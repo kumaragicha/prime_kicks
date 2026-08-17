@@ -12,6 +12,7 @@ import { SiteHeader } from '@/components/site-header';
 import { Toast } from '@/components/toast';
 // import TestimonialMarquee from '@/components/ui/marquee-01';
 import { ApiError, api } from '@/lib/api';
+import { downloadMedia, downloadMediaSequentially, mediaFilename } from '@/lib/download-media';
 import { notifyStore, useProduct, useSimilarProducts } from '@/lib/hooks';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
@@ -31,6 +32,8 @@ export default function ProductDetailClient({ id }: { id: string }) {
   const [shake, setShake] = useState(false);
   // Confirmation state for "Add to cart" only — Buy now just redirects.
   const [done, setDone] = useState(false);
+  // Non-null while a download is running: `{ done, total }` drives the progress label.
+  const [downloading, setDownloading] = useState<{ done: number; total: number } | null>(null);
   const doneTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const carousel = useRef<HTMLDivElement>(null);
 
@@ -77,6 +80,48 @@ export default function ProductDetailClient({ id }: { id: string }) {
         })),
       ]
     : [];
+
+  // Photos only — the video has its own download button inside ProductVideo.
+  const photos = product?.photoUrls ?? [];
+
+  /** Save one photo, named after the product rather than its uuid key. */
+  async function downloadPhoto(src: string) {
+    if (downloading) return;
+    const index = photos.indexOf(src);
+    setDownloading({ done: 0, total: 1 });
+    try {
+      await downloadMedia(src, mediaFilename(product?.name ?? 'product', src, Math.max(index, 0)));
+    } catch {
+      setMessage('Could not download that image. Please try again.');
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  /**
+   * Save every photo of this product, one after another (the browser blocks a
+   * burst of simultaneous downloads), reporting progress on the button.
+   */
+  async function downloadAllPhotos() {
+    if (!photos.length || downloading) return;
+    setDownloading({ done: 0, total: photos.length });
+    try {
+      await downloadMediaSequentially(
+        photos.map((src, index) => ({
+          url: src,
+          filename: mediaFilename(product?.name ?? 'product', src, index),
+        })),
+        (done, total) => setDownloading({ done, total }),
+      );
+      setMessage(
+        photos.length === 1 ? 'Image downloaded.' : `${photos.length} images downloaded.`,
+      );
+    } catch {
+      setMessage('Could not download the images. Please try again.');
+    } finally {
+      setDownloading(null);
+    }
+  }
 
   function moveCarousel(direction: -1 | 1) {
     const next = Math.min(Math.max(activeMedia + direction, 0), media.length - 1);
@@ -183,11 +228,33 @@ export default function ProductDetailClient({ id }: { id: string }) {
       </div>
       <section className="max-w-[1480px] mx-auto px-[5.25vw] pb-[92px] grid grid-cols-[minmax(0,1.3fr)_minmax(315px,0.7fr)] gap-[clamp(35px,6vw,96px)] max-[760px]:block max-[760px]:px-[15px] max-[760px]:pb-[58px]">
         <div className="min-w-0">
-          <div className="flex justify-between items-center mb-[11px]">
+          <div className="flex justify-between items-center gap-[10px] mb-[11px]">
             <p className="m-0 text-[10px] tracking-[.16em] uppercase font-bold">Product gallery</p>
-            <span className="text-[10px] tracking-[.1em] text-[#777]">
-              {media.length ? `${activeMedia + 1} / ${media.length}` : '01 / 01'}
-            </span>
+            <div className="flex items-center gap-[12px]">
+              {photos.length > 0 && (
+                <button
+                  type="button"
+                  onClick={downloadAllPhotos}
+                  disabled={downloading !== null}
+                  className="flex items-center gap-[6px] rounded-full border border-ink px-[11px] py-[6px] text-[9px] font-bold uppercase tracking-[.08em] transition-colors duration-200 hover:bg-[#e6e5e1] disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:h-[12px] [&_svg]:w-[12px]"
+                  aria-label={
+                    photos.length > 1
+                      ? `Download all ${photos.length} images of ${product.name}`
+                      : `Download the image of ${product.name}`
+                  }
+                >
+                  <Icon name="download" />
+                  {downloading && downloading.total > 1
+                    ? `${downloading.done} / ${downloading.total}`
+                    : photos.length > 1
+                      ? `Download all ${photos.length}`
+                      : 'Download image'}
+                </button>
+              )}
+              <span className="text-[10px] tracking-[.1em] text-[#777]">
+                {media.length ? `${activeMedia + 1} / ${media.length}` : '01 / 01'}
+              </span>
+            </div>
           </div>
           <div className="relative">
             <div
@@ -207,12 +274,28 @@ export default function ProductDetailClient({ id }: { id: string }) {
                     }}
                   >
                     {item.type === 'image' ? (
-                      <BlurImage
-                        className="w-full h-full block object-cover"
-                        src={item.src}
-                        alt={`${product.name} — ${item.label}`}
-                        priority={index === 0}
-                      />
+                      <>
+                        <BlurImage
+                          className="w-full h-full block object-cover"
+                          src={item.src}
+                          alt={`${product.name} — ${item.label}`}
+                          priority={index === 0}
+                        />
+                        {/* Per-image save. `stopPropagation` so it doesn't also
+                            select the slide the click landed on. */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void downloadPhoto(item.src);
+                          }}
+                          disabled={downloading !== null}
+                          aria-label={`Download ${product.name} ${item.label}`}
+                          className="absolute bottom-[14px] left-[14px] z-10 flex h-[38px] w-[38px] items-center justify-center rounded-full bg-accent text-white shadow-[0_6px_18px_rgba(0,0,0,0.35)] transition-transform duration-200 hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:h-[16px] [&_svg]:w-[16px]"
+                        >
+                          <Icon name="download" />
+                        </button>
+                      </>
                     ) : (
                       <>
                         <ProductVideo
