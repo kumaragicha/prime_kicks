@@ -3,10 +3,10 @@
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, use } from 'react';
-import type { DefaultValues } from 'react-hook-form';
 import type { CreateProductSchema } from '@prime-kicks/validation';
 import { ProductForm } from '@/components/product-form';
 import { useProduct, useUpdateProduct } from '@/lib/hooks';
+import { productFormDefaults } from '@/lib/product-defaults';
 import { useToast } from '@/lib/toast';
 
 function EditProduct({ params }: { params: Promise<{ id: string }> }) {
@@ -26,27 +26,6 @@ function EditProduct({ params }: { params: Promise<{ id: string }> }) {
 
   if (isLoading) return <p className="text-neutral-500">Loading…</p>;
   if (isError || !product) return <p className="text-red-600">Product not found.</p>;
-
-  const defaultValues: DefaultValues<CreateProductSchema> = {
-    sku: product.sku,
-    name: product.name,
-    brandId: product.brandId ?? '',
-    model: product.model ?? null,
-    productTypeIds: product.productTypes.map((type) => type.id),
-    categoryIds: product.categories.map((category) => category.id),
-    tagIds: product.tags?.map((tag) => tag.id) ?? [],
-    description: product.description,
-    currency: product.currency,
-    photoUrls: product.photoUrls,
-    videoUrl: product.videoUrl,
-    releaseYear: product.releaseYear,
-    inhouseCost: product.inhouseCost,
-    resellerPrice: product.resellerPrice,
-    customerPrice: product.customerPrice,
-    sizeTypeId: product.sizeTypeId,
-    variants: product.variants.map((v) => ({ sizeId: v.sizeId, stock: v.stock, sku: v.sku })),
-    dimensionId: product.dimensionId ?? null,
-  };
 
   const onSubmit = async (values: CreateProductSchema) => {
     await updateProduct.mutateAsync(values);
@@ -75,7 +54,7 @@ function EditProduct({ params }: { params: Promise<{ id: string }> }) {
       </Link>
       <h1 className="mb-6 text-2xl font-bold">Edit product</h1>
       <ProductForm
-        defaultValues={defaultValues}
+        defaultValues={productFormDefaults(product)}
         submitLabel="Save changes"
         onSubmit={onSubmit}
         errorMessage={

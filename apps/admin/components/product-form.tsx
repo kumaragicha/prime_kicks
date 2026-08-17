@@ -56,11 +56,15 @@ export function ProductForm({
   submitLabel,
   onSubmit,
   errorMessage,
+  sharedPhotoUrls,
 }: {
   defaultValues?: DefaultValues<CreateProductSchema>;
   submitLabel: string;
   onSubmit: (values: CreateProductSchema) => Promise<void>;
   errorMessage?: string;
+  /** Photos owned by a different product (this form was seeded by duplicating
+   *  it), so removing one here must not delete the file from storage. */
+  sharedPhotoUrls?: string[];
 }) {
   const { data: sizeTypes, isLoading: loadingTypes } = useSizeTypes();
   const { data: brands } = useBrands();
@@ -190,6 +194,7 @@ export function ProductForm({
             setValue('photoUrls', urls, { shouldValidate: true, shouldDirty: true })
           }
           max={4}
+          sharedUrls={sharedPhotoUrls}
         />
       </Field>
 

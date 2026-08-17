@@ -29,12 +29,20 @@ export function ImageUploader({
   onChange,
   max = 4,
   aspect = STORE_ASPECT,
+  sharedUrls = [],
 }: {
   value: string[];
   onChange: (urls: string[]) => void;
   max?: number;
   /** Crop frame (width / height). Defaults to the store product-card ratio. */
   aspect?: number;
+  /**
+   * URLs that belong to another product and must survive removal here — a
+   * duplicated product starts with the source product's photos, and the source
+   * still renders them. Same reasoning as {@link VideoUploader}'s
+   * upload-this-session guard, but the caller supplies the list.
+   */
+  sharedUrls?: string[];
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(0);
@@ -94,8 +102,10 @@ export function ImageUploader({
   function removeAt(index: number) {
     const url = value[index];
     onChange(value.filter((_, i) => i !== index));
-    // Best-effort: also remove the object from the bucket so nothing orphans.
-    if (url) {
+    // Best-effort: also remove the object from the bucket so nothing orphans —
+    // unless another product owns it (see `sharedUrls`), in which case dropping
+    // it here must leave the file alone.
+    if (url && !sharedUrls.includes(url)) {
       api.deleteUpload(url).catch(() => setError("Removed, but couldn't delete the file from storage."));
     }
   }

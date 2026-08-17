@@ -1,6 +1,13 @@
 'use client';
 
-import { DeleteIcon, EditIcon, IconButton, IconLink, Toggle } from '@/components/action-controls';
+import {
+  CopyIcon,
+  DeleteIcon,
+  EditIcon,
+  IconButton,
+  IconLink,
+  Toggle,
+} from '@/components/action-controls';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { controlClass, DataTable, Pagination, selectClass } from '@/components/table-controls';
 import {
@@ -154,6 +161,12 @@ function ProductsList() {
             />
             <IconLink href={editHref(c.row.original.id)} label={`Edit ${c.row.original.name}`}>
               <EditIcon />
+            </IconLink>
+            <IconLink
+              href={`/products/new?copyFrom=${c.row.original.id}`}
+              label={`Duplicate ${c.row.original.name}`}
+            >
+              <CopyIcon />
             </IconLink>
             <IconButton
               label={`Delete ${c.row.original.name}`}

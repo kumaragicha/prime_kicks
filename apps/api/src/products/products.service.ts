@@ -271,9 +271,49 @@ export class ProductsService {
     return collected.map((row) => shapeProduct(row, user));
   }
 
+  /**
+   * A brand may not carry two products with the same name. Duplicating a product
+   * copies its name along with everything else, so without this the catalogue
+   * ends up with rows nobody can tell apart.
+   *
+   * Matched on the trimmed name, case-insensitively, and only against live rows —
+   * soft-deleting a product frees its name again. Enforced here rather than by a
+   * DB constraint because case-insensitive matching that ignores soft-deleted
+   * rows needs a partial functional index, which Prisma's schema can't express.
+   */
+  private async assertNameFreeForBrand(
+    brandId: string | null | undefined,
+    name: string | null | undefined,
+    excludeId?: string,
+  ) {
+    const trimmed = name?.trim();
+    if (!brandId || !trimmed) return;
+
+    const clash = await this.prisma.product.findFirst({
+      where: {
+        brandId,
+        deletedAt: null,
+        name: { equals: trimmed, mode: 'insensitive' },
+        ...(excludeId ? { id: { not: excludeId } } : {}),
+      },
+      select: { name: true, sku: true },
+    });
+    if (!clash) return;
+
+    const brand = await this.prisma.brand.findUnique({
+      where: { id: brandId },
+      select: { name: true },
+    });
+    throw new ConflictException(
+      `${brand?.name ?? 'This brand'} already has a product named "${clash.name}" ` +
+        `(SKU ${clash.sku}). Use a different name.`,
+    );
+  }
+
   async create(input: CreateProductSchema, auditedBy?: string) {
     const { variants, brandId, productTypeIds, categoryIds, tagIds, ...data } = input;
     const brand = await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } });
+    await this.assertNameFreeForBrand(brandId, data.name);
 
     // Auto-generate SKU if not provided
     const sku = data.sku?.trim() || this.generateSku(brand.name);
@@ -327,13 +367,21 @@ export class ProductsService {
     // if the model/brand moves the product between groups.
     const before = await this.prisma.product.findFirst({
       where: { id, deletedAt: null },
-      select: { brandId: true, model: true },
+      select: { brandId: true, model: true, name: true },
     });
     if (!before) throw new NotFoundException(`Product ${id} not found`);
     const { variants, brandId, productTypeIds, categoryIds, tagIds, ...data } = input;
     const brand = brandId
       ? await this.prisma.brand.findUniqueOrThrow({ where: { id: brandId } })
       : null;
+
+    // Renaming, or moving to another brand, must not collide with a product that
+    // brand already has. `id` is excluded so saving a product unchanged is fine.
+    await this.assertNameFreeForBrand(
+      brandId ?? before.brandId,
+      data.name ?? before.name,
+      id,
+    );
 
     const product = await this.prisma.$transaction(async (tx) => {
       await tx.product.update({
