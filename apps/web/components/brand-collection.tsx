@@ -91,22 +91,22 @@ function BrandTile({ brand }: { brand: FilterOption }) {
       className="group shrink-0 snap-start w-[84px] no-underline text-ink max-[800px]:w-[68px]"
       aria-label={`Shop ${brand.name}`}
     >
-      <div className="relative aspect-square overflow-hidden rounded-full border border-line bg-[#f7f6f3] grid place-items-center transition-[border-color,transform,box-shadow,background-color] duration-200 group-hover:border-ink/25 group-hover:bg-white group-hover:-translate-y-[2px] group-hover:shadow-[0_6px_16px_rgba(28,22,16,0.09)]">
+      <div className="relative aspect-square overflow-hidden rounded-full border border-line bg-white grid place-items-center transition-[border-color,transform,box-shadow,background-color] duration-200 group-hover:border-accent/45 group-hover:bg-accent-soft group-hover:-translate-y-[2px] group-hover:shadow-[0_6px_16px_rgba(28,22,16,0.09)]">
         {logo ? (
           // Static markup from BRAND_LOGOS — authored in this repo, never user
           // input — so there is nothing to sanitise here.
           <span
             aria-hidden="true"
-            className="w-full h-full p-[17px] block text-ink/45 transition-[transform,color] duration-[600ms] ease-[cubic-bezier(0.2,0.7,0.2,1)] group-hover:scale-[1.06] group-hover:text-ink [&>svg]:w-full [&>svg]:h-full [&>svg]:object-contain max-[800px]:p-[14px]"
+            className="w-full h-full p-[17px] block text-ink/90 transition-[transform,color] duration-[600ms] ease-[cubic-bezier(0.2,0.7,0.2,1)] group-hover:scale-[1.06] group-hover:text-ink [&>svg]:w-full [&>svg]:h-full [&>svg]:object-contain max-[800px]:p-[14px]"
             dangerouslySetInnerHTML={{ __html: logo }}
           />
         ) : (
-          <span className="text-[17px] font-[900] tracking-[-.03em] text-ink/40 transition-colors duration-200 group-hover:text-ink/75 max-[800px]:text-[15px]">
+          <span className="text-[17px] font-[900] tracking-[-.03em] text-ink/80 transition-colors duration-200 group-hover:text-ink max-[800px]:text-[15px]">
             {brandInitials(brand.name)}
           </span>
         )}
       </div>
-      <p className="mt-[10px] text-center text-[10px] font-bold uppercase tracking-[.07em] text-ink/60 truncate transition-colors duration-200 group-hover:text-ink max-[800px]:text-[9px] max-[800px]:mt-[8px]">
+      <p className="mt-[10px] text-center text-[10px] font-bold uppercase tracking-[.07em] text-ink/85 truncate transition-colors duration-200 group-hover:text-accent max-[800px]:text-[9px] max-[800px]:mt-[8px]">
         {brand.name}
       </p>
     </Link>
