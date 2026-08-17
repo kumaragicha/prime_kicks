@@ -1,16 +1,26 @@
 'use client';
 
 import Link from 'next/link';
-import { use } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, use } from 'react';
 import type { DefaultValues } from 'react-hook-form';
 import type { CreateProductSchema } from '@prime-kicks/validation';
 import { ProductForm } from '@/components/product-form';
 import { useProduct, useUpdateProduct } from '@/lib/hooks';
 import { useToast } from '@/lib/toast';
 
-export default function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
+function EditProduct({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
+  const search = useSearchParams();
   const toast = useToast();
+
+  // The list page hands over its own query string as `from` (page, search,
+  // filters) so both "Back to products" and a successful save return to the page
+  // the admin was actually on. Re-encoded through `URLSearchParams`, so a value
+  // that isn't a query string can never redirect off `/products`.
+  const from = search.get('from');
+  const listHref = from ? `/products?${new URLSearchParams(from).toString()}` : '/products';
   const { data: product, isLoading, isError } = useProduct(id);
   const updateProduct = useUpdateProduct(id);
 
@@ -41,12 +51,15 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
   const onSubmit = async (values: CreateProductSchema) => {
     await updateProduct.mutateAsync(values);
     toast.success('Changes saved.');
+    // Back to the exact page of the list the admin came from. The toast lives on
+    // the root provider, so it survives the navigation.
+    router.push(listHref);
   };
 
   return (
     <div>
       <Link
-        href="/products"
+        href={listHref}
         className="mb-6 inline-flex items-center gap-2 text-sm text-neutral-600 hover:text-neutral-900"
       >
         <svg
@@ -74,5 +87,15 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
         }
       />
     </div>
+  );
+}
+
+// `useSearchParams` needs a boundary to suspend against while the client shell
+// hydrates.
+export default function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense fallback={<p className="text-neutral-500">Loading…</p>}>
+      <EditProduct params={params} />
+    </Suspense>
   );
 }

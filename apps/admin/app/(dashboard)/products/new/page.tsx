@@ -11,7 +11,9 @@ export default function NewProductPage() {
 
   const onSubmit = async (values: CreateProductSchema) => {
     await createProduct.mutateAsync(values);
-    router.push('/');
+    // Back to the products list, not the dashboard — the new row is what the
+    // admin wants to see next.
+    router.push('/products');
   };
 
   return (

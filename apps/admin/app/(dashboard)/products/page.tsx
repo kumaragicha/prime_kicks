@@ -16,38 +16,72 @@ import { Badge, Button } from '@prime-kicks/ui';
 import { formatCurrency } from '@prime-kicks/utils';
 import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
 const columnHelper = createColumnHelper<Product>();
 const PAGE_SIZE = 10;
 
-export default function ProductsPage() {
+/**
+ * The list's page and filters live in the URL, not in component state: leaving
+ * for an edit and coming back (or reloading, or sharing the link) has to land on
+ * the same page of the same filtered set, and state would be lost on navigation.
+ * Every edit link carries the current query as `from` so the edit page knows
+ * where "back" is.
+ */
+function ProductsList() {
   const router = useRouter();
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [sizeTypeId, setSizeTypeId] = useState('');
+  const params = useSearchParams();
+
+  const page = Math.max(1, Number(params.get('page')) || 1);
+  const searchParam = params.get('q') ?? '';
+  const sizeTypeId = params.get('sizeType') ?? '';
+
+  // The input stays local and only reaches the URL once typing settles — one
+  // history write per pause instead of one per keystroke.
+  const [search, setSearch] = useState(searchParam);
+  const debouncedSearch = useDebouncedValue(search);
+
   const [productToDelete, setProductToDelete] = useState<Product | null>(null);
   const [deleteError, setDeleteError] = useState('');
 
-  const debouncedSearch = useDebouncedValue(search);
   const { data: sizeTypes } = useSizeTypes();
   const { data, isLoading, isError, isFetching } = useProducts({
     page,
     pageSize: PAGE_SIZE,
-    search: debouncedSearch || undefined,
+    search: searchParam || undefined,
     sizeTypeId: sizeTypeId || undefined,
   });
   const deleteProduct = useDeleteProduct();
   const setActive = useSetProductActive();
   const toast = useToast();
 
-  const resetTo =
-    <T,>(setter: (v: T) => void) =>
-    (v: T) => {
-      setter(v);
-      setPage(1);
-    };
+  const setQuery = useCallback(
+    (next: { page?: number; q?: string; sizeType?: string }) => {
+      const merged = { page, q: searchParam, sizeType: sizeTypeId, ...next };
+      const qs = new URLSearchParams();
+      // Defaults stay out of the URL so page 1 unfiltered is just `/products`.
+      if (merged.page > 1) qs.set('page', String(merged.page));
+      if (merged.q) qs.set('q', merged.q);
+      if (merged.sizeType) qs.set('sizeType', merged.sizeType);
+      const query = qs.toString();
+      router.replace(query ? `/products?${query}` : '/products', { scroll: false });
+    },
+    [page, searchParam, sizeTypeId, router],
+  );
+
+  // A new search or filter always restarts at page 1 — page 10 of the previous
+  // result set means nothing for the new one.
+  useEffect(() => {
+    if (debouncedSearch !== searchParam) setQuery({ q: debouncedSearch, page: 1 });
+  }, [debouncedSearch, searchParam, setQuery]);
+
+  const listQuery = params.toString();
+  const editHref = useCallback(
+    (id: string) =>
+      `/products/${id}/edit${listQuery ? `?from=${encodeURIComponent(listQuery)}` : ''}`,
+    [listQuery],
+  );
 
   const columns = useMemo(
     () => [
@@ -118,10 +152,7 @@ export default function ProductsPage() {
                 )
               }
             />
-            <IconLink
-              href={`/products/${c.row.original.id}/edit`}
-              label={`Edit ${c.row.original.name}`}
-            >
+            <IconLink href={editHref(c.row.original.id)} label={`Edit ${c.row.original.name}`}>
               <EditIcon />
             </IconLink>
             <IconButton
@@ -135,7 +166,7 @@ export default function ProductsPage() {
         ),
       }),
     ],
-    [setActive, toast],
+    [setActive, toast, editHref],
   );
 
   const table = useReactTable({
@@ -165,12 +196,12 @@ export default function ProductsPage() {
           className={`${controlClass} w-full sm:min-w-56 sm:flex-1`}
           placeholder="Search name or SKU…"
           value={search}
-          onChange={(e) => resetTo(setSearch)(e.target.value)}
+          onChange={(e) => setSearch(e.target.value)}
         />
         <select
           className={`${selectClass} w-full sm:w-auto`}
           value={sizeTypeId}
-          onChange={(e) => resetTo(setSizeTypeId)(e.target.value)}
+          onChange={(e) => setQuery({ sizeType: e.target.value, page: 1 })}
         >
           <option value="">All size types</option>
           {sizeTypes?.map((t) => (
@@ -190,14 +221,14 @@ export default function ProductsPage() {
             table={table}
             isFetching={isFetching}
             emptyMessage="No products match your filters."
-            onRowClick={(product) => router.push(`/products/${product.id}/edit`)}
+            onRowClick={(product) => router.push(editHref(product.id))}
           />
 
           <Pagination
             page={data.meta.page}
             totalPages={data.meta.totalPages}
             total={data.meta.total}
-            onPage={setPage}
+            onPage={(next) => setQuery({ page: next })}
           />
         </>
       )}
@@ -228,5 +259,15 @@ export default function ProductsPage() {
         }}
       />
     </div>
+  );
+}
+
+// `useSearchParams` needs a boundary to suspend against while the client shell
+// hydrates.
+export default function ProductsPage() {
+  return (
+    <Suspense fallback={<p className="text-neutral-500">Loading…</p>}>
+      <ProductsList />
+    </Suspense>
   );
 }
