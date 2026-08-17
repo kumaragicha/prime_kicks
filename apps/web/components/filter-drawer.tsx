@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
 import { Icon } from '@/components/icon';
 import { useFilters } from '@/lib/hooks';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 /** EU shoe sizes offered as filter chips (36–45). */
 const EU_SIZES = Array.from({ length: 10 }, (_, i) => String(36 + i));
@@ -36,13 +36,14 @@ function Chip({
 /**
  * Storefront facet filter. A floating pill (bottom-right on every viewport) opens a
  * drawer — a right-hand panel on desktop, a bottom sheet on mobile. Applying pushes the
- * chosen brand/category to the search page as query params.
+ * chosen brand(s)/category to the search page as query params. Brand supports multi-select;
+ * selected brand ids are joined into a single comma-separated `brandId` query param.
  */
 export function FilterDrawer() {
   const { data, isLoading } = useFilters();
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [brandId, setBrandId] = useState('');
+  const [brandIds, setBrandIds] = useState<string[]>([]);
   const [categoryId, setCategoryId] = useState('');
   const [tagId, setTagId] = useState('');
   const [size, setSize] = useState('');
@@ -74,7 +75,7 @@ export function FilterDrawer() {
 
   function openDrawer() {
     const params = new URLSearchParams(window.location.search);
-    setBrandId(params.get('brandId') ?? '');
+    setBrandIds(params.get('brandId')?.split(',').filter(Boolean) ?? []);
     setCategoryId(params.get('categoryId') ?? '');
     setTagId(params.get('tagId') ?? '');
     setSize(params.get('size') ?? '');
@@ -82,17 +83,21 @@ export function FilterDrawer() {
   }
 
   function clearAll() {
-    setBrandId('');
+    setBrandIds([]);
     setCategoryId('');
     setTagId('');
     setSize('');
+  }
+
+  function toggleBrand(id: string) {
+    setBrandIds((prev) => (prev.includes(id) ? prev.filter((b) => b !== id) : [...prev, id]));
   }
 
   function apply() {
     const params = new URLSearchParams();
     const existingQuery = new URLSearchParams(window.location.search).get('q');
     if (existingQuery) params.set('q', existingQuery);
-    if (brandId) params.set('brandId', brandId);
+    if (brandIds.length) params.set('brandId', brandIds.join(','));
     if (categoryId) params.set('categoryId', categoryId);
     if (tagId) params.set('tagId', tagId);
     if (size) params.set('size', size);
@@ -101,7 +106,7 @@ export function FilterDrawer() {
     router.push(`/search${qs ? `?${qs}` : ''}`);
   }
 
-  const selectedCount = (brandId ? 1 : 0) + (categoryId ? 1 : 0) + (tagId ? 1 : 0) + (size ? 1 : 0);
+  const selectedCount = brandIds.length + (categoryId ? 1 : 0) + (tagId ? 1 : 0) + (size ? 1 : 0);
 
   return (
     <>
@@ -131,7 +136,9 @@ export function FilterDrawer() {
                 <p className="text-[10px] uppercase tracking-[.16em] font-bold text-accent m-0 mb-[4px]">
                   Refine
                 </p>
-                <h2 className="text-[22px] tracking-[-.04em] font-bold m-0 leading-none">Filters</h2>
+                <h2 className="text-[22px] tracking-[-.04em] font-bold m-0 leading-none">
+                  Filters
+                </h2>
               </div>
               <button
                 type="button"
@@ -156,8 +163,8 @@ export function FilterDrawer() {
                       <Chip
                         key={brand.id}
                         label={brand.name}
-                        selected={brandId === brand.id}
-                        onClick={() => setBrandId(brandId === brand.id ? '' : brand.id)}
+                        selected={brandIds.includes(brand.id)}
+                        onClick={() => toggleBrand(brand.id)}
                       />
                     ))}
                   </div>

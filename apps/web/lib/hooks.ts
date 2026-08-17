@@ -115,6 +115,29 @@ export function useInfiniteProducts() {
   });
 }
 
+/**
+ * Paginated product search, for the /search page's infinite scroll.
+ *
+ * `filters` carries the search/brand/category/tag/size params; it's part of the
+ * query key, so changing a filter starts a fresh, separately-cached list rather
+ * than needing the page to reset any accumulated state by hand. React Query owns
+ * the accumulation (`data.pages`), which is what keeps a refetch of an
+ * already-loaded page from appending its products a second time.
+ */
+export function useInfiniteProductSearch(
+  filters: Record<string, string>,
+  pageSize: number,
+) {
+  return useInfiniteQuery({
+    queryKey: ['products', 'search', filters, pageSize],
+    queryFn: ({ pageParam }) =>
+      api.listProducts({ ...filters, page: String(pageParam), pageSize: String(pageSize) }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.meta.page < lastPage.meta.totalPages ? lastPage.meta.page + 1 : undefined,
+  });
+}
+
 /** Brand + category facets for the storefront filter drawer. */
 export function useFilters() {
   return useQuery({

@@ -1,6 +1,7 @@
 'use client';
 
 import { Icon } from '@/components/icon';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -53,9 +54,18 @@ export function SearchPanel({ onClose, top }: { onClose: () => void; top: number
             Search <Icon name="arrow" />
           </button>
         </form>
-        <p className="text-[11px] text-[#777] mt-[14px] mx-0 mb-0">
-          Search by product name, brand, or SKU.
-        </p>
+        {/* Escape hatch for the visitor who opened search with nothing in mind —
+            drops them into the unfiltered catalogue instead of a blank input. */}
+        <div className="flex flex-wrap items-center justify-between gap-[10px] mt-[14px]">
+          <p className="text-[11px] text-[#777] m-0">Search by product name, brand, or SKU.</p>
+          <Link
+            href="/search"
+            onClick={onClose}
+            className="inline-flex shrink-0 items-center gap-[8px] no-underline uppercase text-[11px] font-bold tracking-[.08em] text-ink transition-opacity duration-200 hover:opacity-60 [&_svg]:w-[14px] [&_svg]:h-[14px] [&_svg]:text-accent"
+          >
+            Browse all products <Icon name="arrow" />
+          </Link>
+        </div>
       </section>
     </div>
   );

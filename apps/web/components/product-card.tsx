@@ -36,7 +36,11 @@ export function toStoreProduct(product: Product): StoreProduct {
     tags: (product.tags ?? []).filter((tag) => tag.isActive).map((tag) => tag.name),
     sizes: product.variants
       .filter((variant) => variant.stock > 0)
-      .map((variant) => ({ id: variant.id, label: variant.size.label })),
+      .map((variant) => ({
+        id: variant.id,
+        label:
+          product.brand === 'Crocs' ? (variant.size.conversion ?? '') : (variant.size.label ?? ''),
+      })),
   };
 }
 

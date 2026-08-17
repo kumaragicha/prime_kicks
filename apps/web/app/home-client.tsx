@@ -1,6 +1,7 @@
 'use client';
 
 import { Announcement } from '@/components/announcement';
+import { BrandCollection } from '@/components/brand-collection';
 import { FilterDrawer } from '@/components/filter-drawer';
 import { Icon } from '@/components/icon';
 import { LoginModal } from '@/components/login-modal';
@@ -117,6 +118,10 @@ export function HomeClient({ initialHeroSlides }: { initialHeroSlides: HeroSlide
           <div className="hero-orb" />
         </section>
       )}
+
+      {/* Brand row sits above the tag collections — the widest entry point into
+          the catalogue, before the curated rows narrow it down. */}
+      <BrandCollection id="brands" />
 
       {TAG_SECTIONS.map((section, index) => (
         <TagCollection

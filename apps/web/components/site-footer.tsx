@@ -109,7 +109,7 @@ export function SiteFooter() {
           <Link className="text-white text-[12px] no-underline hover:underline" href="/#new">
             New arrivals
           </Link>
-          <Link className="text-white text-[12px] no-underline hover:underline" href="/#shop">
+          <Link className="text-white text-[12px] no-underline hover:underline" href="/search">
             Shop all
           </Link>
           <Link className="text-white text-[12px] no-underline hover:underline" href="/#brands">

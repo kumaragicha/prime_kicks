@@ -14,9 +14,13 @@ function getInitials(name: string) {
   return name.trim().slice(0, 2).toUpperCase();
 }
 
+// Each link lands on its own destination: the two anchors scroll to real home
+// sections ("New arrivals" and the brand row), while "Shop all" opens the full
+// catalogue — browsable without typing a query, and reachable from every page.
+// Shared by the desktop nav and the mobile menu.
 const navLinks = [
+  { href: '/search', label: 'Shop all' },
   { href: '/#new', label: 'New arrivals' },
-  { href: '/#shop', label: 'Shop' },
   { href: '/#brands', label: 'Brands' },
 ];
 
@@ -63,6 +67,33 @@ export function SiteHeader() {
     return () => window.removeEventListener('keydown', onKey);
   }, [menuOpen]);
 
+  /**
+   * Scroll to a `/#section` target ourselves when we're already on the home
+   * page. The App Router updates the hash but doesn't scroll for a same-page
+   * hash link, so the nav would otherwise appear to do nothing. Off home, we
+   * leave the event alone and let the Link navigate — the browser then honours
+   * the hash on arrival.
+   *
+   * The scroll is deferred a tick because the mobile menu closes in the same
+   * click: `document.body` still has `overflow: hidden` until that effect's
+   * cleanup runs, and scrolling a locked body is a no-op. A timeout rather than
+   * `requestAnimationFrame` — rAF never fires while the tab is in the
+   * background, which would strand the scroll on a link clicked before a
+   * tab switch.
+   */
+  function handleNavClick(event: React.MouseEvent<HTMLAnchorElement>, href: string) {
+    if (!href.startsWith('/#') || window.location.pathname !== '/') return;
+    const target = document.getElementById(href.slice(2));
+    if (!target) return;
+    event.preventDefault();
+    setMenuOpen(false);
+    // `scroll-mt-*` on each section keeps the sticky header from covering it.
+    setTimeout(() => {
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      window.history.replaceState(null, '', href);
+    }, 0);
+  }
+
   // Measure the header's bottom before an overlay renders, so it opens already
   // anchored to the correct offset (no first-frame flash at the top).
   function measureOverlayTop() {
@@ -99,9 +130,10 @@ export function SiteHeader() {
         >
           {navLinks.map((link) => (
             <Link
-              key={link.href}
+              key={link.label}
               className="text-ink no-underline uppercase text-[11px] tracking-[.08em] font-bold"
               href={link.href}
+              onClick={(event) => handleNavClick(event, link.href)}
             >
               {link.label}
             </Link>
@@ -188,10 +220,13 @@ export function SiteHeader() {
           >
             {navLinks.map((link) => (
               <Link
-                key={link.href}
+                key={link.label}
                 className="text-ink no-underline uppercase text-[14px] tracking-[.08em] font-bold"
                 href={link.href}
-                onClick={() => setMenuOpen(false)}
+                onClick={(event) => {
+                  setMenuOpen(false);
+                  handleNavClick(event, link.href);
+                }}
               >
                 {link.label}
               </Link>

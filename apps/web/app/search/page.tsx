@@ -5,7 +5,7 @@ import { FilterDrawer } from '@/components/filter-drawer';
 import { Icon } from '@/components/icon';
 import { ProductCard, toStoreProduct } from '@/components/product-card';
 import { SiteHeader } from '@/components/site-header';
-import { useFilters, useProducts } from '@/lib/hooks';
+import { useFilters, useInfiniteProductSearch } from '@/lib/hooks';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
@@ -33,82 +33,73 @@ function SearchResults() {
   const router = useRouter();
   const { data: filters } = useFilters();
   const query = params.get('q')?.trim() ?? '';
-  const brandId = params.get('brandId') ?? '';
+  const brandIds = params.get('brandId')?.split(',').filter(Boolean) ?? [];
   const categoryId = params.get('categoryId') ?? '';
   const tagId = params.get('tagId') ?? '';
   const size = params.get('size') ?? '';
+  const brandIdKey = brandIds.join(',');
 
-  // Pagination / accumulated results
-  const [page, setPage] = useState(1);
-  const [items, setItems] = useState<any[]>([]);
-  const [hasMore, setHasMore] = useState(true);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
-  const queryParams: Record<string, string> = {
-    pageSize: String(PAGE_SIZE),
-    page: String(page),
-  };
-  if (query) queryParams.search = query;
-  if (brandId) queryParams.brandId = brandId;
-  if (categoryId) queryParams.categoryId = categoryId;
-  if (tagId) queryParams.tagId = tagId;
-  if (size) queryParams.size = size;
+  // Only the filters — paging is the hook's business. Empty values are left out
+  // so that e.g. "no brand selected" and "brand param absent" share a cache key.
+  const activeQuery: Record<string, string> = {};
+  if (query) activeQuery.search = query;
+  if (brandIdKey) activeQuery.brandId = brandIdKey;
+  if (categoryId) activeQuery.categoryId = categoryId;
+  if (tagId) activeQuery.tagId = tagId;
+  if (size) activeQuery.size = size;
 
-  const { data, isLoading, isError, refetch } = useProducts(queryParams);
+  const {
+    data,
+    isLoading: isInitialLoading,
+    isError,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage: isLoadingMore,
+  } = useInfiniteProductSearch(activeQuery, PAGE_SIZE);
 
-  const isInitialLoading = isLoading && page === 1;
-  const isLoadingMore = isLoading && page > 1;
+  // Changing a filter changes the query key, so the accumulated list resets
+  // itself — no manual reset effect, and no way to append a page twice.
+  const items = data?.pages.flatMap((entry) => entry.data) ?? [];
 
-  // Reset pagination whenever the search/filters change
-  useEffect(() => {
-    setPage(1);
-    setItems([]);
-    setHasMore(true);
-  }, [query, brandId, categoryId, tagId, size]);
-
-  // Append incoming page data to the accumulated list, and decide
-  // hasMore using the API's own meta.page / meta.totalPages
-  useEffect(() => {
-    if (!data) return;
-    setItems((prev) => (page === 1 ? data.data : [...prev, ...data.data]));
-
-    const currentPage = data.meta?.page ?? page;
-    const totalPages = data.meta?.totalPages ?? 1;
-    setHasMore(currentPage < totalPages);
-  }, [data, page]);
-
-  // Keep latest hasMore / isLoading in refs so the observer callback
-  // always reads fresh values without needing the observer to be recreated
-  const hasMoreRef = useRef(hasMore);
-  const isLoadingRef = useRef(isLoading);
-  useEffect(() => {
-    hasMoreRef.current = hasMore;
-    isLoadingRef.current = isLoading;
-  }, [hasMore, isLoading]);
-
-  // Create the IntersectionObserver ONCE and keep it alive for the
-  // component's lifetime, instead of tearing it down on every loading change
+  // Re-created whenever the guard values change, which is deliberate: an
+  // observer only reports intersection *changes*, so a callback that arrives
+  // mid-fetch is simply dropped. Re-observing re-delivers the current state,
+  // meaning a sentinel that is already on screen when the previous page lands
+  // still pulls the next one in.
   useEffect(() => {
     const el = sentinelRef.current;
-    if (!el) return;
+    if (!el || !hasNextPage || isLoadingMore) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
-        const entry = entries[0];
-        if (entry?.isIntersecting && hasMoreRef.current && !isLoadingRef.current) {
-          setPage((p) => p + 1);
-        }
+        if (entries[0]?.isIntersecting) void fetchNextPage();
       },
       { rootMargin: '600px' },
     );
 
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [hasNextPage, isLoadingMore, fetchNextPage]);
 
-  const brandName = filters?.brands.find((brand) => brand.id === brandId)?.name;
   const categoryName = filters?.categories.find((category) => category.id === categoryId)?.name;
   const tagName = filters?.tags?.find((tag) => tag.id === tagId)?.name;
+
+  const [searchValue, setSearchValue] = useState(query);
+
+  useEffect(() => {
+    setSearchValue(query);
+  }, [query]);
+
+  function clearSearch() {
+    setSearchValue('');
+    const next = new URLSearchParams(Array.from(params.entries()));
+    next.delete('q');
+    const qs = next.toString();
+    router.push(`/search${qs ? `?${qs}` : ''}`);
+  }
 
   function removeParam(key: string) {
     const next = new URLSearchParams(Array.from(params.entries()));
@@ -117,12 +108,35 @@ function SearchResults() {
     router.push(`/search${qs ? `?${qs}` : ''}`);
   }
 
+  function removeBrand(id: string) {
+    const next = new URLSearchParams(Array.from(params.entries()));
+    const remaining = brandIds.filter((b) => b !== id);
+    if (remaining.length > 0) {
+      next.set('brandId', remaining.join(','));
+    } else {
+      next.delete('brandId');
+    }
+    const qs = next.toString();
+    router.push(`/search${qs ? `?${qs}` : ''}`);
+  }
+
   const activeFilters = [
-    brandName ? { key: 'brandId', label: brandName } : null,
-    categoryName ? { key: 'categoryId', label: categoryName } : null,
-    tagName ? { key: 'tagId', label: tagName } : null,
-    size ? { key: 'size', label: `Size ${size}` } : null,
-  ].filter((entry): entry is { key: string; label: string } => entry !== null);
+    ...brandIds
+      .map((id) => {
+        const name = filters?.brands.find((brand) => brand.id === id)?.name;
+        return name ? { key: `brand-${id}`, label: name, onRemove: () => removeBrand(id) } : null;
+      })
+      .filter(
+        (entry): entry is { key: string; label: string; onRemove: () => void } => entry !== null,
+      ),
+    categoryName
+      ? { key: 'categoryId', label: categoryName, onRemove: () => removeParam('categoryId') }
+      : null,
+    tagName ? { key: 'tagId', label: tagName, onRemove: () => removeParam('tagId') } : null,
+    size ? { key: 'size', label: `Size ${size}`, onRemove: () => removeParam('size') } : null,
+  ].filter(
+    (entry): entry is { key: string; label: string; onRemove: () => void } => entry !== null,
+  );
 
   return (
     <main className="min-h-screen">
@@ -156,19 +170,31 @@ function SearchResults() {
           <input
             className="min-w-0 flex-1 border-0 bg-transparent text-[14px] text-ink placeholder:text-[#a29e95] focus:outline-none"
             name="q"
-            defaultValue={query}
+            value={searchValue}
+            onChange={(e) => setSearchValue(e.target.value)}
             placeholder="Search products"
             aria-label="Search products"
           />
-          {brandId && <input type="hidden" name="brandId" value={brandId} />}
+          {searchValue && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              aria-label="Clear search"
+              className="shrink-0 w-[26px] h-[26px] grid place-items-center rounded-full text-[#a29e95] hover:text-ink hover:bg-[#f2f0ec] transition-colors [&_svg]:w-[12px]"
+            >
+              <Icon name="close" />
+            </button>
+          )}
+          {brandIdKey && <input type="hidden" name="brandId" value={brandIdKey} />}
           {categoryId && <input type="hidden" name="categoryId" value={categoryId} />}
           {tagId && <input type="hidden" name="tagId" value={tagId} />}
           {size && <input type="hidden" name="size" value={size} />}
           <button
-            className="shrink-0 inline-flex h-[40px] items-center gap-[8px] rounded-full bg-ink px-[24px] text-[10px] font-bold uppercase tracking-[.09em] text-white transition-colors duration-200 hover:bg-[#383838] max-[800px]:px-[18px]"
+            className="shrink-0 inline-flex h-[40px] w-[40px] items-center justify-center rounded-full bg-ink text-white transition-colors duration-200 hover:bg-[#383838] [&_svg]:w-[16px]"
             type="submit"
+            aria-label="Search"
           >
-            Search
+            <Icon name="search" />
           </button>
         </form>
         {activeFilters.length > 0 && (
@@ -180,7 +206,7 @@ function SearchResults() {
               <button
                 key={entry.key}
                 type="button"
-                onClick={() => removeParam(entry.key)}
+                onClick={entry.onRemove}
                 className="capitalize flex items-center gap-[7px] rounded-full pl-[13px] pr-[10px] py-[7px] text-[12px] bg-accent-soft border border-accent text-ink hover:bg-accent hover:text-white transition-colors [&_svg]:w-[12px]"
                 aria-label={`Remove ${entry.label} filter`}
               >
@@ -223,8 +249,7 @@ function SearchResults() {
         </div>
 
         {/* Sentinel for infinite scroll — always rendered so the ref is stable.
-            The observer callback itself checks hasMore, so once the last page
-            is reached this simply stops triggering further page increments. */}
+            Once the last page is in, the effect stops observing it entirely. */}
         <div ref={sentinelRef} className="h-[1px]" />
 
         {isLoadingMore && (
@@ -234,7 +259,7 @@ function SearchResults() {
           </div>
         )}
 
-        {!hasMore && items.length > 0 && (
+        {!hasNextPage && items.length > 0 && (
           <div className="py-[30px] text-center text-[11px] uppercase tracking-[.1em] text-[#999]">
             You’ve reached the end of the results
           </div>
