@@ -88,10 +88,22 @@ export class ProductsService {
     // customer, anonymous storefront) is limited to active ones.
     const activeOnly = user?.role !== 'ADMIN';
 
+    // The storefront's brand facet is multi-select and sends its picks as one
+    // comma-separated value ("id1,id2"). Split it so several brands read as a
+    // union; matching on the raw string would compare against the literal
+    // "id1,id2" and return nothing. A single id yields a one-element `in`,
+    // which behaves exactly like the equality test it replaces.
+    const brandIds = brandId
+      ? brandId
+          .split(',')
+          .map((id) => id.trim())
+          .filter(Boolean)
+      : [];
+
     const buildWhere = (withSearch: boolean): Prisma.ProductWhereInput => ({
       deletedAt: null,
       ...(activeOnly ? { isActive: true, ...inStock } : {}),
-      ...(brandId ? { brandId } : {}),
+      ...(brandIds.length ? { brandId: { in: brandIds } } : {}),
       ...(categoryId ? { categories: { some: { id: categoryId } } } : {}),
       ...(tagId ? { tags: { some: { id: tagId } } } : {}),
       ...(tag ? { tags: { some: { name: { equals: tag, mode: 'insensitive' } } } } : {}),

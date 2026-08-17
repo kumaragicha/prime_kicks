@@ -56,6 +56,8 @@ export const updateProductSchema = createProductSchema.partial();
 export const productQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
+  /** One brand id, or several comma-separated — the storefront's brand facet
+   *  is multi-select and the matching brands are unioned. */
   brandId: z.string().optional(),
   categoryId: z.string().optional(),
   tagId: z.string().optional(),
