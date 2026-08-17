@@ -5,6 +5,7 @@ import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { AnimatedLabel } from './added-label';
+import { BlurImage } from './blur-image';
 import { Icon } from './icon';
 
 export type StoreProduct = {
@@ -111,16 +112,17 @@ export function ProductCard({
   return (
     <article className="group flex h-full min-w-0 flex-col animate-[enter_0.5s_both] [&:nth-child(2n)]:[animation-delay:0.06s] [&:nth-child(3n)]:[animation-delay:0.12s]">
       <div className="relative aspect-[1/1.05] overflow-hidden bg-[#e8e6e0] rounded-[15px] shadow-[0_9px_24px_rgba(28,22,16,0.1)] max-[800px]:aspect-[1/1.16]">
-        <Link href={`/products/${product.id}`} aria-label={`View ${product.name}`}>
+        <Link
+          href={`/products/${product.id}`}
+          aria-label={`View ${product.name}`}
+          className="block h-full w-full"
+        >
           {product.image ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <BlurImage
               src={product.image}
               alt={product.name}
-              loading={priority ? 'eager' : 'lazy'}
-              fetchPriority={priority ? 'high' : 'auto'}
-              decoding="async"
-              className="w-full h-full object-cover block transition-transform duration-[600ms] ease-[cubic-bezier(0.2,0.7,0.2,1)] group-hover:scale-[1.06]"
+              priority={priority}
+              className="w-full h-full object-cover block group-hover:scale-[1.06]"
             />
           ) : (
             <div className="h-full grid place-items-center p-[20px] bg-[linear-gradient(145deg,#e9e7df,#cfcac0)] text-[18px] font-bold tracking-[.12em] text-center">

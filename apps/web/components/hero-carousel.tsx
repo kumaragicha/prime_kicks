@@ -1,10 +1,47 @@
 'use client';
 
+import { useImageReveal } from '@/components/blur-image';
 import { Icon } from '@/components/icon';
 import type { HeroSlide } from '@/lib/api';
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 
 const AUTOPLAY_MS = 5500;
+
+/**
+ * One slide layer. The photo is a `background-image` (so it can crop per
+ * breakpoint), which means there is no `onLoad` to wait on — `useImageReveal`
+ * preloads the URL instead, and the layer lands fully blurred before pulling
+ * into focus rather than snapping in at whatever fraction has downloaded.
+ */
+function HeroImage({
+  src,
+  zoomed,
+  className,
+}: {
+  src: string;
+  zoomed: boolean;
+  className: string;
+}) {
+  const phase = useImageReveal(src);
+
+  return (
+    <div
+      className={className}
+      style={{
+        backgroundImage: `url(${src})`,
+        // The 6s ken-burns drift and the reveal share one declaration because
+        // both live in this inline style.
+        transform: zoomed ? 'scale(1.06)' : 'scale(1.02)',
+        // A wider radius than the cards get: this frame is full-bleed, so the
+        // same softness has to read across far more pixels.
+        filter: phase === 'sharp' ? 'blur(0px)' : 'blur(28px)',
+        opacity: phase === 'pending' ? 0 : 1,
+        transition:
+          'transform 6s ease-out, filter 1200ms cubic-bezier(0.22,0.61,0.36,1), opacity 380ms ease-out',
+      }}
+    />
+  );
+}
 
 /**
  * Storefront hero carousel. Slides crossfade (image + text + CTA together),
@@ -82,22 +119,16 @@ export function HeroCarousel({ slides }: { slides: HeroSlide[] }) {
             aria-hidden={!isActive}
           >
             {/* Desktop (landscape) image — hidden on phones. */}
-            <div
+            <HeroImage
               className="absolute inset-0 bg-cover bg-[center_42%] max-[800px]:hidden"
-              style={{
-                backgroundImage: `url(${slide.imageUrl})`,
-                transform: isActive && !reduceMotion.current ? 'scale(1.06)' : 'scale(1.02)',
-                transition: 'transform 6s ease-out',
-              }}
+              src={slide.imageUrl}
+              zoomed={isActive && !reduceMotion.current}
             />
             {/* Mobile (portrait) image — shown only on phones; falls back to desktop. */}
-            <div
+            <HeroImage
               className="absolute inset-0 hidden bg-cover bg-[58%_center] max-[800px]:block"
-              style={{
-                backgroundImage: `url(${slide.mobileImageUrl || slide.imageUrl})`,
-                transform: isActive && !reduceMotion.current ? 'scale(1.06)' : 'scale(1.02)',
-                transition: 'transform 6s ease-out',
-              }}
+              src={slide.mobileImageUrl || slide.imageUrl}
+              zoomed={isActive && !reduceMotion.current}
             />
             <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(0,0,0,0.68),rgba(0,0,0,0.12)_72%)]" />
 

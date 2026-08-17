@@ -1,6 +1,7 @@
 'use client';
 
 import { Announcement } from '@/components/announcement';
+import { BlurImage } from '@/components/blur-image';
 import { Icon } from '@/components/icon';
 import { SiteFooter } from '@/components/site-footer';
 import { Toast } from '@/components/toast';
@@ -388,13 +389,10 @@ export default function CartPage() {
                         href={`/products/${item.product.id}`}
                       >
                         {item.product.photoUrls[0] ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
+                          <BlurImage
                             className="w-full h-full object-cover"
                             src={item.product.photoUrls[0]}
                             alt={item.product.name}
-                            loading="lazy"
-                            decoding="async"
                           />
                         ) : (
                           <span className="h-full grid place-items-center text-[11px] font-bold">

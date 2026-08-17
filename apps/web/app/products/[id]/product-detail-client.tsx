@@ -2,6 +2,7 @@
 
 import { AnimatedLabel } from '@/components/added-label';
 import { Announcement } from '@/components/announcement';
+import { BlurImage } from '@/components/blur-image';
 import { Icon } from '@/components/icon';
 import { LoginModal } from '@/components/login-modal';
 import { ProductCard, toStoreProduct } from '@/components/product-card';
@@ -206,14 +207,11 @@ export default function ProductDetailClient({ id }: { id: string }) {
                     }}
                   >
                     {item.type === 'image' ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <BlurImage
                         className="w-full h-full block object-cover"
                         src={item.src}
                         alt={`${product.name} — ${item.label}`}
-                        loading={index === 0 ? 'eager' : 'lazy'}
-                        fetchPriority={index === 0 ? 'high' : 'auto'}
-                        decoding="async"
+                        priority={index === 0}
                       />
                     ) : (
                       <>

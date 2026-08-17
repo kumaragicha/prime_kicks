@@ -327,7 +327,29 @@
   background-image: image-set(url('/hero.webp') type('image/webp'), url('/hero.jpg') type('image/jpeg'));
   transform-origin: center;
   will-change: transform;
-  animation: hero-kenburns 22s ease-in-out infinite alternate;
+  /* Ken Burns owns `transform`; the reveal owns `filter`/`opacity` only, so the
+     two can run on the same layer without one clobbering the other. */
+  animation:
+    hero-kenburns 22s ease-in-out infinite alternate,
+    hero-media-in 1.1s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+/* Matches the JS reveal in `BlurImage`: land fully blurred, hold a beat, then
+   pull into focus — this layer is a CSS background, so there is no `load` event
+   to hang it on (the image is `<link rel=preload>`ed in the page instead). */
+@keyframes hero-media-in {
+  0% {
+    opacity: 0;
+    filter: blur(28px);
+  }
+  12% {
+    opacity: 1;
+    filter: blur(28px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0px);
+  }
 }
 
 @keyframes hero-kenburns {

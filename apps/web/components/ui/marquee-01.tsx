@@ -1,3 +1,4 @@
+import { BlurImage } from '@/components/blur-image';
 import { Card, CardContent } from '@/components/ui/card';
 import { Marquee } from '@/components/ui/marquee-01-utils/marquee';
 
@@ -71,8 +72,13 @@ const ReviewCard = ({
     <Card className="relative h-full w-64 cursor-pointer overflow-hidden border-line bg-paper p-4 shadow-none">
       <CardContent className="flex flex-col gap-2 p-0">
         <div className="flex flex-row items-center gap-2">
-          {/* eslint-disable-next-line @next/next/no-img-element -- tiny decorative avatar, not worth next/image + remote-pattern config */}
-          <img className="rounded-full" width="32" height="32" alt="" src={profile} />
+          <BlurImage
+            src={profile}
+            alt=""
+            shimmer={false}
+            wrapperClassName="h-8 w-8 shrink-0 rounded-full bg-line"
+            className="h-full w-full rounded-full object-cover"
+          />
           <div className="flex flex-col">
             <p className="text-sm font-medium text-ink">{name}</p>
             <p className="text-xs font-medium text-neutral-500">{username}</p>

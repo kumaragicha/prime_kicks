@@ -1,5 +1,6 @@
 'use client';
 
+import { BlurImage } from '@/components/blur-image';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
 import { useCurrentUser, useMyOrders } from '@/lib/hooks';
@@ -62,12 +63,10 @@ function OrderCard({ order }: { order: Order }) {
               className="flex-shrink-0 block w-[88px] h-[88px] rounded overflow-hidden bg-[#f0eee9]"
             >
               {item.product.photoUrls[0] && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
+                <BlurImage
                   src={item.product.photoUrls[0]}
                   alt={item.title}
-                  loading="lazy"
-                  decoding="async"
+                  shimmer={false}
                   className="w-full h-full object-cover"
                 />
               )}
