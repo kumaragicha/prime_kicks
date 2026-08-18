@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -73,6 +74,8 @@ function parseDurationMs(value: string, fallbackMs: number): number {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
@@ -298,11 +301,19 @@ export class AuthService {
       resetUrl,
       expiresMinutes: PASSWORD_RESET_EXP_MINUTES,
     });
+    this.logger.log(`Dispatching password-reset email to ${user.email}`);
     try {
       await this.mail.send({ to: user.email, subject, text, html });
-    } catch {
+      this.logger.log(`Password-reset email handed off to mailer for ${user.email}`);
+    } catch (err) {
       // Don't surface a mail failure to the caller (it would reveal the email
-      // exists). The user can retry; the error is already logged by MailService.
+      // exists), but DO log it so the failure is debuggable server-side.
+      this.logger.error(
+        `Failed to send password-reset email to ${user.email} — ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        err instanceof Error ? err.stack : undefined,
+      );
     }
 
     return generic;
@@ -552,7 +563,21 @@ export class AuthService {
       code,
       expiresMinutes: this.otpExpMinutes(),
     });
-    await this.mail.send({ to: email, subject, text, html });
+    // Log the OTP dispatch (never the code itself) so we can confirm the auth
+    // flow reached the mail layer even if delivery later fails downstream.
+    this.logger.log(`Dispatching registration OTP email to ${email}`);
+    try {
+      await this.mail.send({ to: email, subject, text, html });
+      this.logger.log(`Registration OTP email handed off to mailer for ${email}`);
+    } catch (err) {
+      this.logger.error(
+        `Failed to send registration OTP email to ${email} — ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      throw err;
+    }
   }
 
   /**
