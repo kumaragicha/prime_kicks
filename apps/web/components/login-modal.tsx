@@ -4,6 +4,15 @@ import { ApiError, api } from '@/lib/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
+/**
+ * Keep name fields to letters and spaces only — strips digits, apostrophes,
+ * hyphens and every other symbol as the customer types. Unicode letters are
+ * allowed so accented names aren't blocked.
+ */
+function sanitizeName(value: string): string {
+  return value.replace(/[^\p{L} ]/gu, '');
+}
+
 const emptyRegister = {
   firstName: '',
   lastName: '',
@@ -414,7 +423,7 @@ export function LoginModal({
                   First name
                   <input
                     value={form.firstName}
-                    onChange={(event) => updateForm('firstName', event.target.value)}
+                    onChange={(event) => updateForm('firstName', sanitizeName(event.target.value))}
                     autoComplete="given-name"
                     required
                     placeholder="First"
@@ -425,7 +434,7 @@ export function LoginModal({
                   Last name
                   <input
                     value={form.lastName}
-                    onChange={(event) => updateForm('lastName', event.target.value)}
+                    onChange={(event) => updateForm('lastName', sanitizeName(event.target.value))}
                     autoComplete="family-name"
                     required
                     placeholder="Last"

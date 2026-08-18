@@ -12,7 +12,11 @@ export const paymentStatusSchema = z.enum(['PENDING', 'RECEIVED']);
 export const orderTypeSchema = z.enum(['BULK', 'SINGLE']);
 
 export const addressSchema = z.object({
-  name: z.string().min(1, 'Full name is required'),
+  name: z
+    .string()
+    .trim()
+    .min(1, 'Full name is required')
+    .regex(/^[\p{L} ]+$/u, 'Full name can only contain letters and spaces'),
   email: z.string().email('Valid email is required').optional().or(z.literal('')),
   altMobileNo: z
     .string()

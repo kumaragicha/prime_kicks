@@ -128,6 +128,9 @@ export default function CartPage() {
   function validateAddress(a: AddressForm): Partial<Record<keyof AddressForm, string>> {
     const e: Partial<Record<keyof AddressForm, string>> = {};
     if (!a.name.trim()) e.name = 'Please enter your full name.';
+    // Names are letters and spaces only — reject digits, symbols, apostrophes, hyphens.
+    else if (!/^[\p{L} ]+$/u.test(a.name.trim()))
+      e.name = 'Name can only contain letters and spaces.';
     // Email is now optional — only validate format if provided
     if (a.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(a.email.trim()))
       e.email = 'Enter a valid email address.';

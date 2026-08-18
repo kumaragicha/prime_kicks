@@ -7,9 +7,20 @@ const mobileNoSchema = z
   .string()
   .regex(/^\+?[1-9]\d{6,14}$/, 'Enter a valid mobile number');
 
+/**
+ * A person's name: letters (any script) and spaces only — no digits, apostrophes,
+ * hyphens or other special characters. `label` personalises the messages.
+ */
+const nameSchema = (label: string) =>
+  z
+    .string()
+    .trim()
+    .min(1, `${label} is required`)
+    .regex(/^[\p{L} ]+$/u, `${label} can only contain letters and spaces`);
+
 export const registerSchema = z.object({
-  firstName: z.string().min(1, 'First name is required'),
-  lastName: z.string().min(1, 'Last name is required'),
+  firstName: nameSchema('First name'),
+  lastName: nameSchema('Last name'),
   email: z.string().email(),
   mobileNo: mobileNoSchema,
   city: z.string().min(1, 'City is required'),

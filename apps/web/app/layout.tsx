@@ -1,7 +1,19 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import GoogleAnalyticsWrapper from './GoogleAnalytics';
 import { Providers } from './providers';
+
+/**
+ * Lock the page scale so iOS Safari doesn't auto-zoom when a form field (which
+ * can be < 16px) gains focus. `maximumScale: 1` + `userScalable: false` keeps
+ * the site at 1× on mobile by default.
+ */
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+};
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://primekicks.in'),
