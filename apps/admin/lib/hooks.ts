@@ -268,10 +268,12 @@ export function useUpdateHeroSlides() {
   });
 }
 
-export function useDashboard() {
+export function useDashboard(range?: { from?: string; to?: string }) {
+  const from = range?.from || undefined;
+  const to = range?.to || undefined;
   return useQuery({
-    queryKey: ['dashboard'],
-    queryFn: () => api.getDashboard(),
+    queryKey: ['dashboard', from ?? null, to ?? null],
+    queryFn: () => api.getDashboard({ from, to }),
     placeholderData: (prev) => prev,
   });
 }

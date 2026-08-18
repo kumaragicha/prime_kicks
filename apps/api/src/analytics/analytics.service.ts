@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { ORDER_STATUS } from '@prime-kicks/types';
-import { istDateKey, istDayBounds, istRecentDays } from '../common/date-range.util';
+import {
+  istDateKey,
+  istDayBounds,
+  istRecentDays,
+  resolveRangeBoundary,
+} from '../common/date-range.util';
 import { PrismaService } from '../prisma/prisma.service';
 
 /** Row caps for the "top N" breakdowns on the Analytics page. */
@@ -16,6 +21,8 @@ const DEAD_STOCK_LIMIT = 40;
 const LOW_STOCK_THRESHOLD = 5;
 /** A product with stock but no sales in this many days is "dead stock". */
 const DEAD_STOCK_DAYS = 30;
+/** Cap on the order rows returned for the dashboard's list (aggregates are exact). */
+const DASHBOARD_ORDER_LIMIT = 200;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const NOT_REJECTED = { status: { not: ORDER_STATUS.REJECTED } } as const;
@@ -25,63 +32,82 @@ export class AnalyticsService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Lean payload for the dashboard home: today's orders (with the fields needed
-   * to act on them), all-time value/profit, and outstanding receivables. Kept
-   * intentionally small so the home loads fast — the heavy breakdowns live in
-   * {@link insights}. Rejected orders are excluded from money figures, but
-   * today's *list* keeps them so an admin can undo a rejection.
+   * Lean payload for the dashboard home, scoped to a date range (defaulting to
+   * today when no `from`/`to` are given). Returns the range's order count,
+   * revenue and profit plus the order rows so the admin can act on them, and a
+   * live outstanding-receivables snapshot (not range-scoped — it reflects the
+   * *current* state). Rejected orders are excluded from money figures, but the
+   * *list* keeps them so an admin can undo a rejection. Heavy breakdowns live in
+   * {@link insights}.
+   *
+   * `from`/`to` are YYYY-MM-DD (IST) calendar dates. Passing only `from` scopes
+   * to that single day.
    */
-  async dashboard() {
+  async dashboard(from?: string, to?: string) {
     const now = new Date();
     const today = istDayBounds(now);
+    const todayKey = istDateKey(now);
+    // Resolve the requested window; fall back to today for missing/empty bounds.
+    const gte = resolveRangeBoundary(from, 'start') ?? today.gte;
+    const lte =
+      resolveRangeBoundary(to, 'end') ?? resolveRangeBoundary(from, 'end') ?? today.lte;
+    const range = { gte, lte };
+    const inRange = { createdAt: range };
 
-    const [totalsAgg, pendingGroup, todayOrders, profitRow] = await Promise.all([
+    const [summaryAgg, orderRows, pendingGroup, profitRow] = await Promise.all([
+      // Exact count + revenue for the window (rejected excluded from money).
       this.prisma.order.aggregate({
-        where: NOT_REJECTED,
+        where: { ...NOT_REJECTED, ...inRange },
         _sum: { total: true },
         _count: { _all: true },
       }),
-      this.prisma.order.groupBy({
-        by: ['userId'],
-        where: { status: ORDER_STATUS.APPROVED_PAYMENT_PENDING },
-        _sum: { total: true },
-        _count: { _all: true },
-      }),
+      // Rows for the list. Rejected kept so an admin can undo; capped for wide
+      // ranges (the aggregate above stays exact regardless).
       this.prisma.order.findMany({
-        where: { createdAt: { gte: today.gte, lte: today.lte } },
+        where: inRange,
         include: {
           user: { select: { name: true, role: true } },
           creditCustomer: { select: { name: true } },
           items: { select: { quantity: true } },
         },
         orderBy: { createdAt: 'desc' },
+        take: DASHBOARD_ORDER_LIMIT,
+      }),
+      // Outstanding receivables — a live snapshot, intentionally not range-scoped.
+      this.prisma.order.groupBy({
+        by: ['userId'],
+        where: { status: ORDER_STATUS.APPROVED_PAYMENT_PENDING },
+        _sum: { total: true },
+        _count: { _all: true },
       }),
       // Profit needs (soldPrice - inhouseCost) * qty across a join, which Prisma
       // can't express — a single raw aggregate keeps the home query cheap.
-      this.prisma.$queryRaw<{ allProfit: number; todayProfit: number }[]>`
-        SELECT
-          COALESCE(SUM((oi."unitPrice" - p."inhouseCost") * oi.quantity), 0)::float8 AS "allProfit",
-          COALESCE(SUM(CASE WHEN o."createdAt" >= ${today.gte} AND o."createdAt" <= ${today.lte}
-            THEN (oi."unitPrice" - p."inhouseCost") * oi.quantity ELSE 0 END), 0)::float8 AS "todayProfit"
+      this.prisma.$queryRaw<{ rangeProfit: number }[]>`
+        SELECT COALESCE(SUM((oi."unitPrice" - p."inhouseCost") * oi.quantity), 0)::float8 AS "rangeProfit"
         FROM "OrderItem" oi
         JOIN "Order" o ON o.id = oi."orderId"
         JOIN "Product" p ON p.id = oi."productId"
         WHERE o.status <> 'REJECTED'
+          AND o."createdAt" >= ${range.gte} AND o."createdAt" <= ${range.lte}
       `,
     ]);
 
-    const { allProfit, todayProfit } = profitRow[0] ?? { allProfit: 0, todayProfit: 0 };
-    const todayValue = todayOrders
-      .filter((o) => o.status !== ORDER_STATUS.REJECTED)
-      .reduce((sum, o) => sum + o.total, 0);
+    const rangeProfit = profitRow[0]?.rangeProfit ?? 0;
+    const count = summaryAgg._count._all;
 
     return {
-      today: {
-        date: istDateKey(now),
-        count: todayOrders.length,
-        totalValue: todayValue,
-        profit: Math.round(todayProfit),
-        orders: todayOrders.map((o) => ({
+      range: {
+        from: istDateKey(range.gte),
+        to: istDateKey(range.lte),
+        isToday: istDateKey(range.gte) === todayKey && istDateKey(range.lte) === todayKey,
+      },
+      summary: {
+        count,
+        totalValue: summaryAgg._sum.total ?? 0,
+        profit: Math.round(rangeProfit),
+        // True when the list was capped and hides some of the counted orders.
+        truncated: orderRows.length < count,
+        orders: orderRows.map((o) => ({
           id: o.id,
           orderNumber: o.orderNumber,
           userName: o.user?.name ?? o.creditCustomer?.name ?? 'Unknown',
@@ -95,11 +121,6 @@ export class AnalyticsService {
           currency: o.currency,
           createdAt: o.createdAt.toISOString(),
         })),
-      },
-      totals: {
-        orders: totalsAgg._count._all,
-        revenue: totalsAgg._sum.total ?? 0,
-        profit: Math.round(allProfit),
       },
       pendingPayment: {
         customers: pendingGroup.length,

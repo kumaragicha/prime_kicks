@@ -6,11 +6,14 @@ import { AnalyticsService } from './analytics.service';
 export class AnalyticsController {
   constructor(private readonly analytics: AnalyticsService) {}
 
-  /** Lean data for the admin dashboard home (admin only). */
+  /**
+   * Lean data for the admin dashboard home (admin only). `from`/`to` are
+   * optional YYYY-MM-DD (IST) bounds; when omitted the dashboard reflects today.
+   */
   @Roles('ADMIN')
   @Get('dashboard')
-  dashboard() {
-    return this.analytics.dashboard();
+  dashboard(@Query('from') from?: string, @Query('to') to?: string) {
+    return this.analytics.dashboard(from, to);
   }
 
   /** Rich analytics for the Analytics page (admin only). `days` = trend window. */

@@ -242,7 +242,7 @@ export function LoginModal({
                 autoComplete="one-time-code"
                 required
                 placeholder="000000"
-                className="h-[52px] border border-[#c9c8c3] px-[12px] text-center text-[26px] tracking-[.5em] text-ink focus:outline-2 focus:outline-ink focus:outline-offset-1"
+                className="h-[52px] w-full min-w-0 border border-[#c9c8c3] px-[12px] text-center text-[26px] tracking-[.5em] text-ink focus:outline-2 focus:outline-ink focus:outline-offset-1"
               />
             </label>
             {error && <p className="m-0 text-[11px] text-[#ae2222]">{error}</p>}

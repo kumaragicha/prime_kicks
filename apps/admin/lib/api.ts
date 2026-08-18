@@ -265,16 +265,16 @@ export type HeroSlide = HeroSlideInput & {
   isActive: boolean;
 };
 
-/** Lean payload backing the admin dashboard home. */
+/** Lean payload backing the admin dashboard home, scoped to a date range. */
 export type DashboardData = {
-  today: {
-    date: string;
+  range: { from: string; to: string; isToday: boolean };
+  summary: {
     count: number;
     totalValue: number;
     profit: number;
+    truncated: boolean;
     orders: AdminOrderRow[];
   };
-  totals: { orders: number; revenue: number; profit: number };
   pendingPayment: { customers: number; orders: number; outstanding: number };
 };
 
@@ -547,7 +547,8 @@ export const api = {
     request<{ id: string; deleted: boolean }>(`/dimensions/${id}`, { method: 'DELETE' }),
 
   // Orders
-  getDashboard: () => request<DashboardData>('/analytics/dashboard'),
+  getDashboard: (params?: { from?: string; to?: string }) =>
+    request<DashboardData>(`/analytics/dashboard${toQuery(params)}`),
   getInsights: (days: number) => request<InsightsData>(`/analytics/insights?days=${days}`),
   getInventory: () => request<InventoryData>('/analytics/inventory'),
   listOrders: (params?: OrderListParams) =>

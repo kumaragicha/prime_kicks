@@ -13,6 +13,13 @@ export const metadata: Metadata = {
     'Discover premium sneakers and footwear at Prime Kicks. Shop the latest styles, new drops and exclusive collections.',
 
   applicationName: 'Prime Kicks',
+  icons: {
+    icon: [
+      { url: '/icon.png', type: 'image/png' },
+      { url: '/favicon.ico', type: 'image/x-icon' },
+    ],
+    apple: '/apple-icon.png',
+  },
   robots: {
     index: true,
     follow: true,
