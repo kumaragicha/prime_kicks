@@ -34,31 +34,37 @@ export function buildPasswordResetEmail(params: {
   const font = 'Arial, Helvetica, sans-serif';
 
   const html = `
-  <div style="margin:0;padding:32px 12px;background:${pageBg};font-family:${font};color:${ink};">
+  <style>
+    @media only screen and (max-width:480px){
+      .pk-pad{padding-left:24px !important;padding-right:24px !important;}
+      .pk-h1{font-size:30px !important;}
+    }
+  </style>
+  <div style="margin:0;padding:28px 10px;background:${pageBg};font-family:${font};color:${ink};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
       <tr><td align="center">
-        <table role="presentation" width="460" cellpadding="0" cellspacing="0" style="width:460px;max-width:100%;background:${paper};border:1px solid ${line};border-collapse:collapse;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:460px;background:${paper};border:1px solid ${line};border-collapse:collapse;">
           <tr><td style="height:3px;background:${accent};line-height:3px;font-size:0;">&nbsp;</td></tr>
 
-          <tr><td style="padding:30px 44px 0;">
+          <tr><td class="pk-pad" style="padding:28px 32px 0;">
             <span style="font-size:20px;letter-spacing:-.02em;font-weight:bold;font-style:italic;color:${ink};">PRIME</span><span style="font-size:20px;letter-spacing:.02em;color:${ink};">&nbsp;KICKS</span>
           </td></tr>
 
-          <tr><td style="padding:26px 44px 0;">
+          <tr><td class="pk-pad" style="padding:24px 32px 0;">
             <p style="margin:0 0 10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:bold;color:${ink};">Password reset</p>
-            <h1 style="margin:0;font-size:40px;line-height:.98;letter-spacing:-.04em;color:${ink};font-weight:bold;">Set a new one.</h1>
+            <h1 class="pk-h1" style="margin:0;font-size:34px;line-height:1;letter-spacing:-.04em;color:${ink};font-weight:bold;">Set a new one.</h1>
             <p style="margin:16px 0 0;font-size:14px;line-height:1.5;color:${muted};">Hi ${firstName}, we got a request to reset your password. Tap the button below to choose a new one.</p>
           </td></tr>
 
-          <tr><td style="padding:24px 44px 0;">
+          <tr><td class="pk-pad" style="padding:24px 32px 0;">
             <a href="${resetUrl}" style="display:inline-block;background:${ink};color:#ffffff;text-decoration:none;font-size:11px;font-weight:bold;letter-spacing:.1em;text-transform:uppercase;padding:15px 22px;">Reset password &nbsp;&rarr;</a>
           </td></tr>
 
-          <tr><td style="padding:18px 44px 34px;">
+          <tr><td class="pk-pad" style="padding:18px 32px 32px;">
             <p style="margin:0;font-size:12px;line-height:1.6;color:${muted};">This link expires in ${expiresMinutes} minutes and can be used once. If you didn't request a reset, you can safely ignore this email — your password won't change.</p>
           </td></tr>
 
-          <tr><td style="padding:18px 44px;border-top:1px solid ${line};">
+          <tr><td class="pk-pad" style="padding:18px 32px;border-top:1px solid ${line};">
             <p style="margin:0;font-size:11px;letter-spacing:.04em;color:${muted};">Prime Kicks — Step into what's next.</p>
           </td></tr>
         </table>

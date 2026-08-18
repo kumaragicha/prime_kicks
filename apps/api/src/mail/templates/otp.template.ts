@@ -39,39 +39,46 @@ export function buildOtpEmail(params: {
   const font = 'Arial, Helvetica, sans-serif';
 
   const html = `
-  <div style="margin:0;padding:32px 12px;background:${pageBg};font-family:${font};color:${ink};">
+  <style>
+    @media only screen and (max-width:480px){
+      .pk-pad{padding-left:24px !important;padding-right:24px !important;}
+      .pk-h1{font-size:30px !important;}
+      .pk-code{font-size:26px !important;letter-spacing:.22em !important;}
+    }
+  </style>
+  <div style="margin:0;padding:28px 10px;background:${pageBg};font-family:${font};color:${ink};">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
       <tr><td align="center">
-        <table role="presentation" width="460" cellpadding="0" cellspacing="0" style="width:460px;max-width:100%;background:${paper};border:1px solid ${line};border-collapse:collapse;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;max-width:460px;background:${paper};border:1px solid ${line};border-collapse:collapse;">
           <!-- gold accent rule -->
           <tr><td style="height:3px;background:${accent};line-height:3px;font-size:0;">&nbsp;</td></tr>
 
           <!-- wordmark -->
-          <tr><td style="padding:30px 44px 0;">
+          <tr><td class="pk-pad" style="padding:28px 32px 0;">
             <span style="font-size:20px;letter-spacing:-.02em;font-weight:bold;font-style:italic;color:${ink};">PRIME</span><span style="font-size:20px;letter-spacing:.02em;color:${ink};">&nbsp;KICKS</span>
           </td></tr>
 
           <!-- heading -->
-          <tr><td style="padding:26px 44px 0;">
+          <tr><td class="pk-pad" style="padding:24px 32px 0;">
             <p style="margin:0 0 10px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;font-weight:bold;color:${ink};">Verify email</p>
-            <h1 style="margin:0;font-size:40px;line-height:.98;letter-spacing:-.04em;color:${ink};font-weight:bold;">Enter code.</h1>
+            <h1 class="pk-h1" style="margin:0;font-size:34px;line-height:1;letter-spacing:-.04em;color:${ink};font-weight:bold;">Enter code.</h1>
             <p style="margin:16px 0 0;font-size:14px;line-height:1.5;color:${muted};">Hi ${firstName}, use the code below to finish creating your Prime Kicks account.</p>
           </td></tr>
 
           <!-- code box -->
-          <tr><td style="padding:22px 44px 0;">
-            <div style="background:${accentSoft};border:1px solid ${line};padding:20px;text-align:center;">
-              <span style="font-size:34px;letter-spacing:.4em;font-weight:bold;color:${ink};font-family:${font};">${code}</span>
+          <tr><td class="pk-pad" style="padding:22px 32px 0;">
+            <div style="background:${accentSoft};border:1px solid ${line};padding:18px 12px;text-align:center;">
+              <span class="pk-code" style="font-size:30px;letter-spacing:.3em;font-weight:bold;color:${ink};font-family:${font};">${code}</span>
             </div>
           </td></tr>
 
           <!-- expiry / disclaimer -->
-          <tr><td style="padding:16px 44px 34px;">
+          <tr><td class="pk-pad" style="padding:16px 32px 32px;">
             <p style="margin:0;font-size:12px;line-height:1.6;color:${muted};">This code expires in ${expiresMinutes} minutes. If you didn't request it, you can safely ignore this email — no account will be created.</p>
           </td></tr>
 
           <!-- footer -->
-          <tr><td style="padding:18px 44px;border-top:1px solid ${line};">
+          <tr><td class="pk-pad" style="padding:18px 32px;border-top:1px solid ${line};">
             <p style="margin:0;font-size:11px;letter-spacing:.04em;color:${muted};">Prime Kicks — Step into what's next.</p>
           </td></tr>
         </table>

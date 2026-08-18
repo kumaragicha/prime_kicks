@@ -237,9 +237,10 @@ export function LoginModal({
           >
             Enter code.
           </h2>
-          <p className="mt-[14px] mb-[25px] text-[13px] leading-[1.5] text-[#686868]">
-            We sent a 6-digit code to <span className="font-bold text-ink">{form.email}</span>. Enter
-            it below to finish creating your account.
+          <p className="mt-[14px] mb-[25px] text-[13px] leading-[1.5] text-[#686868] break-words">
+            We sent a 6-digit code to{' '}
+            <span className="font-bold text-ink break-all">{form.email}</span>. Enter it below to
+            finish creating your account.
           </p>
           <form onSubmit={verifyOtp} className="grid gap-[15px]">
             <label className="grid gap-[7px] text-[10px] font-bold tracking-[.08em] uppercase">
@@ -325,10 +326,10 @@ export function LoginModal({
 
           {forgotSent ? (
             <>
-              <p className="mt-[14px] mb-[25px] text-[13px] leading-[1.5] text-[#686868]">
+              <p className="mt-[14px] mb-[25px] text-[13px] leading-[1.5] text-[#686868] break-words">
                 If an account exists for{' '}
-                <span className="font-bold text-ink">{email}</span>, we&apos;ve sent a link to reset
-                your password. It expires in 30 minutes.
+                <span className="font-bold text-ink break-all">{email}</span>, we&apos;ve sent a
+                link to reset your password. It expires in 30 minutes.
               </p>
               <button
                 type="button"
