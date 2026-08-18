@@ -22,9 +22,12 @@ export class MailService {
   private readonly logger = new Logger(MailService.name);
   private readonly transporter: Transporter | null;
   private readonly from: string;
+  private readonly replyTo: string | undefined;
 
   constructor(private readonly config: ConfigService) {
     this.from = this.config.get<string>('MAIL_FROM', 'Prime Kicks <no-reply@primekicks.local>');
+    // Optional address recipients can reply to (helps engagement/deliverability).
+    this.replyTo = this.config.get<string>('MAIL_REPLY_TO') || undefined;
 
     const host = this.config.get<string>('SMTP_HOST');
     const user = this.config.get<string>('SMTP_USER');
@@ -84,7 +87,20 @@ export class MailService {
     this.logger.log(`Sending email → to=${to} subject="${subject}"`);
 
     try {
-      const info = await this.transporter.sendMail({ from: this.from, to, subject, html, text });
+      const info = await this.transporter.sendMail({
+        from: this.from,
+        to,
+        subject,
+        html,
+        text,
+        ...(this.replyTo ? { replyTo: this.replyTo } : {}),
+        // A valid List-Unsubscribe header improves Gmail/Outlook placement even
+        // for transactional mail. Points at a mailto so no endpoint is needed.
+        headers: {
+          'List-Unsubscribe': `<mailto:${this.unsubscribeAddress()}?subject=unsubscribe>`,
+          'X-Entity-Ref-ID': `pk-${Date.now()}`,
+        },
+      });
       const ms = Date.now() - startedAt;
       // messageId + accepted/rejected + the SMTP server's response line together
       // confirm the provider actually took the message (vs. silently dropping it).
@@ -108,6 +124,17 @@ export class MailService {
       );
       throw err;
     }
+  }
+
+  /** Best-effort mailbox for the List-Unsubscribe header (reply-to → from → user). */
+  private unsubscribeAddress(): string {
+    const source =
+      this.replyTo ??
+      this.from ??
+      this.config.get<string>('SMTP_USER', 'no-reply@primekicks.local');
+    // MAIL_FROM may be "Name <addr@x>" — pull just the address.
+    const match = /<([^>]+)>/.exec(source);
+    return (match?.[1] ?? source).trim();
   }
 
   /** Extract nodemailer/SMTP error detail (code, command, response) into one line. */

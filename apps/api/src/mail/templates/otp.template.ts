@@ -15,7 +15,9 @@ export function buildOtpEmail(params: {
 }): Omit<SendMailInput, 'to'> {
   const { firstName, code, expiresMinutes } = params;
 
-  const subject = `${code} is your Prime Kicks verification code`;
+  // Keep the code OUT of the subject — a bare numeric code in the subject line
+  // is a well-known spam signal. The code lives in the body instead.
+  const subject = 'Verify your Prime Kicks email';
 
   const text = [
     `Hi ${firstName},`,
