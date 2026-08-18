@@ -3,9 +3,12 @@
 import { Announcement } from '@/components/announcement';
 import { FilterDrawer } from '@/components/filter-drawer';
 import { Icon } from '@/components/icon';
-import { ProductCard, toStoreProduct } from '@/components/product-card';
+import { LoginModal } from '@/components/login-modal';
+import { ProductCard, toStoreProduct, type StoreProduct } from '@/components/product-card';
 import { SiteHeader } from '@/components/site-header';
-import { useFilters, useInfiniteProductSearch } from '@/lib/hooks';
+import { Toast } from '@/components/toast';
+import { ApiError, api } from '@/lib/api';
+import { notifyStore, useAuthCart, useFilters, useInfiniteProductSearch } from '@/lib/hooks';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useRef, useState } from 'react';
 
@@ -32,6 +35,57 @@ function SearchResults() {
   const params = useSearchParams();
   const router = useRouter();
   const { data: filters } = useFilters();
+  const { user, refresh } = useAuthCart();
+
+  // Cart-flow state — mirrors the home grid so "Add to cart" / "Buy now" behave
+  // identically here instead of just opening the product page.
+  const [toast, setToast] = useState('');
+  const [toastVisible, setToastVisible] = useState(false);
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [pendingAdd, setPendingAdd] = useState<{
+    product: StoreProduct;
+    variantId: string;
+    action: 'cart' | 'book';
+  } | null>(null);
+
+  useEffect(() => {
+    if (!toast) return;
+    setToastVisible(true);
+    const timer = setTimeout(() => {
+      setToastVisible(false);
+      setTimeout(() => setToast(''), 250);
+    }, 4200);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
+  // Returns true only when the item was actually added, so the card's
+  // confirmation animation reflects reality (not the login/redirect paths).
+  async function addToCart(
+    product: StoreProduct,
+    variantId: string,
+    action: 'cart' | 'book',
+  ): Promise<boolean> {
+    if (!user) {
+      setPendingAdd({ product, variantId, action });
+      setLoginOpen(true);
+      return false;
+    }
+    try {
+      await api.addToCart(product.id, variantId);
+      notifyStore();
+      if (action === 'book') {
+        router.push('/cart');
+        return true;
+      }
+      setToast(`${product.name} added to your bag`);
+      return true;
+    } catch (error) {
+      setToast(
+        error instanceof ApiError ? error.message : "We couldn't add this pair. Please try again.",
+      );
+      return false;
+    }
+  }
   const query = params.get('q')?.trim() ?? '';
   const brandIds = params.get('brandId')?.split(',').filter(Boolean) ?? [];
   const categoryId = params.get('categoryId') ?? '';
@@ -243,7 +297,7 @@ function SearchResults() {
               key={product.id}
               isHomePage
               product={toStoreProduct(product)}
-              onAdd={(selected) => router.push(`/products/${selected.id}`)}
+              onAdd={addToCart}
             />
           ))}
         </div>
@@ -266,6 +320,39 @@ function SearchResults() {
         )}
       </section>
       <FilterDrawer />
+      <Toast message={toast} visible={toastVisible} />
+      {loginOpen && (
+        <LoginModal
+          onClose={() => {
+            setLoginOpen(false);
+            setPendingAdd(null);
+          }}
+          onSuccess={async () => {
+            if (pendingAdd) {
+              try {
+                await api.addToCart(pendingAdd.product.id, pendingAdd.variantId);
+                notifyStore();
+                if (pendingAdd.action === 'book') {
+                  await refresh();
+                  setPendingAdd(null);
+                  router.push('/cart');
+                  return;
+                }
+                setToast(`${pendingAdd.product.name} added to your bag`);
+              } catch (error) {
+                setToast(
+                  error instanceof ApiError
+                    ? error.message
+                    : "We couldn't add this pair. Please try again.",
+                );
+              }
+              setPendingAdd(null);
+            }
+            await refresh();
+            notifyStore();
+          }}
+        />
+      )}
     </main>
   );
 }
