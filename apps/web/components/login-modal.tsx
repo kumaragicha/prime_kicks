@@ -206,7 +206,7 @@ export function LoginModal({
         onMouseDown={onClose}
       >
         <section
-          className="relative w-[min(100%,430px)] px-[39px] pt-[44px] pb-[33px] bg-paper shadow-[0_20px_60px_#0004] animate-panel max-[700px]:w-full max-[700px]:px-[22px] max-[700px]:pt-[36px] max-[700px]:pb-[29px] max-[700px]:rounded-t-[18px]"
+          className="relative w-[min(100%,430px)] max-h-[calc(100dvh-40px)] overflow-y-auto overscroll-contain px-[39px] pt-[44px] pb-[33px] bg-paper shadow-[0_20px_60px_#0004] animate-panel max-[700px]:w-full max-[700px]:px-[22px] max-[700px]:pt-[36px] max-[700px]:pb-[29px] max-[700px]:max-h-[100dvh] max-[700px]:rounded-t-[18px]"
           role="dialog"
           aria-modal="true"
           aria-labelledby="otp-title"
