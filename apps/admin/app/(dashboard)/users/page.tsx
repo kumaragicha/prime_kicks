@@ -8,6 +8,7 @@ import {
   useDebouncedValue,
   useDeleteUser,
   useMakeReseller,
+  useMakeCustomer,
   useSetUserActive,
   useUsers,
 } from '@/lib/hooks';
@@ -47,6 +48,15 @@ export default function UsersPage() {
         onError: (error: Error) => toast.error(error.message),
       }),
     [makeReseller, toast],
+  );
+  const makeCustomer = useMakeCustomer();
+  const handleMakeCustomer = useCallback(
+    (id: string, name: string) =>
+      makeCustomer.mutate(id, {
+        onSuccess: () => toast.success(`${name} reverted to customer`),
+        onError: (error: Error) => toast.error(error.message),
+      }),
+    [makeCustomer, toast],
   );
 
   const resetTo =
@@ -103,6 +113,17 @@ export default function UsersPage() {
                   Reseller
                 </Button>
               )}
+              {user.role === 'RESELLER' && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-2 text-xs"
+                  disabled={makeCustomer.isPending}
+                  onClick={() => handleMakeCustomer(user.id, user.name)}
+                >
+                  Revert to customer
+                </Button>
+              )}
               <Toggle
                 checked={user.isActive}
                 label={`${user.isActive ? 'Disable' : 'Enable'} ${user.name}`}
@@ -126,7 +147,15 @@ export default function UsersPage() {
         },
       }),
     ],
-    [handleMakeReseller, setActive, toast, currentUser?.id],
+    [
+      handleMakeReseller,
+      handleMakeCustomer,
+      makeReseller.isPending,
+      makeCustomer.isPending,
+      setActive,
+      toast,
+      currentUser?.id,
+    ],
   );
 
   const table = useReactTable({

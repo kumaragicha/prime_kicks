@@ -54,6 +54,8 @@ export default function CartPage() {
   const [parsing, setParsing] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isPickup, setIsPickup] = useState(false);
+  // Per-unit amount stripped from reseller prices on pickup/label orders.
+  const [shippingDeduction, setShippingDeduction] = useState(0);
   // Idempotency key for the in-flight checkout; survives retries, cleared on success.
   const idempotencyKeyRef = useRef<string | null>(null);
   const isReseller = userRole === 'RESELLER';
@@ -65,10 +67,16 @@ export default function CartPage() {
 
   const load = useCallback(async () => {
     try {
-      const [cartResult, meResult] = await Promise.allSettled([api.getCart(), api.me()]);
+      const [cartResult, meResult, pricingResult] = await Promise.allSettled([
+        api.getCart(),
+        api.me(),
+        api.getPricingSetting(),
+      ]);
       if (cartResult.status === 'fulfilled') setCart(cartResult.value);
       else if (cartResult.status === 'rejected') throw cartResult.reason;
       if (meResult.status === 'fulfilled') setUserRole(meResult.value.role);
+      if (pricingResult.status === 'fulfilled')
+        setShippingDeduction(pricingResult.value.resellerShippingDeduction ?? 0);
     } catch (error) {
       if (error instanceof Error && error.message === 'AUTH_REQUIRED') {
         window.localStorage.setItem('prime-kicks-open-login', 'true');
@@ -112,6 +120,20 @@ export default function CartPage() {
     () => cart?.items.reduce((total, item) => total + item.product.price * item.quantity, 0) ?? 0,
     [cart],
   );
+
+  // Reseller prices include shipping. When a reseller self-handles delivery
+  // (pickup / label), preview the per-unit shipping deduction — clamped per line
+  // so a price never goes below 0. Mirrors the authoritative backend calc.
+  const pickupDiscount = useMemo(() => {
+    if (!isReseller || !isPickup || shippingDeduction <= 0) return 0;
+    return (
+      cart?.items.reduce(
+        (sum, item) => sum + Math.min(item.product.price, shippingDeduction) * item.quantity,
+        0,
+      ) ?? 0
+    );
+  }, [cart, isReseller, isPickup, shippingDeduction]);
+  const total = subtotal - pickupDiscount;
 
   function updateField(field: keyof AddressForm, value: string) {
     let next = value;
@@ -566,9 +588,15 @@ export default function CartPage() {
                     </div>
                   )}
 
+                  {pickupDiscount > 0 && (
+                    <div className="flex justify-between gap-[20px] mt-[7px] text-[12px] text-[#4b7d4b]">
+                      <span>Shipping deduction (pickup / label)</span>
+                      <span>−{formatCurrency(pickupDiscount)}</span>
+                    </div>
+                  )}
                   <section className="flex justify-between gap-[20px] mt-[7px] border-t border-t-[#d6d1c7] pt-[18px] pb-[11px] text-[14px]">
                     <span>Total</span>
-                    <strong className="text-[18px]">{formatCurrency(subtotal)}</strong>
+                    <strong className="text-[18px]">{formatCurrency(total)}</strong>
                   </section>
                 </aside>
               </div>

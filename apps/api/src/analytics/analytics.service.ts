@@ -112,6 +112,10 @@ export class AnalyticsService {
           orderNumber: o.orderNumber,
           userName: o.user?.name ?? o.creditCustomer?.name ?? 'Unknown',
           userRole: o.user?.role ?? 'CREDIT',
+          isPickup: o.isPickup,
+          // Delivery recipient differs from the account holder on many orders;
+          // surface it so the dashboard list matches the All-orders table.
+          deliveryName: o.isPickup ? null : (o.addressName ?? null),
           status: o.status,
           shipmentStatus: o.shipmentStatus,
           trackingId: o.trackingId,

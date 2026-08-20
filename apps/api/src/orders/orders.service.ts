@@ -22,6 +22,7 @@ import { AuditEvent, AuditModule, Prisma, type UserRole } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { buildCreatedAtRange } from '../common/date-range.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 import { ShipmentService } from '../shipmozo/shipment.service';
 
 /**
@@ -153,6 +154,7 @@ export class OrdersService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditLogService,
     private readonly shipment: ShipmentService,
+    private readonly settings: SettingsService,
   ) {}
 
   /** Guards against overlapping auto-cancel sweeps if one runs long. */
@@ -306,6 +308,16 @@ export class OrdersService {
     // ignore both and use the admin-entered per-line rate.
     const useResellerPrice = isResellerOrder || ownerRole === 'RESELLER';
 
+    // Shipping is baked into the reseller price. When a reseller self-handles
+    // delivery (pickup / label), strip a per-unit shipping deduction from each
+    // reseller line so they aren't charged for shipping we don't do. Credit/bulk
+    // orders carry an explicit per-line rate and are never adjusted.
+    const isPickupOrder = input.isPickup ?? false;
+    const perUnitDeduction =
+      useResellerPrice && isPickupOrder
+        ? (await this.settings.getPricing()).resellerShippingDeduction
+        : 0;
+
     // Collapse duplicate lines (same product + variant) into one, summing the
     // quantity. Without this the same variant could appear twice, producing two
     // order lines and two stock decrements against a stale pre-check. The first
@@ -365,7 +377,7 @@ export class OrdersService {
         unitPrice: isCreditOrder
           ? item.unitPrice!
           : useResellerPrice
-            ? variant.product.resellerPrice
+            ? Math.max(0, variant.product.resellerPrice - perUnitDeduction)
             : variant.product.customerPrice,
         quantity: item.quantity,
       };

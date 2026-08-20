@@ -514,6 +514,7 @@ export const api = {
   disableUser: (id: string) => request<AdminUserRow>(`/users/${id}/disable`, { method: 'PATCH' }),
   enableUser: (id: string) => request<AdminUserRow>(`/users/${id}/enable`, { method: 'PATCH' }),
   makeReseller: (id: string) => request<AdminUserRow>(`/users/${id}/reseller`, { method: 'PATCH' }),
+  makeCustomer: (id: string) => request<AdminUserRow>(`/users/${id}/customer`, { method: 'PATCH' }),
   deleteUser: (id: string) =>
     request<{ id: string; deleted: boolean }>(`/users/${id}`, { method: 'DELETE' }),
 

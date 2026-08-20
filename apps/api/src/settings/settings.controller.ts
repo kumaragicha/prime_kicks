@@ -1,6 +1,8 @@
 import { Body, Controller, Get, Patch } from '@nestjs/common';
 import {
+  updatePricingSettingSchema,
   updateShipmozoSettingSchema,
+  type UpdatePricingSettingSchema,
   type UpdateShipmozoSettingSchema,
 } from '@prime-kicks/validation';
 import type { AuthenticatedUser } from '../auth/auth.types';
@@ -26,5 +28,21 @@ export class SettingsController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.settings.updateShipmozo(body, user.email);
+  }
+
+  // Readable by any authenticated user — the web cart needs the reseller
+  // shipping deduction to preview the pickup/label discount.
+  @Get('pricing')
+  getPricing() {
+    return this.settings.getPricing();
+  }
+
+  @Roles('ADMIN')
+  @Patch('pricing')
+  updatePricing(
+    @Body(new ZodValidationPipe(updatePricingSettingSchema)) body: UpdatePricingSettingSchema,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.settings.updatePricing(body, user.email);
   }
 }

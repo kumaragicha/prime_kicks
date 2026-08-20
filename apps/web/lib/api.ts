@@ -233,6 +233,9 @@ export const api = {
       body: JSON.stringify({ productId, variantId, quantity: 1 }),
     }),
   getCart: () => authenticatedRequest<StoreCart>('/cart'),
+  /** Global pricing settings — used to preview the reseller pickup/label discount. */
+  getPricingSetting: () =>
+    authenticatedRequest<{ resellerShippingDeduction: number }>('/settings/pricing'),
   updateCartItem: (itemId: string, quantity: number) =>
     authenticatedRequest<StoreCart>(`/cart/items/${itemId}`, {
       method: 'PATCH',

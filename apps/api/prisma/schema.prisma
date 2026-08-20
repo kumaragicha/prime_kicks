@@ -416,6 +416,17 @@ model ShipmozoSetting {
   updatedAt         DateTime @updatedAt
 }
 
+/// Admin-editable global pricing knobs. Single row (id = "singleton").
+/// `resellerShippingDeduction` is the per-unit amount stripped from the reseller
+/// price when a reseller self-handles delivery (pickup / label) — shipping is
+/// baked into resellerPrice, so it's removed when we don't ship for them.
+model PricingSetting {
+  id                        String   @id @default("singleton")
+  resellerShippingDeduction Int      @default(0) // per-unit INR removed on reseller pickup/label orders
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+}
+
 /// Courier configuration for different weight slabs. Maps weight ranges to
 /// specific courier company and service type IDs from Shipmozo panel.
 /// Multiple mappings are allowed within a slab and are evaluated by priority.

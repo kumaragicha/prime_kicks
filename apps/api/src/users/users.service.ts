@@ -136,6 +136,32 @@ export class UsersService {
     return user;
   }
 
+  /** Revert a RESELLER account back to a CUSTOMER (undo a mistaken conversion). */
+  async makeCustomer(id: string, auditedBy?: string) {
+    const existing = await this.findOne(id);
+    if (existing.role === 'CUSTOMER') {
+      throw new BadRequestException('User is already a customer');
+    }
+    if (existing.role === 'ADMIN') {
+      throw new BadRequestException('Cannot convert an admin account to a customer');
+    }
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: { role: 'CUSTOMER' },
+      select: userSelect,
+    });
+    this.audit.log({
+      module: AuditModule.USERS,
+      event: AuditEvent.UPDATION,
+      moduleId: user.id,
+      referenceNumber: user.email,
+      action: `User "${user.email}" reverted to CUSTOMER`,
+      formData: { role: 'CUSTOMER' },
+      auditedBy,
+    });
+    return user;
+  }
+
   /** Permanently delete the user record. */
   async remove(id: string, actorId?: string, auditedBy?: string) {
     const existing = await this.findOne(id);

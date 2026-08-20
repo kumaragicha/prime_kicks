@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { AuditEvent, AuditModule } from '@prisma/client';
-import type { UpdateShipmozoSettingSchema } from '@prime-kicks/validation';
+import type {
+  UpdatePricingSettingSchema,
+  UpdateShipmozoSettingSchema,
+} from '@prime-kicks/validation';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -44,6 +47,33 @@ export class SettingsService {
       moduleId: updated.id,
       subModule: 'settings',
       action: 'Shipmozo settings updated',
+      formData: { ...input },
+      auditedBy,
+    });
+    return updated;
+  }
+
+  /**
+   * Fetch the global pricing settings row, creating it on first access.
+   */
+  async getPricing() {
+    const existing = await this.prisma.pricingSetting.findUnique({ where: { id: SINGLETON_ID } });
+    if (existing) return existing;
+    return this.prisma.pricingSetting.create({ data: { id: SINGLETON_ID } });
+  }
+
+  async updatePricing(input: UpdatePricingSettingSchema, auditedBy?: string) {
+    await this.getPricing(); // ensure the row exists
+    const updated = await this.prisma.pricingSetting.update({
+      where: { id: SINGLETON_ID },
+      data: input,
+    });
+    this.audit.log({
+      module: AuditModule.SHIPMENTS,
+      event: AuditEvent.UPDATION,
+      moduleId: updated.id,
+      subModule: 'settings',
+      action: 'Pricing settings updated',
       formData: { ...input },
       auditedBy,
     });
