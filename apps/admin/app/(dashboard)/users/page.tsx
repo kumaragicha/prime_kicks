@@ -7,8 +7,8 @@ import { useAuth } from '@/lib/auth';
 import {
   useDebouncedValue,
   useDeleteUser,
-  useMakeReseller,
   useMakeCustomer,
+  useMakeReseller,
   useSetUserActive,
   useUsers,
 } from '@/lib/hooks';
@@ -121,7 +121,7 @@ export default function UsersPage() {
                   disabled={makeCustomer.isPending}
                   onClick={() => handleMakeCustomer(user.id, user.name)}
                 >
-                  Revert to customer
+                  Undo
                 </Button>
               )}
               <Toggle
