@@ -9,7 +9,8 @@ const ACCESS_TOKEN_KEY = 'prime-kicks-access-token';
 
 export type SignedInUser = {
   name: string;
-  email: string;
+  /** null for OTP accounts, which have no email — see @prime-kicks/types User. */
+  email: string | null;
   role: 'CUSTOMER' | 'RESELLER' | 'ADMIN';
 };
 

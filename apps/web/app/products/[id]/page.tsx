@@ -1,6 +1,6 @@
 import type { Product } from '@prime-kicks/types';
 import type { Metadata } from 'next';
-import ProductDetailClient from './product-detail-client';
+import ProductDetailClient from '@/pages/product-detail-client';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api';
 

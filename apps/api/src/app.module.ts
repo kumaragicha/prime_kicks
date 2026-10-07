@@ -25,6 +25,7 @@ import { SizesModule } from './sizes/sizes.module';
 import { StorageModule } from './storage/storage.module';
 import { UploadsModule } from './uploads/uploads.module';
 import { UsersModule } from './users/users.module';
+import { WhatsAppModule } from './whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { UsersModule } from './users/users.module';
     PrismaModule,
     AuditLogModule,
     MailModule,
+    WhatsAppModule,
     StorageModule,
     AuthModule,
     ProductsModule,

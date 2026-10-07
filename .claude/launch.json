@@ -4,21 +4,58 @@
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--workspace", "apps/web"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace",
+        "apps/web"
+      ],
       "port": 3000
     },
     {
       "name": "web-alt",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["next", "dev", "--port", "3100"],
+      "runtimeArgs": [
+        "next",
+        "dev",
+        "--port",
+        "3100"
+      ],
       "cwd": "apps/web",
       "port": 3100
     },
     {
       "name": "admin",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--workspace", "apps/admin"],
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace",
+        "apps/admin"
+      ],
       "port": 3001
+    },
+    {
+      "name": "reseller",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace",
+        "apps/reseller"
+      ],
+      "port": 3002
+    },
+    {
+      "name": "api",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev",
+        "--workspace",
+        "apps/api"
+      ],
+      "port": 4000
     }
   ]
 }

@@ -1,0 +1,2 @@
+/* Theme, keyframes and base styles are shared with the public storefront. */
+@import '../../../packages/storefront/src/styles/globals.css';

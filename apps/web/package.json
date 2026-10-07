@@ -19,6 +19,7 @@
     "clean": "rm -rf .next .turbo node_modules"
   },
   "dependencies": {
+    "@prime-kicks/storefront": "*",
     "@prime-kicks/types": "*",
     "@prime-kicks/ui": "*",
     "@prime-kicks/utils": "*",

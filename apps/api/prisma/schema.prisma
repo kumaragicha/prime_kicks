@@ -90,20 +90,26 @@ model AuditLog {
   @@index([createdAt])
 }
 
+/// Storefront accounts are created from a name and a mobile number alone,
+/// verified by a WhatsApp OTP — mobileNo is the identity, not email.
+///
+/// email / passwordHash / city / state are nullable because OTP accounts never
+/// supply them. They remain populated for ADMIN accounts (which still sign in
+/// with a password) and for accounts created before the OTP flow.
 model User {
   id        String   @id @default(cuid())
   firstName String
-  lastName  String
-  name      String // full display name (firstName + lastName)
-  email     String   @unique
-  mobileNo  String   @unique // one account per mobile number, like email
-  city      String
-  state     String
+  lastName  String?  // optional — signup collects one "name" field and splits it
+  name      String // full display name as entered
+  email     String?  @unique // null for OTP-only accounts
+  mobileNo  String   @unique // the login identity
+  city      String?
+  state     String?
   role      UserRole @default(CUSTOMER)
   isActive  Boolean  @default(true) // false = disabled (cannot log in)
 
   // Auth
-  passwordHash     String
+  passwordHash     String?   // null for OTP-only accounts (no password login)
   isEmailVerified  Boolean   @default(false)
   lastLoginAt      DateTime?
 
@@ -183,16 +189,15 @@ model PasswordResetToken {
 /// registration payload until the emailed code is verified, at which point the
 /// real `User` row is created and this record is deleted. One pending row per
 /// email — a repeat "start" overwrites the previous one (upsert).
-model PendingRegistration {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  firstName    String
-  lastName     String
-  mobileNo     String
-  city         String
-  state        String
-  role         UserRole @default(CUSTOMER)
-  passwordHash String
+/// A pending WhatsApp OTP for a mobile number, used for BOTH sign-up and login
+/// (they are the same flow: verify the number, then either create the account
+/// or sign in to the existing one).
+///
+/// One row per mobile number — requesting a new code replaces the old one, so a
+/// number can never have two live codes. Only the sha256 of the code is stored.
+model MobileOtp {
+  id       String @id @default(cuid())
+  mobileNo String @unique
 
   codeHash   String // sha256 of the 6-digit OTP (never stored in the clear)
   expiresAt  DateTime // code is invalid after this instant

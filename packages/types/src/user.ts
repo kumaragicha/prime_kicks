@@ -3,12 +3,18 @@ export type UserRole = 'CUSTOMER' | 'RESELLER' | 'ADMIN';
 export interface User {
   id: string;
   firstName: string;
-  lastName: string;
+  /** null when the account was created from a single-word name. */
+  lastName: string | null;
   name: string;
-  email: string;
+  /**
+   * null for accounts created through the mobile OTP flow — the storefront only
+   * collects a name and a mobile number. `mobileNo` is the account identity.
+   */
+  email: string | null;
   mobileNo: string;
-  city: string;
-  state: string;
+  /** null for OTP accounts — delivery details come from the checkout address. */
+  city: string | null;
+  state: string | null;
   role: UserRole;
   isActive: boolean;
   isEmailVerified: boolean;

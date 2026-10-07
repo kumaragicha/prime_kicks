@@ -37,11 +37,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
     const user = await this.prisma.user.findFirst({
       where: { id: payload.sub, deletedAt: null },
-      select: { id: true, email: true, role: true, isActive: true },
+      select: { id: true, email: true, mobileNo: true, role: true, isActive: true },
     });
     if (!user || !user.isActive) {
       throw new UnauthorizedException();
     }
-    return { id: user.id, email: user.email, role: user.role };
+    // `email` here is the account IDENTITY used for audit trails, not always an
+    // address — OTP-only accounts have no email, so the mobile number stands in.
+    return { id: user.id, email: user.email ?? user.mobileNo, role: user.role };
   }
 }

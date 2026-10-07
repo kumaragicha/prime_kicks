@@ -2,19 +2,18 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { corsOptions } from './common/cors';
 import { LoggingInterceptor } from './common/logging.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: keeps the exact request bytes on req.rawBody — Meta's webhook
+  // signature (X-Hub-Signature-256) is an HMAC of the raw payload, not parsed JSON.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // Log every request/response across ALL endpoints for debugging.
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  const origins = (process.env.CORS_ORIGINS ?? 'http://localhost:3000,http://localhost:3001')
-    .split(',')
-    .map((o) => o.trim());
-
-  app.enableCors({ origin: origins, credentials: true });
+  app.enableCors(corsOptions());
   app.setGlobalPrefix('api');
 
   const port = Number(process.env.PORT ?? 4000);

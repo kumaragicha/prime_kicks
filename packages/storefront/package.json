@@ -1,0 +1,38 @@
+{
+  "name": "@prime-kicks/storefront",
+  "version": "0.0.0",
+  "private": true,
+  "exports": {
+    "./components/*": "./src/components/*.tsx",
+    "./components/ui/*": "./src/components/ui/*.tsx",
+    "./lib/*": "./src/lib/*.ts"
+  },
+  "scripts": {
+    "lint": "eslint src --max-warnings 0",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prime-kicks/types": "*",
+    "@prime-kicks/ui": "*",
+    "@prime-kicks/utils": "*",
+    "@prime-kicks/validation": "*"
+  },
+  "peerDependencies": {
+    "@tanstack/react-query": "^5.64.1",
+    "framer-motion": "^13.0.0",
+    "next": "^15.1.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@prime-kicks/typescript-config": "*",
+    "@tanstack/react-query": "^5.64.1",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "framer-motion": "^13.0.0",
+    "next": "^15.1.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.3"
+  }
+}

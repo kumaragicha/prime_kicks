@@ -3,30 +3,32 @@ import {
   ConflictException,
   Injectable,
   Logger,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type {
   LoginSchema,
+  OtpVerifySchema,
   RegisterSchema,
-  RegisterStartSchema,
-  VerifyEmailOtpSchema,
 } from '@prime-kicks/validation';
 import {
   AuditEvent,
   AuditModule,
   Prisma,
-  type PendingRegistration,
   type User,
+  type UserRole,
 } from '@prisma/client';
 import { compare, hash } from 'bcryptjs';
 import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { AuditLogService } from '../audit-log/audit-log.service';
+import type { Storefront } from '../common/storefront';
 import { MailService } from '../mail/mail.service';
-import { buildOtpEmail } from '../mail/templates/otp.template';
 import { buildPasswordResetEmail } from '../mail/templates/password-reset.template';
 import { PrismaService } from '../prisma/prisma.service';
+import { WhatsAppSendError } from '../whatsapp/whatsapp.error';
+import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import type { JwtPayload } from './auth.types';
 
 const SALT_ROUNDS = 10;
@@ -38,11 +40,11 @@ const SALT_ROUNDS = 10;
  */
 const DUMMY_PASSWORD_HASH = '$2a$10$RCurgRADPFnitP7XH5QEpeMLWdnPeQo8i6LnpI2m.TOJCKyaazcwm';
 
-/** How long an emailed OTP stays valid, in minutes. */
+/** How long a WhatsApp OTP stays valid, in minutes. */
 const OTP_EXP_MINUTES_DEFAULT = 10;
 /** Wrong-code submissions allowed before the pending signup must request a new code. */
 const OTP_MAX_ATTEMPTS = 5;
-/** Minimum seconds between OTP (re)send requests for the same email. */
+/** Minimum seconds between OTP (re)send requests for the same signup. */
 const OTP_RESEND_COOLDOWN_SECONDS = 60;
 
 /** How long a password-reset link stays valid, in minutes. */
@@ -81,6 +83,7 @@ export class AuthService {
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
     private readonly mail: MailService,
+    private readonly whatsapp: WhatsAppService,
     private readonly audit: AuditLogService,
   ) {}
 
@@ -98,55 +101,281 @@ export class AuthService {
     });
   }
 
-  // ── Email-OTP registration ──────────────────────────────────────────────
-  // Registration is a two step, verify-before-create flow:
-  //   1) `startRegistration` stashes the (password-hashed) signup in
-  //      PendingRegistration and emails a 6-digit code — no User row yet.
-  //   2) `verifyRegistration` checks the code, then creates the verified User
-  //      and issues tokens. `resendRegistrationOtp` re-sends a fresh code.
+  // ── Mobile OTP: sign-up AND login ───────────────────────────────────────
+  // One flow serves both. A storefront visitor enters a mobile number; we send a
+  // WhatsApp code; they enter it back. If the number already has an account they
+  // are signed in, otherwise an account is created from the name they supplied.
+  //
+  //   1) `startOtp`  — store the hashed code against the number, send it, and
+  //                    tell the client whether this number is new (so it knows
+  //                    to ask for a name before step 2).
+  //   2) `verifyOtp` — check the code, then sign in or create + sign in.
+  //   3) `resendOtp` — a fresh code, subject to the cooldown.
+  //
+  // No password is involved anywhere here. Password login (`login`) still exists
+  // for ADMIN accounts and predates this flow.
 
   /**
-   * Reject a signup whose email or mobile number already belongs to an account.
-   * Both are unique identities, so both are checked up front for a friendly error
-   * (the DB unique constraints are the ultimate backstop — see resetIfTaken use).
+   * Decide a new account's role from the storefront it signed up on — NEVER from
+   * the request body.
+   *
+   *   reseller storefront → RESELLER (no admin approval step — that is the point
+   *                         of the private reseller domain)
+   *   public storefront   → CUSTOMER
+   *
+   * ADMIN accounts are never self-service; they are created by seeding or
+   * promoted by an existing admin via UsersService.
    */
-  private async assertContactAvailable(email: string, mobileNo: string): Promise<void> {
-    const [emailTaken, mobileTaken] = await Promise.all([
-      this.prisma.user.findUnique({ where: { email } }),
-      this.prisma.user.findFirst({ where: { mobileNo } }),
-    ]);
-    if (emailTaken) throw new ConflictException('Email already registered');
-    if (mobileTaken) throw new ConflictException('Mobile number already registered');
+  private roleForStorefront(storefront: Storefront): UserRole {
+    return storefront === 'reseller' ? 'RESELLER' : 'CUSTOMER';
   }
 
   /**
-   * Create the verified User from a pending registration. A unique violation
-   * (email/mobile claimed in the window between step 1 and step 2) is mapped to a
-   * friendly conflict, and the now-unusable pending row is discarded.
+   * Canonical storage/lookup form for a mobile number: E.164 with a leading `+`.
+   *
+   * Visitors type the same number many ways ("9876543210", "+91 98765 43210",
+   * "09876543210"). Without one canonical form the same person would get several
+   * accounts, and the unique constraint on mobileNo would not catch it.
+   *
+   * A bare 10-digit number is assumed to be in OTP_DEFAULT_COUNTRY_CODE; a number
+   * that already carries a country code is left alone rather than "corrected",
+   * since guessing wrong would send someone else's code.
    */
-  private async createVerifiedUser(pending: PendingRegistration): Promise<User> {
+  private normalizeMobile(input: string): string {
+    const digits = input.replace(/\D/g, '');
+    const trimmed = digits.length === 11 && digits.startsWith('0') ? digits.slice(1) : digits;
+    const cc = this.config.get<string>('WHATSAPP_DEFAULT_COUNTRY_CODE', '91');
+    return `+${trimmed.length === 10 ? `${cc}${trimmed}` : trimmed}`;
+  }
+
+  /**
+   * Find an account by mobile number, tolerating however it was stored.
+   *
+   * Rows created before normalization existed may hold "9876543210" or
+   * "919876543210" rather than "+919876543210", so all three spellings are
+   * tried. New rows are always written in canonical form.
+   */
+  private async findUserByMobile(canonical: string): Promise<User | null> {
+    const withoutPlus = canonical.slice(1);
+    const cc = this.config.get<string>('WHATSAPP_DEFAULT_COUNTRY_CODE', '91');
+    const national = withoutPlus.startsWith(cc) ? withoutPlus.slice(cc.length) : null;
+
+    return this.prisma.user.findFirst({
+      where: {
+        deletedAt: null,
+        mobileNo: { in: [canonical, withoutPlus, ...(national ? [national] : [])] },
+      },
+    });
+  }
+
+  /** Split the single name field into the first/last columns the admin UI reads. */
+  private splitName(name: string): { firstName: string; lastName: string | null } {
+    const parts = name.trim().split(/\s+/);
+    const firstName = parts[0] ?? name.trim();
+    const lastName = parts.length > 1 ? parts.slice(1).join(' ') : null;
+    return { firstName, lastName };
+  }
+
+  /**
+   * Step 1: send a WhatsApp code to a mobile number.
+   *
+   * Deliberately reveals whether the number already has an account (`isNewUser`),
+   * because the client must know whether to ask for a name. That is a mild
+   * enumeration oracle, and an accepted one: a storefront that asks every visitor
+   * for their name on every login is worse, and the same fact is observable from
+   * the sign-in screen of essentially every OTP-based app.
+   */
+  async startOtp(mobileNo: string) {
+    const canonical = this.normalizeMobile(mobileNo);
+    const masked = this.maskMobile(canonical);
+    const existing = await this.findUserByMobile(canonical);
+
+    if (existing && !existing.isActive) {
+      this.logger.warn(`OTP refused for disabled account ${masked}`);
+      throw new UnauthorizedException('This account is disabled.');
+    }
+
+    // Throttle before sending: an un-cooled request must not cost us a message.
+    const live = await this.prisma.mobileOtp.findUnique({ where: { mobileNo: canonical } });
+    if (live) this.assertResendAllowed(live.lastSentAt);
+
+    const code = this.generateOtp();
+    await this.prisma.mobileOtp.upsert({
+      where: { mobileNo: canonical },
+      create: { mobileNo: canonical, codeHash: this.digest(code), expiresAt: this.otpExpiry() },
+      update: {
+        codeHash: this.digest(code),
+        expiresAt: this.otpExpiry(),
+        attempts: 0,
+        lastSentAt: new Date(),
+      },
+    });
+
+    this.logger.log(
+      `OTP requested for ${masked} (isNewUser=${!existing})`,
+    );
+
+    // A failed send leaves a code nobody can use AND a cooldown the visitor did
+    // not benefit from — drop the row so they can retry immediately.
+    try {
+      await this.sendOtpWhatsApp(canonical, code);
+    } catch (error) {
+      await this.prisma.mobileOtp.delete({ where: { mobileNo: canonical } }).catch(() => undefined);
+      throw this.otpDeliveryFailure(error);
+    }
+
+    return {
+      mobileNo: masked,
+      isNewUser: !existing,
+      expiresInMinutes: this.otpExpMinutes(),
+    };
+  }
+
+  /**
+   * Step 2: confirm the code, then sign in — creating the account first if this
+   * number is new.
+   *
+   * The code is consumed on success and on every terminal failure (expiry,
+   * attempt cap), so a code can never be replayed.
+   */
+  async verifyOtp(input: OtpVerifySchema, storefront: Storefront = 'web') {
+    const canonical = this.normalizeMobile(input.mobileNo);
+    const masked = this.maskMobile(canonical);
+    this.logger.log(`Verifying OTP for ${masked}`);
+
+    const record = await this.prisma.mobileOtp.findUnique({ where: { mobileNo: canonical } });
+    if (!record) {
+      this.logger.warn(`OTP verify rejected — no live code for ${masked}`);
+      throw new BadRequestException('No code was requested for this number. Please start again.');
+    }
+
+    if (record.expiresAt.getTime() < Date.now()) {
+      this.logger.warn(`OTP verify rejected — code expired for ${masked}`);
+      await this.prisma.mobileOtp.delete({ where: { id: record.id } });
+      throw new BadRequestException('This code has expired. Please request a new one.');
+    }
+
+    if (record.attempts >= OTP_MAX_ATTEMPTS) {
+      this.logger.warn(`OTP verify rejected — attempt cap reached for ${masked}`);
+      await this.prisma.mobileOtp.delete({ where: { id: record.id } });
+      throw new BadRequestException('Too many incorrect attempts. Please request a new code.');
+    }
+
+    if (this.digest(input.code) !== record.codeHash) {
+      const used = record.attempts + 1;
+      this.logger.warn(`OTP verify rejected — wrong code for ${masked} (${used}/${OTP_MAX_ATTEMPTS})`);
+      await this.prisma.mobileOtp.update({
+        where: { id: record.id },
+        data: { attempts: { increment: 1 } },
+      });
+      throw new UnauthorizedException('Incorrect code. Please try again.');
+    }
+
+    const existing = await this.findUserByMobile(canonical);
+
+    if (existing) {
+      if (!existing.isActive) throw new UnauthorizedException('This account is disabled.');
+      await this.prisma.mobileOtp.delete({ where: { id: record.id } });
+      this.logger.log(`OTP login for existing account ${masked}`);
+      return this.issueTokens(existing, { lastLoginAt: new Date() });
+    }
+
+    // New number — the client should have collected a name at step 1, where we
+    // told it isNewUser. Re-checked here because the client cannot be trusted.
+    if (!input.name?.trim()) {
+      this.logger.warn(`OTP verify rejected — name missing for new account ${masked}`);
+      throw new BadRequestException('Please tell us your name to finish creating your account.');
+    }
+
+    const user = await this.createOtpUser(canonical, input.name.trim(), storefront);
+    await this.prisma.mobileOtp.delete({ where: { id: record.id } }).catch(() => undefined);
+
+    this.auditUserCreated(user, `otp-signup:${storefront}`);
+    this.logger.log(`OTP signup created account ${masked} role=${user.role}`);
+    return this.issueTokens(user, { lastLoginAt: new Date() });
+  }
+
+  /**
+   * Create an account from a name and a verified mobile number.
+   *
+   * email / passwordHash / city / state stay null: the storefront never collects
+   * them, and the address captured at checkout carries the delivery details.
+   */
+  private async createOtpUser(
+    canonicalMobile: string,
+    name: string,
+    storefront: Storefront,
+  ): Promise<User> {
+    const { firstName, lastName } = this.splitName(name);
     try {
       return await this.prisma.user.create({
         data: {
-          firstName: pending.firstName,
-          lastName: pending.lastName,
-          name: `${pending.firstName} ${pending.lastName}`,
-          email: pending.email,
-          mobileNo: pending.mobileNo,
-          city: pending.city,
-          state: pending.state,
-          role: pending.role,
-          passwordHash: pending.passwordHash,
+          firstName,
+          lastName,
+          name,
+          mobileNo: canonicalMobile,
+          role: this.roleForStorefront(storefront),
+          // The mobile number was just proven by the OTP.
           isEmailVerified: true,
         },
       });
     } catch (error) {
+      // The number was claimed between the lookup and the insert.
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        await this.prisma.pendingRegistration.delete({ where: { id: pending.id } }).catch(() => {});
-        throw this.contactConflict(error);
+        throw new ConflictException('This mobile number is already registered.');
       }
       throw error;
     }
+  }
+
+  /** Step 3: re-send a fresh code for a number, subject to the cooldown. */
+  async resendOtp(mobileNo: string) {
+    const canonical = this.normalizeMobile(mobileNo);
+    const record = await this.prisma.mobileOtp.findUnique({ where: { mobileNo: canonical } });
+    if (!record) {
+      throw new BadRequestException('No code was requested for this number. Please start again.');
+    }
+
+    this.assertResendAllowed(record.lastSentAt);
+
+    const code = this.generateOtp();
+    const previousSentAt = record.lastSentAt;
+    await this.prisma.mobileOtp.update({
+      where: { id: record.id },
+      data: {
+        codeHash: this.digest(code),
+        expiresAt: this.otpExpiry(),
+        attempts: 0,
+        lastSentAt: new Date(),
+      },
+    });
+
+    // Roll the cooldown back if we could not actually deliver — the visitor
+    // should not be penalised for our delivery failure.
+    try {
+      await this.sendOtpWhatsApp(canonical, code);
+    } catch (error) {
+      await this.prisma.mobileOtp
+        .update({ where: { id: record.id }, data: { lastSentAt: previousSentAt } })
+        .catch(() => undefined);
+      throw this.otpDeliveryFailure(error);
+    }
+
+    return { mobileNo: this.maskMobile(canonical), expiresInMinutes: this.otpExpMinutes() };
+  }
+
+  /**
+   * Reject a signup whose email or mobile number already belongs to an account.
+   * Only the legacy email+password `register` path uses this; the OTP flow keys
+   * on mobile alone.
+   */
+  private async assertContactAvailable(email: string, mobileNo: string): Promise<void> {
+    const [emailTaken, mobileTaken] = await Promise.all([
+      this.prisma.user.findFirst({ where: { email } }),
+      this.prisma.user.findFirst({ where: { mobileNo } }),
+    ]);
+    if (emailTaken) throw new ConflictException('Email already registered');
+    if (mobileTaken) throw new ConflictException('Mobile number already registered');
   }
 
   /** Map a User P2002 (unique violation) to the right "already registered" message. */
@@ -159,111 +388,13 @@ export class AuthService {
     return new ConflictException('Email already registered');
   }
 
-  /** Step 1: validate, store the pending signup, and email an OTP. */
-  async startRegistration(input: RegisterStartSchema) {
-    await this.assertContactAvailable(input.email, input.mobileNo);
-
-    const code = this.generateOtp();
-    const passwordHash = await hash(input.password, SALT_ROUNDS);
-
-    await this.prisma.pendingRegistration.upsert({
-      where: { email: input.email },
-      create: {
-        email: input.email,
-        firstName: input.firstName,
-        lastName: input.lastName,
-        mobileNo: input.mobileNo,
-        city: input.city,
-        state: input.state,
-        role: input.role,
-        passwordHash,
-        codeHash: this.digest(code),
-        expiresAt: this.otpExpiry(),
-      },
-      update: {
-        firstName: input.firstName,
-        lastName: input.lastName,
-        mobileNo: input.mobileNo,
-        city: input.city,
-        state: input.state,
-        role: input.role,
-        passwordHash,
-        codeHash: this.digest(code),
-        expiresAt: this.otpExpiry(),
-        attempts: 0,
-        lastSentAt: new Date(),
-      },
-    });
-
-    await this.sendOtpEmail(input.email, input.firstName, code);
-
-    return { email: input.email, expiresInMinutes: this.otpExpMinutes() };
-  }
-
-  /** Step 2: confirm the OTP, then create the verified account and issue tokens. */
-  async verifyRegistration(input: VerifyEmailOtpSchema) {
-    const pending = await this.prisma.pendingRegistration.findUnique({
-      where: { email: input.email },
-    });
-    if (!pending) {
-      throw new BadRequestException('No pending registration for this email. Please start again.');
-    }
-
-    if (pending.expiresAt.getTime() < Date.now()) {
-      await this.prisma.pendingRegistration.delete({ where: { id: pending.id } });
-      throw new BadRequestException('This code has expired. Please request a new one.');
-    }
-
-    if (pending.attempts >= OTP_MAX_ATTEMPTS) {
-      await this.prisma.pendingRegistration.delete({ where: { id: pending.id } });
-      throw new BadRequestException('Too many incorrect attempts. Please start again.');
-    }
-
-    if (this.digest(input.code) !== pending.codeHash) {
-      await this.prisma.pendingRegistration.update({
-        where: { id: pending.id },
-        data: { attempts: { increment: 1 } },
-      });
-      throw new UnauthorizedException('Incorrect code. Please try again.');
-    }
-
-    // Guard against the email/mobile being taken between step 1 and step 2.
-    // The DB unique constraints are the final backstop (handled below).
-    const user = await this.createVerifiedUser(pending);
-
-    await this.prisma.pendingRegistration.delete({ where: { id: pending.id } });
-
-    this.auditUserCreated(user, 'otp-verified');
-    return this.issueTokens(user);
-  }
-
-  /** Re-send a fresh OTP for a pending signup, subject to a cooldown. */
-  async resendRegistrationOtp(email: string) {
-    const pending = await this.prisma.pendingRegistration.findUnique({ where: { email } });
-    if (!pending) {
-      throw new BadRequestException('No pending registration for this email. Please start again.');
-    }
-
-    const elapsedSeconds = (Date.now() - pending.lastSentAt.getTime()) / 1000;
+  /** Throw unless enough time has passed since the last code was sent. */
+  private assertResendAllowed(lastSentAt: Date): void {
+    const elapsedSeconds = (Date.now() - lastSentAt.getTime()) / 1000;
     if (elapsedSeconds < OTP_RESEND_COOLDOWN_SECONDS) {
       const wait = Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - elapsedSeconds);
       throw new BadRequestException(`Please wait ${wait}s before requesting another code.`);
     }
-
-    const code = this.generateOtp();
-    await this.prisma.pendingRegistration.update({
-      where: { id: pending.id },
-      data: {
-        codeHash: this.digest(code),
-        expiresAt: this.otpExpiry(),
-        attempts: 0,
-        lastSentAt: new Date(),
-      },
-    });
-
-    await this.sendOtpEmail(pending.email, pending.firstName, code);
-
-    return { email: pending.email, expiresInMinutes: this.otpExpMinutes() };
   }
 
   // ── Password reset ──────────────────────────────────────────────────────
@@ -283,7 +414,9 @@ export class AuthService {
 
     const user = await this.prisma.user.findFirst({ where: { email, deletedAt: null } });
     // Silently no-op for unknown or disabled accounts — same response either way.
-    if (!user || !user.isActive) return generic;
+    // OTP-only accounts have no email and no password, so there is nothing to
+    // reset; they sign in with a WhatsApp code instead.
+    if (!user || !user.isActive || !user.email) return generic;
 
     const token = randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + PASSWORD_RESET_EXP_MINUTES * 60_000);
@@ -371,7 +504,7 @@ export class AuthService {
    * the web app now uses the OTP flow (start → verify). Creates an account
    * that has NOT verified its email.
    */
-  async register(input: RegisterSchema) {
+  async register(input: RegisterSchema, storefront: Storefront = 'web') {
     await this.assertContactAvailable(input.email, input.mobileNo);
 
     let user: User;
@@ -385,7 +518,7 @@ export class AuthService {
           mobileNo: input.mobileNo,
           city: input.city,
           state: input.state,
-          role: input.role,
+          role: this.roleForStorefront(storefront),
           passwordHash: await hash(input.password, SALT_ROUNDS),
         },
       });
@@ -502,7 +635,15 @@ export class AuthService {
   }
 
   private async issueTokens(user: User, extraData: Prisma.UserUpdateInput = {}) {
-    const basePayload: JwtPayload = { sub: user.id, email: user.email, role: user.role };
+    // `email` on the payload is the account's IDENTITY for audit trails, not
+    // necessarily an address: OTP-only accounts have no email, so the mobile
+    // number stands in. Every `auditedBy: user.email` call site depends on this
+    // being non-null.
+    const basePayload: JwtPayload = {
+      sub: user.id,
+      email: user.email ?? user.mobileNo,
+      role: user.role,
+    };
     const refreshTtl = this.config.get<string>('JWT_REFRESH_EXPIRES_IN', '7d');
 
     // Create the session row first so its id can be embedded as the refresh
@@ -557,27 +698,55 @@ export class AuthService {
     return new Date(Date.now() + this.otpExpMinutes() * 60_000);
   }
 
-  private async sendOtpEmail(email: string, firstName: string, code: string): Promise<void> {
-    const { subject, text, html } = buildOtpEmail({
-      firstName,
-      code,
-      expiresMinutes: this.otpExpMinutes(),
-    });
-    // Log the OTP dispatch (never the code itself) so we can confirm the auth
-    // flow reached the mail layer even if delivery later fails downstream.
-    this.logger.log(`Dispatching registration OTP email to ${email}`);
+  /**
+   * Hand a registration OTP to the WhatsApp layer.
+   *
+   * Logs the dispatch (never the code itself) so the auth flow can be traced
+   * end-to-end even when delivery fails downstream. Errors propagate — the
+   * callers decide whether to roll back the pending row.
+   */
+  private async sendOtpWhatsApp(mobileNo: string, code: string): Promise<void> {
+    this.logger.log(`Dispatching registration OTP via WhatsApp to ${this.maskMobile(mobileNo)}`);
     try {
-      await this.mail.send({ to: email, subject, text, html });
-      this.logger.log(`Registration OTP email handed off to mailer for ${email}`);
+      const result = await this.whatsapp.sendOtp(mobileNo, code);
+      this.logger.log(
+        `Registration OTP handed off to WhatsApp for ${this.maskMobile(mobileNo)} ` +
+          `messageId=${result.messageId ?? 'n/a'}${result.simulated ? ' (SIMULATED)' : ''}`,
+      );
     } catch (err) {
       this.logger.error(
-        `Failed to send registration OTP email to ${email} — ${
-          err instanceof Error ? err.message : String(err)
+        `Failed to send registration OTP to ${this.maskMobile(mobileNo)} — ${
+          err instanceof WhatsAppSendError ? err.describe() : String(err)
         }`,
         err instanceof Error ? err.stack : undefined,
       );
       throw err;
     }
+  }
+
+  /**
+   * Translate a WhatsApp delivery failure into an HTTP error for the signup form.
+   *
+   * Meta's own wording is never forwarded: it is written for developers, and some
+   * of it discloses our configuration. Only the recipient case gets a specific
+   * message, because that one the user can actually act on.
+   */
+  private otpDeliveryFailure(error: unknown): Error {
+    if (error instanceof WhatsAppSendError && error.kind === 'recipient') {
+      return new BadRequestException(
+        'We could not reach that number on WhatsApp. Check the number and make sure it has an active WhatsApp account.',
+      );
+    }
+    return new ServiceUnavailableException(
+      'We could not send your verification code right now. Please try again in a moment.',
+    );
+  }
+
+  /** Mask all but the last 4 digits of a mobile number for safe logging. */
+  private maskMobile(mobileNo: string): string {
+    const digits = mobileNo.replace(/\D/g, '');
+    if (digits.length <= 4) return '****';
+    return `${'*'.repeat(digits.length - 4)}${digits.slice(-4)}`;
   }
 
   /**

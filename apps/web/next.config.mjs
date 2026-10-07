@@ -20,6 +20,7 @@ const nextConfig = {
     removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false,
   },
   transpilePackages: [
+    '@prime-kicks/storefront',
     '@prime-kicks/ui',
     '@prime-kicks/utils',
     '@prime-kicks/types',

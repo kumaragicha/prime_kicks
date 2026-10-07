@@ -2,21 +2,22 @@ import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
 import {
   forgotPasswordSchema,
   loginSchema,
+  otpResendSchema,
+  otpStartSchema,
+  otpVerifySchema,
   refreshSchema,
   registerSchema,
-  registerStartSchema,
-  resendEmailOtpSchema,
   resetPasswordSchema,
-  verifyEmailOtpSchema,
   type ForgotPasswordSchema,
   type LoginSchema,
+  type OtpResendSchema,
+  type OtpStartSchema,
+  type OtpVerifySchema,
   type RefreshSchema,
   type RegisterSchema,
-  type RegisterStartSchema,
-  type ResendEmailOtpSchema,
   type ResetPasswordSchema,
-  type VerifyEmailOtpSchema,
 } from '@prime-kicks/validation';
+import { CurrentStorefront, type Storefront } from '../common/storefront';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { AuthService } from './auth.service';
 import { Public } from './decorators/public.decorator';
@@ -29,38 +30,47 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  register(@Body(new ZodValidationPipe(registerSchema)) body: RegisterSchema) {
-    return this.auth.register(body);
+  register(
+    @Body(new ZodValidationPipe(registerSchema)) body: RegisterSchema,
+    @CurrentStorefront() storefront: Storefront,
+  ) {
+    return this.auth.register(body, storefront);
   }
 
-  /** Step 1 of OTP registration: stash the signup and email a verification code. */
+  /**
+   * Step 1 of the storefront auth flow: send a WhatsApp code to a mobile number.
+   *
+   * Serves BOTH sign-up and login. The response's `isNewUser` tells the client
+   * whether to collect a name before calling verify.
+   */
   @Public()
   @HttpCode(200)
-  @Post('register/start')
-  registerStart(
-    @Body(new ZodValidationPipe(registerStartSchema)) body: RegisterStartSchema,
-  ) {
-    return this.auth.startRegistration(body);
+  @Post('otp/start')
+  otpStart(@Body(new ZodValidationPipe(otpStartSchema)) body: OtpStartSchema) {
+    return this.auth.startOtp(body.mobileNo);
   }
 
-  /** Step 2: confirm the emailed code, create the verified account, issue tokens. */
+  /**
+   * Step 2: confirm the code and issue tokens — creating the account first when
+   * the number is new. The account's role comes from the calling storefront,
+   * never from the body (see `AuthService.roleForStorefront`).
+   */
   @Public()
   @HttpCode(200)
-  @Post('register/verify')
-  registerVerify(
-    @Body(new ZodValidationPipe(verifyEmailOtpSchema)) body: VerifyEmailOtpSchema,
+  @Post('otp/verify')
+  otpVerify(
+    @Body(new ZodValidationPipe(otpVerifySchema)) body: OtpVerifySchema,
+    @CurrentStorefront() storefront: Storefront,
   ) {
-    return this.auth.verifyRegistration(body);
+    return this.auth.verifyOtp(body, storefront);
   }
 
-  /** Re-send a fresh verification code for a pending signup. */
+  /** Re-send a fresh code for a mobile number, subject to the cooldown. */
   @Public()
   @HttpCode(200)
-  @Post('register/resend')
-  registerResend(
-    @Body(new ZodValidationPipe(resendEmailOtpSchema)) body: ResendEmailOtpSchema,
-  ) {
-    return this.auth.resendRegistrationOtp(body.email);
+  @Post('otp/resend')
+  otpResend(@Body(new ZodValidationPipe(otpResendSchema)) body: OtpResendSchema) {
+    return this.auth.resendOtp(body.mobileNo);
   }
 
   @Public()

@@ -79,6 +79,13 @@ function readStored(key: string): string | null {
   return typeof window === 'undefined' ? null : window.localStorage.getItem(key);
 }
 
+// Single choke point for every API call.
+//
+// This layer knows nothing about storefronts or pricing. The reseller app points
+// NEXT_PUBLIC_API_URL at its own `/api`, whose route handler proxies to the real
+// API and injects the `x-storefront` secret server-side — so the key is never
+// present in this bundle. The public storefront calls the API directly and sends
+// no such header at all.
 function rawFetch(path: string, init?: RequestInit): Promise<Response> {
   return fetch(`${API_URL}${path}`, {
     ...init,
@@ -96,8 +103,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // Like `request`, but attaches the stored access token when the visitor is
 // signed in. The API's optional-auth guard reads the token to decide which
-// price to return (reseller vs customer) and falls back to customer pricing
-// for anonymous visitors — so no token is required, but one is used if present.
+// price to return, falling back to the `x-storefront` header (and then to
+// customer pricing) for anonymous visitors — so no token is required, but one
+// is used if present.
 async function optionalAuthRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const token = readStored(ACCESS_TOKEN_KEY);
   const res = await rawFetch(path, {
@@ -181,31 +189,31 @@ export const api = {
       body: JSON.stringify({ identifier, password }),
     }),
   me: () => authenticatedRequest<AuthResponse['user']>('/auth/me'),
-  /** Step 1 of registration: submit details, triggers an OTP email. No tokens yet. */
-  registerStart: (body: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    mobileNo: string;
-    city: string;
-    state: string;
-    password: string;
-  }) =>
-    request<{ email: string; expiresInMinutes: number }>('/auth/register/start', {
+  /**
+   * Step 1 of the storefront auth flow: ask for a WhatsApp code.
+   *
+   * Serves both sign-up and sign-in. `isNewUser` tells the UI whether to collect
+   * a name before verifying — an existing number just signs in.
+   */
+  otpStart: (mobileNo: string) =>
+    request<{ mobileNo: string; isNewUser: boolean; expiresInMinutes: number }>(
+      '/auth/otp/start',
+      { method: 'POST', body: JSON.stringify({ mobileNo }) },
+    ),
+  /**
+   * Step 2: confirm the code and receive tokens. `name` is required only when
+   * step 1 reported `isNewUser` — it creates the account.
+   */
+  otpVerify: (mobileNo: string, code: string, name?: string) =>
+    request<AuthResponse>('/auth/otp/verify', {
       method: 'POST',
-      body: JSON.stringify(body),
+      body: JSON.stringify(name ? { mobileNo, code, name } : { mobileNo, code }),
     }),
-  /** Step 2: confirm the emailed code; returns tokens for the new verified account. */
-  registerVerify: (email: string, code: string) =>
-    request<AuthResponse>('/auth/register/verify', {
+  /** Ask for a fresh code, subject to a 60s cooldown. */
+  otpResend: (mobileNo: string) =>
+    request<{ mobileNo: string; expiresInMinutes: number }>('/auth/otp/resend', {
       method: 'POST',
-      body: JSON.stringify({ email, code }),
-    }),
-  /** Ask for a fresh OTP for a pending registration. */
-  registerResend: (email: string) =>
-    request<{ email: string; expiresInMinutes: number }>('/auth/register/resend', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ mobileNo }),
     }),
   /** Request a password-reset link. Always resolves (never reveals if the email exists). */
   forgotPassword: (email: string) =>

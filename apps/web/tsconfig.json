@@ -2,7 +2,10 @@
   "extends": "@prime-kicks/typescript-config/nextjs.json",
   "compilerOptions": {
     "paths": {
-      "@/*": ["./*"]
+      // Shared storefront components/lib live in packages/storefront so the
+      // reseller app can use the exact same code. Keeping the "@/" prefix means
+      // no import in this app had to change when they moved.
+      "@/*": ["../../packages/storefront/src/*"]
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],

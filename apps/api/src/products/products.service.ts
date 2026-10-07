@@ -7,6 +7,10 @@ import type {
 import { AuditEvent, AuditModule, Prisma } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import type { AuthenticatedUser } from '../auth/auth.types';
+import {
+  resolvePricingAudience,
+  type Storefront,
+} from '../common/storefront';
 import { PrismaService } from '../prisma/prisma.service';
 
 const productInclude = {
@@ -50,21 +54,31 @@ function withTotalStock(product: ProductWithRelations) {
 }
 
 /**
- * Shape a product for the caller based on their role (derived from the JWT).
+ * Shape a product for the caller based on their pricing audience.
  *
  * The single `price` key is what the storefront renders — there is no
  * role branching on the frontend:
- *   - RESELLER            → reseller price
- *   - CUSTOMER / anonymous → customer price
+ *   - RESELLER account, or a request from the reseller storefront → reseller price
+ *   - everyone else                                               → customer price
+ *
+ * See `resolvePricingAudience` for why an unauthenticated reseller-storefront
+ * request is allowed reseller pricing, and why that never affects order totals.
  *
  * Non-admin callers never receive the raw pricing breakdown
  * (`inhouseCost` / `resellerPrice` / `customerPrice`); those are stripped so
  * the storefront can never expose more than one price. ADMIN keeps the full
  * breakdown for the admin dashboard, plus `price` for consistency.
  */
-function shapeProduct(product: ProductWithRelations, user?: AuthenticatedUser) {
+function shapeProduct(
+  product: ProductWithRelations,
+  user?: AuthenticatedUser,
+  storefront: Storefront = 'web',
+) {
   const base = withTotalStock(product);
-  const price = user?.role === 'RESELLER' ? product.resellerPrice : product.customerPrice;
+  const price =
+    resolvePricingAudience(user, storefront) === 'RESELLER'
+      ? product.resellerPrice
+      : product.customerPrice;
 
   if (user?.role === 'ADMIN') {
     return { ...base, price };
@@ -81,7 +95,11 @@ export class ProductsService {
     private readonly audit: AuditLogService,
   ) {}
 
-  async findAll(query: ProductQuerySchema, user?: AuthenticatedUser) {
+  async findAll(
+    query: ProductQuerySchema,
+    user?: AuthenticatedUser,
+    storefront: Storefront = 'web',
+  ) {
     const { page, pageSize, brandId, categoryId, tagId, tag, sizeTypeId, size, search } = query;
 
     // Only ADMIN sees deactivated products; every other caller (reseller,
@@ -156,7 +174,7 @@ export class ProductsService {
     }
 
     return {
-      data: rows.map((row) => shapeProduct(row, user)),
+      data: rows.map((row) => shapeProduct(row, user, storefront)),
       meta: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
     };
   }
@@ -205,7 +223,7 @@ export class ProductsService {
     return grouped.map((g) => g.model).filter((m): m is string => !!m && m.trim().length > 0);
   }
 
-  async findOne(id: string, user?: AuthenticatedUser) {
+  async findOne(id: string, user?: AuthenticatedUser, storefront: Storefront = 'web') {
     const product = await this.prisma.product.findFirst({
       where: { id, deletedAt: null, ...(user?.role === 'ADMIN' ? {} : { isActive: true, ...inStock }) },
       include: storefrontInclude,
@@ -213,7 +231,7 @@ export class ProductsService {
     if (!product) {
       throw new NotFoundException(`Product ${id} not found`);
     }
-    return shapeProduct(product, user);
+    return shapeProduct(product, user, storefront);
   }
 
   /**
@@ -227,7 +245,7 @@ export class ProductsService {
    * Returns [] for a missing/deleted product rather than throwing, so the rail
    * simply doesn't render.
    */
-  async findSimilar(id: string, user?: AuthenticatedUser) {
+  async findSimilar(id: string, user?: AuthenticatedUser, storefront: Storefront = 'web') {
     const SIMILAR_LIMIT = 8;
     const current = await this.prisma.product.findFirst({
       where: { id, deletedAt: null },
@@ -268,7 +286,7 @@ export class ProductsService {
     // Tier 3 — other brands, newest first, to top up the rail.
     await pull({});
 
-    return collected.map((row) => shapeProduct(row, user));
+    return collected.map((row) => shapeProduct(row, user, storefront));
   }
 
   /**

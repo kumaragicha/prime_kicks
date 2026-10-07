@@ -22,6 +22,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Public } from '../auth/decorators/public.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { OptionalJwtAuthGuard } from '../auth/guards/optional-jwt-auth.guard';
+import { CurrentStorefront, type Storefront } from '../common/storefront';
 import { ZodValidationPipe } from '../common/zod-validation.pipe';
 import { ProductsService } from './products.service';
 
@@ -34,9 +35,10 @@ export class ProductsController {
   @Get()
   findAll(
     @Query(new ZodValidationPipe(productQuerySchema)) query: ProductQuerySchema,
+    @CurrentStorefront() storefront: Storefront,
     @CurrentUser() user?: AuthenticatedUser,
   ) {
-    return this.products.findAll(query, user);
+    return this.products.findAll(query, user, storefront);
   }
 
   /**
@@ -52,16 +54,24 @@ export class ProductsController {
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
-  findOne(@Param('id') id: string, @CurrentUser() user?: AuthenticatedUser) {
-    return this.products.findOne(id, user);
+  findOne(
+    @Param('id') id: string,
+    @CurrentStorefront() storefront: Storefront,
+    @CurrentUser() user?: AuthenticatedUser,
+  ) {
+    return this.products.findOne(id, user, storefront);
   }
 
-  /** Similar-products rail for a product page (public; priced by role). */
+  /** Similar-products rail for a product page (public; priced by audience). */
   @Public()
   @UseGuards(OptionalJwtAuthGuard)
   @Get(':id/similar')
-  findSimilar(@Param('id') id: string, @CurrentUser() user?: AuthenticatedUser) {
-    return this.products.findSimilar(id, user);
+  findSimilar(
+    @Param('id') id: string,
+    @CurrentStorefront() storefront: Storefront,
+    @CurrentUser() user?: AuthenticatedUser,
+  ) {
+    return this.products.findSimilar(id, user, storefront);
   }
 
   @Roles('ADMIN', 'RESELLER')
