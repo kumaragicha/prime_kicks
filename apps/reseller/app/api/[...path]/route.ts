@@ -61,81 +61,7 @@ function forwardableHeaders(request: NextRequest): Headers {
   return headers;
 }
 
-/**
- * TEMPORARY diagnostic — remove once reseller pricing is confirmed working.
- *
- * GET /api/__proxy-status tells you exactly what this Worker sees and what the
- * real API answers, WITHOUT revealing RESELLER_STOREFRONT_KEY: only presence,
- * length and a 4-byte SHA-256 fingerprint (not reversible for a 256-bit random
- * key). Compare `keyFingerprint` with the one computed on the API server.
- *
- * `selfTest` makes the same call the proxy makes, once with the key and once
- * without, and reports the status and first product price of each — if
- * `withKey.price` is lower than `withoutKey.price`, the whole chain works.
- */
-async function sha4(text: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(digest).slice(0, 4))
-    .map((b) => b.toString(16).padStart(2, '0'))
-    .join('');
-}
-
-async function probe(headers: Record<string, string>) {
-  const url = `${apiBase()}/products?pageSize=1`;
-  try {
-    const res = await fetch(url, { headers, cache: 'no-store', redirect: 'manual' });
-    const text = await res.text();
-    let price: unknown = null;
-    let name: unknown = null;
-    try {
-      const first = (JSON.parse(text) as { data?: Array<{ price?: unknown; name?: unknown }> }).data?.[0];
-      price = first?.price ?? null;
-      name = first?.name ?? null;
-    } catch {
-      /* not JSON — keep price null and show a snippet below */
-    }
-    return {
-      status: res.status,
-      price,
-      product: name,
-      bodySnippet: price === null ? text.slice(0, 160) : undefined,
-    };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) };
-  }
-}
-
-async function proxyStatus(): Promise<Response> {
-  const key = process.env.RESELLER_STOREFRONT_KEY?.trim();
-  const base = apiBase();
-  return NextResponse.json(
-    {
-      checkedAt: new Date().toISOString(),
-      key: {
-        configured: Boolean(key),
-        length: key?.length ?? 0,
-        fingerprint: key ? await sha4(key) : null,
-        hasSurroundingQuotes: key ? /^["']|["']$/.test(key) : false,
-      },
-      api: {
-        base,
-        usingLocalhostFallback: !process.env.API_URL,
-      },
-      // Names only, never values. Shows whether a variable/secret reached the Worker.
-      envVariableNames: Object.keys(process.env).sort(),
-      selfTest: {
-        withoutKey: await probe({}),
-        withKey: key ? await probe({ 'x-storefront': key }) : 'skipped — no key in Worker env',
-      },
-    },
-    { headers: { 'cache-control': 'no-store' } },
-  );
-}
-
 async function proxy(request: NextRequest, path: string[]): Promise<Response> {
-  if (request.method === 'GET' && path.length === 1 && path[0] === '__proxy-status') {
-    return proxyStatus();
-  }
   const target = `${apiBase()}/${path.join('/')}${request.nextUrl.search}`;
 
   // GET/HEAD must not carry a body; everything else forwards the raw bytes so
@@ -171,16 +97,6 @@ async function proxy(request: NextRequest, path: string[]): Promise<Response> {
   const contentType = upstream.headers.get('content-type');
   if (contentType) headers.set('content-type', contentType);
   headers.set('cache-control', 'no-store');
-
-  // TEMPORARY debug headers — visible in the browser Network tab. No secrets.
-  const keyAttached = Boolean(process.env.RESELLER_STOREFRONT_KEY?.trim());
-  headers.set('x-debug-key-attached', String(keyAttached));
-  headers.set('x-debug-upstream-status', String(upstream.status));
-  headers.set('x-debug-api-base', apiBase());
-  // warn, not log: next.config.mjs strips console.log from production builds.
-  console.warn(
-    `[reseller-proxy] ${request.method} /${path.join('/')} -> ${upstream.status} keyAttached=${keyAttached}`,
-  );
 
   return new NextResponse(body, { status: upstream.status, headers });
 }
