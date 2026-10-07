@@ -9,6 +9,8 @@ build
 .next
 out
 .turbo
+.open-next
+.wrangler
 
 # Environment
 .env
