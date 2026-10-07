@@ -3,6 +3,11 @@
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-08-01",
   "compatibility_flags": ["nodejs_compat"],
+  // Where the /api proxy forwards to. Not a secret. RESELLER_STOREFRONT_KEY is the
+  // secret and must be added in the dashboard (never commit it).
+  "vars": {
+    "API_URL": "https://api.primekicks.in/api",
+  },
   "assets": {
     "directory": ".open-next/assets",
   },
