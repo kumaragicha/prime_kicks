@@ -54,6 +54,8 @@ export default function CartPage() {
   const [parsing, setParsing] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isPickup, setIsPickup] = useState(false);
+  // The reseller app has no address step — one tap places the order.
+  const skipAddress = process.env.NEXT_PUBLIC_STOREFRONT === 'reseller';
   // Per-unit amount stripped from reseller prices on pickup/label orders.
   const [shippingDeduction, setShippingDeduction] = useState(0);
   // Idempotency key for the in-flight checkout; survives retries, cleared on success.
@@ -243,7 +245,7 @@ export default function CartPage() {
   async function placeOrder() {
     if (!cart || cart.items.length === 0) return;
     // Pickup orders collect in store — no shipping address required, so skip validation.
-    const fieldErrors = isPickup ? {} : validateAddress(address);
+    const fieldErrors = isPickup || skipAddress ? {} : validateAddress(address);
     const firstError = Object.values(fieldErrors)[0];
     if (firstError) {
       setErrors(fieldErrors);
@@ -271,7 +273,8 @@ export default function CartPage() {
             quantity: item.quantity,
           })),
           isPickup,
-          address: isPickup ? undefined : address,
+          skipAddress: skipAddress || undefined,
+          address: isPickup || skipAddress ? undefined : address,
         },
         idempotencyKeyRef.current,
       );
@@ -546,17 +549,19 @@ export default function CartPage() {
                 }`}
               >
                 {/* Step indicator */}
-                <div className="flex items-center gap-[10px] text-[10px] uppercase tracking-[.12em] font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setStep(1)}
-                    className={step === 1 ? 'text-ink' : 'text-[#b3ab9c]'}
-                  >
-                    1 · Bag
-                  </button>
-                  <span className="flex-1 h-px bg-[#ddd6c9]" />
-                  <span className={step === 2 ? 'text-ink' : 'text-[#b3ab9c]'}>2 · Shipping</span>
-                </div>
+                {!skipAddress && (
+                  <div className="flex items-center gap-[10px] text-[10px] uppercase tracking-[.12em] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setStep(1)}
+                      className={step === 1 ? 'text-ink' : 'text-[#b3ab9c]'}
+                    >
+                      1 · Bag
+                    </button>
+                    <span className="flex-1 h-px bg-[#ddd6c9]" />
+                    <span className={step === 2 ? 'text-ink' : 'text-[#b3ab9c]'}>2 · Shipping</span>
+                  </div>
+                )}
 
                 {/* Order summary (both steps) */}
                 <aside className="border border-ink rounded-[14px] p-[23px] bg-[#f5f2eb] shadow-[0_12px_25px_rgba(28,22,16,0.08)]">
@@ -606,7 +611,7 @@ export default function CartPage() {
                 {step === 1 ? (
                   /* Step 1: proceed to shipping (or straight to pickup for resellers) */
                   <>
-                    {isReseller && (
+                    {isReseller && !skipAddress && (
                       <label className="flex items-center gap-[10px] border border-line rounded-[10px] p-[14px] bg-white cursor-pointer select-none">
                         <input
                           type="checkbox"
@@ -619,7 +624,7 @@ export default function CartPage() {
                         </span>
                       </label>
                     )}
-                    {isPickup ? (
+                    {isPickup || skipAddress ? (
                       <button
                         className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] select-none transition-opacity duration-150 disabled:opacity-50 [&_svg]:w-[14px]"
                         disabled={placing}

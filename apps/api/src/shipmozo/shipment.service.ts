@@ -128,6 +128,12 @@ export class ShipmentService {
       return this.pickShipment(order);
     }
 
+    // Address-less orders (reseller one-click checkout) have nothing to ship to.
+    if (!order.addressLine1 || !order.pincode) {
+      this.logger.log(`Order ${order.orderNumber} has no delivery address — not pushing to Shipmozo`);
+      return this.pickShipment(order);
+    }
+
     if (order.orderType === OrderType.BULK) {
       this.logger.debug(
         `[SHIPMOZO DEBUG] STOP — order ${order.orderNumber} is BULK (manual shipping, no Shipmozo push)`,

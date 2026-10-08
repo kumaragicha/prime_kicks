@@ -8,7 +8,9 @@ export function Announcement() {
 
   // The free-shipping promo is a customer offer — resellers have their own terms,
   // so the banner is hidden for RESELLER accounts.
-  if (user?.role === 'RESELLER') return null;
+  // The whole reseller app is wholesale, so it never shows the banner, even to
+  // logged-out visitors.
+  if (user?.role === 'RESELLER' || process.env.NEXT_PUBLIC_STOREFRONT === 'reseller') return null;
 
   return (
     <div className="h-[34px] bg-[#111] text-white flex items-center justify-center gap-[18px] text-[10px] tracking-[.07em] uppercase max-[800px]:h-[30px] max-[800px]:text-[8px] max-[800px]:gap-[10px]">

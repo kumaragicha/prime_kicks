@@ -58,6 +58,10 @@ export const createOrderSchema = z
     // shipping address — the customer collects the order in store. The service
     // defaults to false when omitted.
     isPickup: z.boolean().optional(),
+    // Reseller one-click checkout: ship nothing from the web flow, collect no
+    // address, keep full reseller pricing. The service only honours it for
+    // RESELLER accounts.
+    skipAddress: z.boolean().optional(),
     address: addressSchema.optional(),
     // --- Admin-only fields (optional; when omitted the web/customer flow is used) ---
     resellerId: z.string().min(1, 'Select a reseller').optional(),
@@ -70,7 +74,7 @@ export const createOrderSchema = z
   })
   .superRefine((val, ctx) => {
     // Shipping orders must carry a delivery address; pickup orders must not.
-    if (!val.isPickup && !val.address) {
+    if (!val.isPickup && !val.skipAddress && !val.address) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'A shipping address is required.',
@@ -131,6 +135,7 @@ export const orderQuerySchema = z.object({
   sort: z.enum(['newest', 'oldest']).default('newest'),
 });
 
+export type OrderAddressSchema = z.infer<typeof addressSchema>;
 export type CreateOrderSchema = z.infer<typeof createOrderSchema>;
 export type UpdateOrderStatusSchema = z.infer<typeof updateOrderStatusSchema>;
 export type ManualShipmentSchema = z.infer<typeof manualShipmentSchema>;

@@ -9,6 +9,7 @@ import { formatCurrency } from '@prime-kicks/utils';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { useState } from 'react';
+import { formatOrderId } from '@prime-kicks/utils';
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'Pending',
@@ -33,7 +34,7 @@ function OrderCard({ order }: { order: Order }) {
       <div className="flex items-start justify-between mb-[14px]">
         <div>
           <p className="text-[9px] uppercase font-bold tracking-[.08em] text-[#777] m-0 mb-[3px]">
-            {order.orderNumber}
+            {formatOrderId(order.orderNumber)}
           </p>
           <p className="text-[11px] text-[#555] m-0">
             {new Date(order.createdAt).toLocaleDateString('en-IN', {

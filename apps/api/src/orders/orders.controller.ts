@@ -14,10 +14,12 @@ import { ConfigService } from '@nestjs/config';
 import type { PaymentStatus } from '@prime-kicks/types';
 import type {
   CreateOrderSchema,
+  OrderAddressSchema,
   OrderQuerySchema,
   UpdateOrderStatusSchema,
 } from '@prime-kicks/validation';
 import {
+  addressSchema,
   createOrderSchema,
   orderQuerySchema,
   updateOrderStatusSchema,
@@ -115,6 +117,17 @@ export class OrdersController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.orders.updateStatus(id, body, user.email);
+  }
+
+  /** Add a delivery address to an order that has none (admin only). */
+  @Roles('ADMIN')
+  @Patch(':id/address')
+  addAddress(
+    @Param('id') id: string,
+    @Body(new ZodValidationPipe(addressSchema)) body: OrderAddressSchema,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.orders.addAddress(id, body, user.email);
   }
 
   /** Delete an order (admin only). */

@@ -47,6 +47,7 @@ export class WhatsAppService {
   private readonly defaultCountryCode: string;
   /** Print OTP codes to the server log — a debugging aid, never on in production. */
   private readonly logCodes: boolean;
+  private readonly sendDisabled: boolean;
 
   constructor(private readonly config: ConfigService) {
     this.phoneNumberId = this.config.get<string>('WHATSAPP_PHONE_NUMBER_ID') || undefined;
@@ -62,6 +63,7 @@ export class WhatsAppService {
       DEFAULT_COUNTRY_CODE,
     );
     this.logCodes = this.resolveLogCodes();
+    this.sendDisabled = this.resolveSendDisabled();
 
     // Log the effective config at boot (token masked) so a mis-set env var is
     // obvious immediately rather than at the first signup attempt.
@@ -116,6 +118,23 @@ export class WhatsAppService {
     return true;
   }
 
+  /**
+   * OTP_DISABLE_SEND=true skips the WhatsApp call entirely and prints the code to
+   * the console instead, so local development costs nothing. Ignored (with an
+   * error log) in production, where it would silently stop real users logging in.
+   */
+  private resolveSendDisabled(): boolean {
+    if (this.config.get<string>('OTP_DISABLE_SEND') !== 'true') return false;
+
+    if (this.config.get<string>('NODE_ENV') === 'production') {
+      this.logger.error('OTP_DISABLE_SEND=true is set but NODE_ENV=production — IGNORING it. Unset it.');
+      return false;
+    }
+
+    this.logger.warn('OTP_DISABLE_SEND=true — no WhatsApp messages will be sent; codes are logged instead.');
+    return true;
+  }
+
   /** True when both required credentials are present. */
   get isConfigured(): boolean {
     return Boolean(this.phoneNumberId && this.accessToken);
@@ -137,6 +156,11 @@ export class WhatsAppService {
     // Logged BEFORE the send, deliberately: the reason this switch exists is that
     // the send may fail (no authentication template on a test WABA), and a code
     // logged only on success would be useless for testing exactly that case.
+    if (this.sendDisabled) {
+      this.logger.warn(`[OTP CODE — send disabled, nothing sent] to=${masked} code=${code}`);
+      return { accepted: true, simulated: true };
+    }
+
     if (this.logCodes) {
       this.logger.warn(`[OTP CODE] to=${masked} code=${code}  ← OTP_LOG_CODES is enabled`);
     }

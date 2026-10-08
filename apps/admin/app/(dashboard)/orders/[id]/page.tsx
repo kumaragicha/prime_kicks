@@ -1,6 +1,7 @@
 'use client';
 
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { OrderAddressForm } from '@/components/order-address-form';
 import { OrderStatusActions, type OrderStatusAction } from '@/components/order-status-actions';
 import { ShipmentPanel } from '@/components/shipment-panel';
 import { useOrder, useUpdateOrderStatus } from '@/lib/hooks';
@@ -9,6 +10,7 @@ import { Badge } from '@prime-kicks/ui';
 import { formatCurrency } from '@prime-kicks/utils';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { formatOrderId } from '@prime-kicks/utils';
 
 const STATUS_COLORS: Record<string, 'neutral' | 'success' | 'warning' | 'danger'> = {
   PENDING: 'warning',
@@ -70,7 +72,7 @@ export default function OrderDetailPage() {
 
       <div className="flex justify-between items-start mb-6">
         <div>
-          <h1 className="text-2xl font-bold mb-2">Order {order.orderNumber}</h1>
+          <h1 className="text-2xl font-bold mb-2">Order {formatOrderId(order.orderNumber)}</h1>
           <div className="flex gap-3">
             <Badge tone={STATUS_COLORS[order.status] ?? 'neutral'}>{order.status}</Badge>
             {order.status !== ORDER_STATUS.REJECTED && (
@@ -149,18 +151,22 @@ export default function OrderDetailPage() {
           ) : (
             <div className="border border-neutral-200 rounded-lg p-5 bg-white">
               <h2 className="text-sm font-semibold text-neutral-900 mb-3">Shipping Address</h2>
-              <div className="text-sm text-neutral-700 space-y-1">
-                <p className="font-medium text-neutral-900">{order.address?.name}</p>
-                <p>{order.address?.line1}</p>
-                {order.address?.line2 && <p>{order.address.line2}</p>}
-                {order.address?.landmark && <p>{order.address.landmark}</p>}
-                <p>
-                  {order.address?.city}, {order.address?.state} - {order.address?.pincode}
-                </p>
-                <p className="pt-1">{order.address?.mobileNo}</p>
-                {order.address?.altMobileNo && <p>Alt: {order.address.altMobileNo}</p>}
-                {order.address?.email && <p>{order.address.email}</p>}
-              </div>
+              {!order.address?.line1 ? (
+                <OrderAddressForm orderId={order.id} />
+              ) : (
+                <div className="text-sm text-neutral-700 space-y-1">
+                  <p className="font-medium text-neutral-900">{order.address?.name}</p>
+                  <p>{order.address?.line1}</p>
+                  {order.address?.line2 && <p>{order.address.line2}</p>}
+                  {order.address?.landmark && <p>{order.address.landmark}</p>}
+                  <p>
+                    {order.address?.city}, {order.address?.state} - {order.address?.pincode}
+                  </p>
+                  <p className="pt-1">{order.address?.mobileNo}</p>
+                  {order.address?.altMobileNo && <p>Alt: {order.address.altMobileNo}</p>}
+                  {order.address?.email && <p>{order.address.email}</p>}
+                </div>
+              )}
             </div>
           )}
         </div>

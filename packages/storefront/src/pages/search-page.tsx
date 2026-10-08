@@ -32,6 +32,9 @@ export default function SearchPage() {
 }
 
 function SearchResults() {
+  // The reseller app lands directly on this page, so the "Product search" label
+  // and the default "Search products" heading are redundant there.
+  const hideEyebrow = process.env.NEXT_PUBLIC_STOREFRONT === 'reseller';
   const params = useSearchParams();
   const router = useRouter();
   const { data: filters } = useFilters();
@@ -197,20 +200,24 @@ function SearchResults() {
       <Announcement />
       <SiteHeader />
       <section className="pt-[70px] max-[800px]:pt-[20px]  px-[5.25vw] pb-[100px]">
-        <p className="m-0 mb-[11px] text-[10px] tracking-[.16em] uppercase font-bold">
-          Product search
-        </p>
-        <h1 className="text-[clamp(34px,5vw,62px)] tracking-[-.08em] leading-[.95] m-0 mb-[28px]">
-          {query ? (
-            <>
-              Results for <em className="font-[Georgia,serif] font-normal">“{query}”</em>
-            </>
-          ) : activeFilters.length > 0 ? (
-            'Filtered products'
-          ) : (
-            'Search products'
-          )}
-        </h1>
+        {!hideEyebrow && (
+          <p className="m-0 mb-[11px] text-[10px] tracking-[.16em] uppercase font-bold">
+            Product search
+          </p>
+        )}
+        {!(hideEyebrow && !query && activeFilters.length === 0) && (
+          <h1 className="text-[clamp(34px,5vw,62px)] tracking-[-.08em] leading-[.95] m-0 mb-[28px]">
+            {query ? (
+              <>
+                Results for <em className="font-[Georgia,serif] font-normal">“{query}”</em>
+              </>
+            ) : activeFilters.length > 0 ? (
+              'Filtered products'
+            ) : (
+              'Search products'
+            )}
+          </h1>
+        )}
         <form
           className="flex items-center gap-[10px] max-w-[620px] h-[54px] mb-[20px] rounded-full border border-line bg-white pl-[20px] pr-[7px] shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-[border-color,box-shadow] duration-200 focus-within:border-ink focus-within:shadow-[0_4px_16px_rgba(0,0,0,0.07)]"
           action="/search"

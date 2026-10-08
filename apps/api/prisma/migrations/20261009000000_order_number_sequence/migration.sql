@@ -1,0 +1,3 @@
+-- Sequential, purely numeric order numbers: 1, 2, 3, ...
+-- A sequence is used (not max()+1) so concurrent orders can never get the same number.
+CREATE SEQUENCE IF NOT EXISTS "order_number_seq" START WITH 1 INCREMENT BY 1 MINVALUE 1;

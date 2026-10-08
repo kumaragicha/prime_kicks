@@ -44,7 +44,7 @@ const STEPS = [
   {
     n: '01',
     t: 'Message us',
-    d: 'Ping us on WhatsApp with your order number and your unboxing video.',
+    d: 'Ping us on WhatsApp with your order ID and your unboxing video.',
   },
   { n: '02', t: 'Pack it up', d: 'Repack the pair in its original box with tags and accessories.' },
   {

@@ -256,6 +256,8 @@ export const api = {
       items: Array<{ productId: string; variantId: string; quantity: number }>;
       /** Pickup orders are collected in store — no shipping address needed. */
       isPickup?: boolean;
+      /** Reseller one-click checkout: no address collected, full reseller price. */
+      skipAddress?: boolean;
       address?: {
         name: string;
         email?: string;

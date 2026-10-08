@@ -9,6 +9,7 @@ import { controlClass, Pagination, selectClass } from '@/components/table-contro
 import { useDebouncedValue, useDeleteOrder, useOrders, useUpdateOrderStatus } from '@/lib/hooks';
 import { ORDER_STATUS, type AdminOrderRow } from '@prime-kicks/types';
 import { useState } from 'react';
+import { formatOrderId } from '@prime-kicks/utils';
 
 const PAGE_SIZE = 10;
 
@@ -61,7 +62,7 @@ export default function OrdersPage() {
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
         <input
           className={`${controlClass} w-full sm:min-w-56 sm:flex-1`}
-          placeholder="Search order number, customer…"
+          placeholder="Search order ID, customer…"
           value={search}
           onChange={(e) => resetTo(setSearch)(e.target.value)}
         />
@@ -130,7 +131,7 @@ export default function OrdersPage() {
         title="Delete order?"
         description={
           orderToDelete
-            ? `"${orderToDelete.orderNumber}" will be permanently deleted. This cannot be undone.`
+            ? `"${formatOrderId(orderToDelete.orderNumber)}" will be permanently deleted. This cannot be undone.`
             : ''
         }
         error={deleteOrder.error instanceof Error ? deleteOrder.error.message : undefined}
@@ -155,7 +156,7 @@ export default function OrdersPage() {
         title="Change order status?"
         description={
           statusChange
-            ? `"${statusChange.order.orderNumber}" — this will ${statusChange.action.effect}.`
+            ? `"${formatOrderId(statusChange.order.orderNumber)}" — this will ${statusChange.action.effect}.`
             : ''
         }
         error={updateStatus.error instanceof Error ? updateStatus.error.message : undefined}

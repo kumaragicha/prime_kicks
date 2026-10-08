@@ -13,6 +13,7 @@ import { type AdminOrderRow } from '@prime-kicks/types';
 import { formatCurrency } from '@prime-kicks/utils';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { formatOrderId } from '@prime-kicks/utils';
 
 /** Local YYYY-MM-DD for "today" — matches the picker's calendar keys. */
 function todayKey(): string {
@@ -173,7 +174,7 @@ export default function DashboardPage() {
         title="Change order status?"
         description={
           statusChange
-            ? `"${statusChange.order.orderNumber}" — this will ${statusChange.action.effect}.`
+            ? `"${formatOrderId(statusChange.order.orderNumber)}" — this will ${statusChange.action.effect}.`
             : ''
         }
         error={updateStatus.error instanceof Error ? updateStatus.error.message : undefined}
@@ -202,7 +203,7 @@ export default function DashboardPage() {
         title="Delete order?"
         description={
           orderToDelete
-            ? `"${orderToDelete.orderNumber}" will be permanently deleted. This cannot be undone.`
+            ? `"${formatOrderId(orderToDelete.orderNumber)}" will be permanently deleted. This cannot be undone.`
             : ''
         }
         error={deleteOrder.error instanceof Error ? deleteOrder.error.message : undefined}

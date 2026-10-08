@@ -381,6 +381,19 @@ export type PaymentPendingUser = {
   totalPending: number;
 };
 
+export type ParsedAddress = {
+  name: string;
+  email: string;
+  altMobileNo: string;
+  mobileNo: string;
+  line1: string;
+  line2: string;
+  landmark: string;
+  pincode: string;
+  city: string;
+  state: string;
+};
+
 export type PaymentPendingRow = {
   id: string;
   orderNumber: string;
@@ -557,6 +570,13 @@ export const api = {
   getOrder: (id: string) => request<Order>(`/orders/${id}`),
   updateOrderStatus: (id: string, status: string) =>
     request<Order>(`/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  parseAddress: (addressBlock: string) =>
+    request<{ parsed: ParsedAddress }>('/address/parse', {
+      method: 'POST',
+      body: JSON.stringify({ addressBlock }),
+    }),
+  addOrderAddress: (id: string, address: ParsedAddress) =>
+    request<Order>(`/orders/${id}/address`, { method: 'PATCH', body: JSON.stringify(address) }),
   approveOrder: (id: string, paymentStatus: PaymentStatus) =>
     request<Order>(`/orders/${id}/approve`, {
       method: 'POST',

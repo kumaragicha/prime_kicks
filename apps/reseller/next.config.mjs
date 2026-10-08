@@ -15,6 +15,9 @@ const securityHeaders = [
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Inlined into the client bundle at build time; lets shared storefront
+  // components tell they are running inside the reseller app.
+  env: { NEXT_PUBLIC_STOREFRONT: 'reseller' },
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? { exclude: ['error', 'warn'] } : false,
   },

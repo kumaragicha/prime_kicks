@@ -15,6 +15,7 @@ import {
 } from '@prime-kicks/types';
 import type {
   CreateOrderSchema,
+  OrderAddressSchema,
   OrderQuerySchema,
   UpdateOrderStatusSchema,
 } from '@prime-kicks/validation';
@@ -62,13 +63,6 @@ function ownerName(order: {
 
 type OrderWithDetails = Prisma.OrderGetPayload<{ include: typeof orderDetailInclude }>;
 
-/** Human-readable, collision-resistant order number: time + random suffix.
- *  A P2002 on the unique column triggers a regenerate-and-retry in create(). */
-function generateOrderNumber(): string {
-  const random = Math.random().toString(36).slice(2, 9).toUpperCase();
-  return `ORD-${Date.now()}-${random}`;
-}
-
 /** Map an order's line items to the API DTO shape. */
 function mapOrderItems(items: OrderWithDetails['items']) {
   return items.map((item) => ({
@@ -86,7 +80,7 @@ function mapOrderItems(items: OrderWithDetails['items']) {
 /** Map an order's flattened shipping-address columns to the nested DTO shape.
  *  Pickup orders have no shipping address — return null. */
 function mapOrderAddress(order: OrderWithDetails) {
-  if (order.isPickup) return null;
+  if (order.isPickup || !order.addressLine1) return null;
   return {
     name: order.addressName,
     email: order.addressEmail,
@@ -218,6 +212,16 @@ export class OrdersService {
     return cancelled;
   }
 
+  /**
+   * Next order number: 1, 2, 3, … from a Postgres sequence, so two orders placed
+   * at the same instant can never share a number. A rolled-back order leaves a
+   * gap, which is normal for sequences. Old orders keep their previous numbers.
+   */
+  private async nextOrderNumber(): Promise<string> {
+    const [row] = await this.prisma.$queryRaw<{ n: bigint }[]>`SELECT nextval('order_number_seq') AS n`;
+    return row!.n.toString();
+  }
+
   /** Create an order.
    *  Single endpoint for both web (customer) and admin (reseller) flows.
    *  When `input.resellerId` is present the order is treated as admin-created:
@@ -290,6 +294,10 @@ export class OrdersService {
       }
       ownerUserId = user.id;
       ownerRole = user.role;
+    }
+
+    if (input.skipAddress && ownerRole !== 'RESELLER' && ownerRole !== 'ADMIN') {
+      throw new BadRequestException('A shipping address is required.');
     }
 
     // Validate all items and compute pricing
@@ -456,7 +464,7 @@ export class OrdersService {
     const MAX_ORDER_NUMBER_ATTEMPTS = 5;
     let order: OrderWithDetails | undefined;
     for (let attempt = 1; ; attempt++) {
-      const orderNumber = generateOrderNumber();
+      const orderNumber = await this.nextOrderNumber();
       try {
         order = await this.prisma.$transaction(
           async (tx) => {
@@ -883,6 +891,63 @@ export class OrdersService {
     });
 
     return toOrderDto(order);
+  }
+
+  /**
+   * Attach a delivery address to an order that was placed without one (the
+   * reseller one-click checkout). Refuses pickup orders and orders that already
+   * have an address — this is for filling a gap, not editing history. Once saved,
+   * the order is pushed to Shipmozo in the background.
+   */
+  async addAddress(id: string, addr: OrderAddressSchema, auditedBy?: string) {
+    const order = await this.prisma.order.findUnique({ where: { id }, include: orderDetailInclude });
+    if (!order) throw new NotFoundException(`Order ${id} not found`);
+    if (order.isPickup) {
+      throw new BadRequestException('Pickup orders do not have a delivery address.');
+    }
+    if (order.addressLine1) {
+      throw new BadRequestException('This order already has an address.');
+    }
+
+    const updated = await this.prisma.order.update({
+      where: { id },
+      include: orderDetailInclude,
+      data: {
+        addressName: addr.name,
+        addressEmail: addr.email || null,
+        addressMobileNo: addr.mobileNo,
+        addressAltMobileNo: addr.altMobileNo || null,
+        addressLine1: addr.line1,
+        addressLine2: addr.line2 ?? '',
+        landmark: addr.landmark ?? '',
+        pincode: addr.pincode,
+        city: addr.city,
+        state: addr.state,
+      },
+    });
+
+    this.audit.log({
+      module: AuditModule.ORDERS,
+      event: AuditEvent.UPDATION,
+      moduleId: id,
+      subModule: 'address',
+      referenceNumber: order.orderNumber,
+      action: `Added delivery address to order ${order.orderNumber}`,
+      formData: { orderId: id, city: addr.city, state: addr.state, pincode: addr.pincode },
+      auditedBy,
+    });
+
+    // The order had nothing to ship to at checkout, so Shipmozo was skipped then.
+    // Now that it has an address, hand it to Shipmozo exactly as a normal order
+    // is — in the background, so the admin's save returns immediately. pushForOrder
+    // records any courier-side error on the order rather than throwing, and the
+    // order page refreshes while the push is in progress.
+    void this.shipment.pushForOrder(id, auditedBy).catch((error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Shipmozo push after address add threw for ${order.orderNumber}: ${message}`);
+    });
+
+    return toOrderDto(updated);
   }
 
   /**

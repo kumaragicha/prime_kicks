@@ -24,6 +24,7 @@ import {
   type AuditLogListParams,
   type HeroSlideInput,
   type OrderListParams,
+  type ParsedAddress,
   type ProductListParams,
   type UserListParams,
 } from './api';
@@ -313,6 +314,13 @@ export function useOrders(params?: OrderListParams) {
   });
 }
 
+/**
+ * When an admin last kicked off a Shipmozo push for an order from this browser
+ * (e.g. by adding a missing address). Lets useOrder poll for the result even on an
+ * order created long ago, where the "just created" window has already passed.
+ */
+const pushStartedAt = new Map<string, number>();
+
 export function useOrder(id: string) {
   return useQuery({
     queryKey: ['order', id],
@@ -326,8 +334,12 @@ export function useOrder(id: string) {
       if (!order || order.shipment.error) return false;
       const stillStarting = order.shipment.status === 'NOT_SHIPPED';
       const awaitingAssignment = order.shipment.status === 'PUSHED';
-      const isRecent = Date.now() - new Date(order.createdAt).getTime() < 2 * 60_000;
-      return (awaitingAssignment || (stillStarting && isRecent)) ? 2_000 : false;
+      const startedAt = Math.max(
+        new Date(order.createdAt).getTime(),
+        pushStartedAt.get(order.id) ?? 0,
+      );
+      const isRecent = Date.now() - startedAt < 2 * 60_000;
+      return awaitingAssignment || (stillStarting && isRecent) ? 2_000 : false;
     },
     refetchIntervalInBackground: false,
   });
@@ -366,6 +378,18 @@ export function useUpdateOrderStatus() {
     mutationFn: ({ id, status }: { id: string; status: string }) =>
       api.updateOrderStatus(id, status),
     onSuccess: () => invalidateOrderRelated(qc),
+  });
+}
+
+export function useAddOrderAddress() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, address }: { id: string; address: ParsedAddress }) =>
+      api.addOrderAddress(id, address),
+    onSuccess: (_order, { id }) => {
+      pushStartedAt.set(id, Date.now());
+      invalidateOrderRelated(qc);
+    },
   });
 }
 

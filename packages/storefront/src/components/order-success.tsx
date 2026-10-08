@@ -3,6 +3,7 @@
 import { Icon } from '@/components/icon';
 import Link from 'next/link';
 import type { CSSProperties } from 'react';
+import { formatOrderId } from '@prime-kicks/utils';
 
 const WHATSAPP_URL = 'https://api.whatsapp.com/send?phone=918866929090';
 
@@ -103,8 +104,8 @@ export function OrderSuccess({ orderNumber }: { orderNumber: string }) {
         <h1 className="m-0 mb-[14px] text-[clamp(38px,5.5vw,58px)] leading-[.82] tracking-[-.09em]">
           One last <em className="font-[Georgia,serif] font-normal">step.</em>
         </h1>
-        <p className="mb-[4px] text-[13px] text-[#666]">Your order number is</p>
-        <p className="text-[18px] font-bold tracking-[-.02em]">{orderNumber}</p>
+        <p className="mb-[4px] text-[13px] text-[#666]">Your order ID is</p>
+        <p className="text-[18px] font-bold tracking-[-.02em]">{formatOrderId(orderNumber)}</p>
         <p className="mx-auto mt-[14px] max-w-[400px] text-[13px] leading-[1.7] text-[#555]">
           Please take a screenshot of this order from{' '}
           <strong className="text-ink">My orders</strong> and share it with us on{' '}

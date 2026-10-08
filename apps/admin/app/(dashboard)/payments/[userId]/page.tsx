@@ -17,6 +17,7 @@ import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { formatOrderId } from '@prime-kicks/utils';
 
 /** Reject is never offered here — the payments view is only about settling. */
 const HIDE_ON_PAYMENTS = [ORDER_STATUS.REJECTED];
@@ -92,7 +93,7 @@ export default function PaymentDetailPage() {
                   className="cursor-pointer border-b border-neutral-100 last:border-0 hover:bg-neutral-50"
                   onClick={() => router.push(`/orders/${o.id}`)}
                 >
-                  <td className="px-4 py-3 font-medium text-neutral-900">{o.orderNumber}</td>
+                  <td className="px-4 py-3 font-medium text-neutral-900">{formatOrderId(o.orderNumber)}</td>
                   <td className="px-4 py-3">{o.itemsCount}</td>
                   <td className="px-4 py-3">
                     {new Date(o.createdAt).toLocaleDateString('en-IN', {
@@ -157,7 +158,7 @@ export default function PaymentDetailPage() {
         title="Change order status?"
         description={
           statusChange
-            ? `"${statusChange.order.orderNumber}" — this will ${statusChange.action.effect}.`
+            ? `"${formatOrderId(statusChange.order.orderNumber)}" — this will ${statusChange.action.effect}.`
             : ''
         }
         error={updateStatus.error instanceof Error ? updateStatus.error.message : undefined}
