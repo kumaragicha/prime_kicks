@@ -1,4 +1,4 @@
-import type { AuthResponse, Order, Paginated, Product } from '@prime-kicks/types';
+import type { AuthResponse, CouponPreview, Order, Paginated, Product } from '@prime-kicks/types';
 
 export type FilterOption = { id: string; name: string };
 export type StoreFilters = {
@@ -18,6 +18,21 @@ export type HeroSlide = {
 };
 
 export type StoreCart = { id: string; items: StoreCartItem[] };
+/** Checkout address fields (same as the checkout form). */
+export type SavedAddressInput = {
+  name: string;
+  email: string;
+  mobileNo: string;
+  altMobileNo: string;
+  line1: string;
+  line2: string;
+  landmark: string;
+  pincode: string;
+  city: string;
+  state: string;
+};
+/** A customer's saved checkout address. */
+export type SavedAddress = SavedAddressInput & { id: string };
 export type StoreCartItem = {
   id: string;
   quantity: number;
@@ -306,6 +321,8 @@ export const api = {
         city: string;
         state: string;
       };
+      /** Coupon code applied at checkout (customer, prepaid only). */
+      couponCode?: string;
     },
     // Idempotency key: a retried/double-submitted checkout with the same key
     // reuses the existing session instead of opening a duplicate.
@@ -339,8 +356,38 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  /**
+   * Validate/preview a coupon against the current cart before paying. Requires a
+   * signed-in customer; the API rejects reseller accounts and ineligible codes
+   * with a readable message. Returns the discount and discounted total.
+   */
+  validateCoupon: (body: {
+    code: string;
+    items: Array<{ productId: string; variantId: string; quantity: number }>;
+  }) =>
+    authenticatedRequest<CouponPreview>('/coupons/validate', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   /** Get the current user's order history (for the profile page). */
   getMyOrders: () => authenticatedRequest<Order[]>('/orders/my'),
+  /** The signed-in customer's saved checkout addresses (most recent first). */
+  listSavedAddresses: () => authenticatedRequest<SavedAddress[]>('/address/saved'),
+  /** Save a new address for future orders (the API de-duplicates). */
+  createSavedAddress: (address: SavedAddressInput) =>
+    authenticatedRequest<SavedAddress>('/address/saved', {
+      method: 'POST',
+      body: JSON.stringify(address),
+    }),
+  updateSavedAddress: (id: string, address: SavedAddressInput) =>
+    authenticatedRequest<SavedAddress>(`/address/saved/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(address),
+    }),
+  deleteSavedAddress: (id: string) =>
+    authenticatedRequest<{ id: string; deleted: boolean }>(`/address/saved/${id}`, {
+      method: 'DELETE',
+    }),
   parseAddress: (addressBlock: string) =>
     authenticatedRequest<{
       parsed: {

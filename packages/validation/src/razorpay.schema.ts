@@ -26,6 +26,9 @@ export const startRazorpayCheckoutSchema = z
     // is always ignored and an address is required regardless.
     isPickup: z.boolean().optional(),
     address: addressSchema.optional(),
+    // Optional coupon code (customer, prepaid only). Validated server-side; an
+    // invalid/ineligible code fails the checkout rather than being silently dropped.
+    couponCode: z.string().trim().max(32).optional(),
   })
   .superRefine((val, ctx) => {
     if (!val.isPickup && !val.address) {

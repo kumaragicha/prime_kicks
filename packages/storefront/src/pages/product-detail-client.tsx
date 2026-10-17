@@ -390,6 +390,12 @@ export default function ProductDetailClient({
               50% off
             </span>
           </p>
+          {process.env.NEXT_PUBLIC_STOREFRONT !== 'reseller' && (
+            <p className="m-0 mb-[4px] flex items-center gap-[6px] text-[11px] font-medium text-[#4b7d4b] [&_svg]:h-[13px] [&_svg]:w-[13px]">
+              <Icon name="check" />
+              Shipping included — no extra charges at checkout.
+            </p>
+          )}
 
           <div className="border-t border-line py-[20px]">
             <div className="flex justify-between text-[10px] uppercase tracking-[.08em]">
@@ -458,6 +464,51 @@ export default function ProductDetailClient({
                 'An authentic Prime Kicks selection, inspected for quality and ready for its next rotation.'}
             </p>
           </div>
+
+          {/* Purchase assurances — customer store only (resellers have their own terms). */}
+          {process.env.NEXT_PUBLIC_STOREFRONT !== 'reseller' && (
+            <ul className="m-0 mt-[24px] grid list-none gap-[14px] border-t border-line p-0 pt-[22px] [&_svg]:h-[20px] [&_svg]:w-[20px] [&_svg]:shrink-0">
+              <li className="flex items-center gap-[12px] text-[13px]">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M3 6h11v10H3zM14 9h4l3 3v4h-7" />
+                  <circle cx="7" cy="17.5" r="1.8" />
+                  <circle cx="17" cy="17.5" r="1.8" />
+                </svg>
+                <span>
+                  <b className="font-bold">Free delivery</b>
+                  <span className="text-[#777]"> — shipping included in the price</span>
+                </span>
+              </li>
+              <li className="flex items-center gap-[12px] text-[13px]">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M4 12a8 8 0 1 0 2.3-5.6" />
+                  <path d="M4 4v4h4" />
+                </svg>
+                <span>
+                  <b className="font-bold">2-day returns</b>{' '}
+                  <Link href="/refund-policy" className="text-accent underline-offset-2 hover:underline">
+                    View return policy ›
+                  </Link>
+                </span>
+              </li>
+              <li className="flex items-center gap-[12px] text-[13px]">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="5" y="11" width="14" height="9" rx="2" />
+                  <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+                  <circle cx="12" cy="15.5" r="1" />
+                </svg>
+                <b className="font-bold">Secure payment</b>
+              </li>
+              <li className="flex items-center gap-[12px] text-[13px]">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="2.5" y="6.5" width="19" height="11" rx="1.5" />
+                  <circle cx="12" cy="12" r="2.5" />
+                  <path d="M6 9.5v5M18 9.5v5" />
+                </svg>
+                <b className="font-bold">Cash on delivery</b>
+              </li>
+            </ul>
+          )}
           <div className="border-t border-line mt-[29px] pt-[20px]">
             <span className="text-[10px] uppercase tracking-[.09em] m-0 font-bold flex items-center gap-[7px] [&_svg]:w-[14px]">
               <Icon name="share" /> Share this pair

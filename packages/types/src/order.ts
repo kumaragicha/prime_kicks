@@ -89,6 +89,10 @@ export interface Order {
   items: OrderItem[];
   subtotal: number;
   shipping: number;
+  /** Coupon discount applied (whole rupees; 0 when none). */
+  discount: number;
+  /** Code of the coupon redeemed on this order, if any. */
+  couponCode: string | null;
   total: number;
   currency: 'INR';
   /** True when the customer will pick the order up in store (no shipment). */

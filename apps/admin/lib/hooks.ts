@@ -2,6 +2,8 @@
 
 import type { PaymentStatus } from '@prime-kicks/types';
 import type {
+  CouponQuerySchema,
+  CreateCouponSchema,
   CreateCreditCustomerSchema,
   CreateDimensionCombinationSchema,
   CreateDimensionSchema,
@@ -9,6 +11,7 @@ import type {
   CreateProductSchema,
   CreateSizeSchema,
   CreateSizeTypeSchema,
+  UpdateCouponSchema,
   UpdateCreditCustomerSchema,
   UpdateDimensionCombinationSchema,
   UpdateDimensionSchema,
@@ -636,4 +639,33 @@ export function useUndoOrder() {
     mutationFn: (id: string) => api.undoOrder(id),
     onSuccess: () => invalidateOrderRelated(qc),
   });
+}
+
+// ─── Coupons ─────────────────────────────────────────────────────────────────
+
+export function useCoupons(params?: Partial<CouponQuerySchema>) {
+  return useQuery({
+    queryKey: ['coupons', params ?? {}],
+    queryFn: () => api.listCoupons(params),
+  });
+}
+
+export function useCouponMutations() {
+  const qc = useQueryClient();
+  const refresh = () => qc.invalidateQueries({ queryKey: ['coupons'] });
+  return {
+    create: useMutation({
+      mutationFn: (body: CreateCouponSchema) => api.createCoupon(body),
+      onSuccess: refresh,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, body }: { id: string; body: UpdateCouponSchema }) =>
+        api.updateCoupon(id, body),
+      onSuccess: refresh,
+    }),
+    remove: useMutation({
+      mutationFn: (id: string) => api.deleteCoupon(id),
+      onSuccess: refresh,
+    }),
+  };
 }

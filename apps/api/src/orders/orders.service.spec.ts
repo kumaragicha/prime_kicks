@@ -23,7 +23,13 @@ function build(order: unknown) {
     },
   };
   const audit = { log: jest.fn() };
-  const service = new OrdersService(prisma as never, audit as never, shipment as never, {} as never);
+  const service = new OrdersService(
+    prisma as never,
+    audit as never,
+    shipment as never,
+    {} as never,
+    {} as never,
+  );
   return { service, prisma, audit, shipment };
 }
 

@@ -102,6 +102,7 @@ export class PaymentsService {
       items: input.items,
       isPickup: input.isPickup,
       address: input.address,
+      couponCode: input.couponCode,
     });
     const amount = priced.total * 100; // Razorpay wants paise; `total` is whole rupees
 
@@ -121,6 +122,7 @@ export class PaymentsService {
           itemsJson: input.items,
           addressJson: input.address ?? undefined,
           isPickup: input.isPickup ?? false,
+          couponCode: priced.couponCode ?? null,
           amount,
           currency: 'INR',
           status: RAZORPAY_PAYMENT_STATUS.PENDING,
@@ -313,6 +315,9 @@ export class PaymentsService {
           paymentStatus: 'PENDING',
           shippingStatus: 'PENDING',
           shipping: 0,
+          // Re-validated inside create() against the fresh subtotal; the Razorpay
+          // amount was already discounted by this same coupon at checkout start.
+          couponCode: session.couponCode ?? undefined,
         },
         undefined,
         'razorpay-confirm',

@@ -3,9 +3,10 @@
 import { Announcement } from '@/components/announcement';
 import { BlurImage } from '@/components/blur-image';
 import { Icon } from '@/components/icon';
+import { PaymentBadges } from '@/components/payment-badges';
 import { SiteFooter } from '@/components/site-footer';
 import { Toast } from '@/components/toast';
-import { ApiError, api, type StoreCart } from '@/lib/api';
+import { ApiError, api, type SavedAddress, type StoreCart } from '@/lib/api';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -110,12 +111,7 @@ function TermsCheckbox({
           Privacy Policy
         </Link>{' '}
         and{' '}
-        <Link
-          className="text-ink underline"
-          href="/refund-policy"
-          target="_blank"
-          rel="noreferrer"
-        >
+        <Link className="text-ink underline" href="/refund-policy" target="_blank" rel="noreferrer">
           Refund Policy
         </Link>
         .
@@ -147,6 +143,16 @@ export default function CartPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [step, setStep] = useState<1 | 2>(1);
   const [address, setAddress] = useState<AddressForm>(emptyAddress);
+  // Customer site: saved addresses offered as selectable cards at checkout.
+  const [saveAddressForFuture, setSaveAddressForFuture] = useState(true);
+  const [savedAddresses, setSavedAddresses] = useState<SavedAddress[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+  // 'list' = pick a saved card; 'form' = type a new address or edit a saved one.
+  const [addressMode, setAddressMode] = useState<'list' | 'form'>('form');
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+  const [addressMenuId, setAddressMenuId] = useState<string | null>(null);
+  const [savingAddress, setSavingAddress] = useState(false);
+  const savedAddressLoadedRef = useRef(false);
   const [errors, setErrors] = useState<Partial<Record<keyof AddressForm, string>>>({});
   const [errKey, setErrKey] = useState(0);
   const [placing, setPlacing] = useState(false);
@@ -160,9 +166,30 @@ export default function CartPage() {
   const payOnline = process.env.NEXT_PUBLIC_STOREFRONT !== 'reseller';
   // Per-unit amount stripped from reseller prices on pickup/label orders.
   const [shippingDeduction, setShippingDeduction] = useState(0);
+  // Coupon state (web customers only). `applied` holds the validated discount.
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number } | null>(
+    null,
+  );
+  const [couponError, setCouponError] = useState('');
+  const [couponLoading, setCouponLoading] = useState(false);
   // Idempotency key for the in-flight checkout; survives retries, cleared on success.
   const idempotencyKeyRef = useRef<string | null>(null);
   const isReseller = userRole === 'RESELLER';
+  // Coupons are web-storefront (prepaid) + customer only.
+  const couponsEnabled = payOnline && !isReseller;
+  // Customer prices already include shipping — show that on the customer store
+  // (resellers have their own wholesale terms).
+  const shippingIncluded = payOnline && !isReseller;
+  // Mobile bag step: Total + checkout live in a bar pinned to the bottom, so the
+  // in-flow actions block is empty there (unless a reseller needs the pickup toggle).
+  const stickyCheckout = step === 1 && !isPickup && !skipAddress;
+  const actionsEmptyOnMobile = stickyCheckout && !isReseller;
+  // The checkout (address) step is just the form + a pinned bar on every screen size.
+  const onCheckoutStep = step === 2;
+  const showStickyBar = Boolean(
+    cart && cart.items.length > 0 && (stickyCheckout || onCheckoutStep),
+  );
 
   function notify(text: string) {
     setToast(text);
@@ -237,7 +264,53 @@ export default function CartPage() {
       ) ?? 0
     );
   }, [cart, isReseller, isPickup, shippingDeduction]);
-  const total = subtotal - pickupDiscount;
+  const itemCount = cart?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
+  const couponDiscount = appliedCoupon?.discount ?? 0;
+  const total = subtotal - pickupDiscount - couponDiscount;
+  // Struck MRP convention matches the product page ("50% off" → MRP is 2× the
+  // selling price). Savings = everything off the MRP, including any coupon.
+  const originalTotal = subtotal * 2;
+  const savings = Math.max(0, originalTotal - total);
+
+  // Drop a stale coupon if the cart changes (quantities/items) — the customer
+  // re-applies against the new total, which the server re-validates anyway.
+  useEffect(() => {
+    if (appliedCoupon) {
+      setAppliedCoupon(null);
+      setCouponError('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subtotal]);
+
+  async function applyCoupon() {
+    const code = couponInput.trim();
+    if (!code || !cart || cart.items.length === 0) return;
+    setCouponLoading(true);
+    setCouponError('');
+    try {
+      const preview = await api.validateCoupon({
+        code,
+        items: cart.items.map((item) => ({
+          productId: item.product.id,
+          variantId: item.variant.id,
+          quantity: item.quantity,
+        })),
+      });
+      setAppliedCoupon({ code: preview.code, discount: preview.discount });
+      setCouponInput(preview.code);
+    } catch (error) {
+      setAppliedCoupon(null);
+      setCouponError(error instanceof Error ? error.message : 'That coupon could not be applied.');
+    } finally {
+      setCouponLoading(false);
+    }
+  }
+
+  function removeCoupon() {
+    setAppliedCoupon(null);
+    setCouponInput('');
+    setCouponError('');
+  }
 
   function updateField(field: keyof AddressForm, value: string) {
     let next = value;
@@ -307,6 +380,108 @@ export default function CartPage() {
     );
   }
 
+  // Customer site: on reaching the checkout step, load the saved addresses once.
+  // With any saved, show them as cards and pre-select the most recent one.
+  useEffect(() => {
+    if (step !== 2 || !payOnline || savedAddressLoadedRef.current) return;
+    savedAddressLoadedRef.current = true;
+    api
+      .listSavedAddresses()
+      .then((list) => {
+        setSavedAddresses(list);
+        const first = list[0];
+        if (!first) return;
+        const { id, ...fields } = first;
+        setAddressMode('list');
+        setSelectedAddressId(id);
+        setAddress({ ...emptyAddress, ...fields });
+      })
+      .catch(() => undefined);
+  }, [step, payOnline]);
+
+  // Close an open ⋮ menu on any outside click.
+  useEffect(() => {
+    if (!addressMenuId) return;
+    const close = () => setAddressMenuId(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [addressMenuId]);
+
+  function savedToForm(saved: SavedAddress): AddressForm {
+    const { id: _id, ...fields } = saved;
+    return { ...emptyAddress, ...fields };
+  }
+
+  function selectSavedAddress(saved: SavedAddress) {
+    setSelectedAddressId(saved.id);
+    setAddress(savedToForm(saved));
+    setErrors({});
+  }
+
+  function startNewAddress() {
+    setAddressMenuId(null);
+    setAddressMode('form');
+    setEditingAddressId(null);
+    setAddress(emptyAddress);
+    setErrors({});
+    setSaveAddressForFuture(true);
+  }
+
+  function startEditAddress(saved: SavedAddress) {
+    setAddressMenuId(null);
+    setAddressMode('form');
+    setEditingAddressId(saved.id);
+    setAddress(savedToForm(saved));
+    setErrors({});
+  }
+
+  function backToSavedAddresses() {
+    setAddressMode('list');
+    setEditingAddressId(null);
+    const current = savedAddresses.find((a) => a.id === selectedAddressId) ?? savedAddresses[0];
+    if (current) selectSavedAddress(current);
+  }
+
+  async function saveEditedAddress() {
+    if (!editingAddressId) return;
+    const fieldErrors = validateAddress(address);
+    const firstError = Object.values(fieldErrors)[0];
+    if (firstError) {
+      setErrors(fieldErrors);
+      setErrKey((k) => k + 1);
+      notify(firstError);
+      return;
+    }
+    setSavingAddress(true);
+    try {
+      const updated = await api.updateSavedAddress(editingAddressId, address);
+      setSavedAddresses((list) => [updated, ...list.filter((a) => a.id !== updated.id)]);
+      setEditingAddressId(null);
+      setAddressMode('list');
+      selectSavedAddress(updated);
+      notify('Address updated.');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Could not update the address.');
+    } finally {
+      setSavingAddress(false);
+    }
+  }
+
+  async function deleteSavedAddressCard(saved: SavedAddress) {
+    setAddressMenuId(null);
+    if (!window.confirm('Delete this saved address?')) return;
+    try {
+      await api.deleteSavedAddress(saved.id);
+      const next = savedAddresses.filter((a) => a.id !== saved.id);
+      setSavedAddresses(next);
+      const fallback = next[0];
+      if (!fallback) startNewAddress();
+      else if (selectedAddressId === saved.id) selectSavedAddress(fallback);
+    } catch {
+      notify('Could not delete the address. Please try again.');
+    }
+  }
+
   function goToShipping() {
     if (!cart || cart.items.length === 0) return;
     setStep(2);
@@ -315,8 +490,16 @@ export default function CartPage() {
 
   async function placeOrder() {
     if (!cart || cart.items.length === 0) return;
-    if (!agreedToTerms) {
-      notify('Please agree to the Terms & Conditions, Privacy Policy and Refund Policy to continue.');
+    // Terms are only collected on the one-tap pickup/reseller flow (step 1); the
+    // customer checkout step has no checkbox.
+    if ((isPickup || skipAddress) && !agreedToTerms) {
+      notify(
+        'Please agree to the Terms & Conditions, Privacy Policy and Refund Policy to continue.',
+      );
+      return;
+    }
+    if (editingAddressId) {
+      notify('Save your address changes first.');
       return;
     }
     // Pickup orders collect in store — no shipping address required, so skip validation.
@@ -329,6 +512,23 @@ export default function CartPage() {
       return;
     }
     setErrors({});
+    // Customer site: remember a newly typed address if they asked to. Never
+    // blocks checkout — a failed save just means it won't be offered next time.
+    if (
+      payOnline &&
+      !isPickup &&
+      !skipAddress &&
+      addressMode === 'form' &&
+      !editingAddressId &&
+      saveAddressForFuture
+    ) {
+      void api
+        .createSavedAddress(address)
+        .then((saved) =>
+          setSavedAddresses((list) => [saved, ...list.filter((a) => a.id !== saved.id)]),
+        )
+        .catch(() => undefined);
+    }
     setPlacing(true);
     // Reuse one idempotency key across retries of THIS checkout so a
     // double-submit (or a lost response/dismissed payment, for the web flow)
@@ -376,6 +576,7 @@ export default function CartPage() {
           })),
           isPickup,
           address: isPickup ? undefined : address,
+          couponCode: couponsEnabled ? (appliedCoupon?.code ?? undefined) : undefined,
         },
         idempotencyKeyRef.current,
       );
@@ -413,15 +614,19 @@ export default function CartPage() {
                 // An item sold out between checkout and payment — the
                 // customer was never left paying for something undeliverable.
                 notify(
-                  "Sorry — something in your bag sold out while you were paying. You have NOT been charged (a full refund was issued automatically).",
+                  'Sorry — something in your bag sold out while you were paying. You have NOT been charged (a full refund was issued automatically).',
                 );
                 router.replace('/');
               } else {
-                notify('Payment received, but confirming it failed — contact us if you were charged.');
+                notify(
+                  'Payment received, but confirming it failed — contact us if you were charged.',
+                );
                 router.replace('/orders');
               }
             } catch {
-              notify('Payment received, but confirming it failed — contact us if you were charged.');
+              notify(
+                'Payment received, but confirming it failed — contact us if you were charged.',
+              );
               router.replace('/orders');
             }
           })();
@@ -522,11 +727,30 @@ export default function CartPage() {
       )}
 
       {
-        <section className="max-w-[1280px] mx-auto pt-[68px] px-[5.25vw] pb-[100px] max-[760px]:pt-[43px] max-[760px]:px-[15px] max-[760px]:pb-[58px]">
+        <section
+          className={`max-w-[1280px] mx-auto pt-[68px] px-[5.25vw] pb-[100px] max-[760px]:pt-[43px] max-[760px]:px-[15px] ${
+            payOnline ? 'max-[760px]:pb-[28px]' : 'max-[760px]:pb-[58px]'
+          }`}
+        >
           <div className="flex items-end justify-between border-b border-line pb-[30px] mb-[30px] max-[760px]:block max-[760px]:pb-[24px] max-[760px]:mb-[22px]">
-            <h1 className="text-[clamp(46px,6vw,76px)] leading-[.8] tracking-[-.09em] m-0 max-[760px]:text-[53px] max-[760px]:mb-[25px]">
-              Your <em className="font-[Georgia,serif] font-normal">bag.</em>
-            </h1>
+            <div className={!payOnline || cart?.items.length === 0 ? 'max-[760px]:mb-[25px]' : ''}>
+              {payOnline && (
+                <Link
+                  href="/search"
+                  className="mb-[18px] inline-flex items-center gap-[6px] text-[10px] font-bold uppercase tracking-[.12em] text-[#777] no-underline transition-colors hover:text-ink [&_svg]:h-[13px] [&_svg]:w-[13px] max-[760px]:mb-[14px]"
+                >
+                  <Icon name="chevron-left" /> Continue shopping
+                </Link>
+              )}
+              <h1 className="text-[clamp(46px,6vw,76px)] leading-[.8] tracking-[-.09em] m-0 max-[760px]:text-[53px]">
+                Your <em className="font-[Georgia,serif] font-normal">bag.</em>
+              </h1>
+              {payOnline && cart && cart.items.length > 0 && (
+                <p className="m-0 mt-[14px] text-[11px] font-bold uppercase tracking-[.14em] text-[#777]">
+                  {itemCount} {itemCount === 1 ? 'item' : 'items'}
+                </p>
+              )}
+            </div>
             {cart?.items.length === 0 && (
               <Link
                 className="inline-flex items-center gap-[15px] bg-ink text-white rounded-[8px] px-[15px] py-[13px] no-underline uppercase tracking-[.08em] text-[10px] font-bold [&_svg]:w-[14px]"
@@ -556,108 +780,385 @@ export default function CartPage() {
               </Link>
             </div>
           ) : (
-            <div className="grid grid-cols-[minmax(0,1fr)_380px] gap-x-[60px] gap-y-[20px] items-start max-[760px]:grid-cols-1 max-[760px]:gap-y-[24px]">
+            <div
+              className={
+                onCheckoutStep
+                  ? 'grid max-w-[760px] grid-cols-1 gap-y-[20px] items-start'
+                  : 'grid grid-cols-[minmax(0,1fr)_380px] gap-x-[60px] gap-y-[20px] items-start max-[760px]:grid-cols-1 max-[760px]:gap-y-[24px]'
+              }
+            >
               <div
-                className={`grid gap-[14px] content-start col-start-1 row-start-1 row-span-2 max-[760px]:col-auto max-[760px]:row-auto max-[760px]:row-span-1 ${
-                  step === 2 ? 'max-[760px]:order-2' : 'max-[760px]:order-1'
+                className={`grid gap-[14px] content-start ${
+                  onCheckoutStep
+                    ? 'order-2'
+                    : 'col-start-1 row-start-1 row-span-2 max-[760px]:col-auto max-[760px]:row-auto max-[760px]:row-span-1 max-[760px]:order-1'
                 }`}
               >
                 {step === 1 ? (
-                  cart.items.map((item) => (
-                    <article
-                      className="relative grid grid-cols-[150px_1fr_auto] gap-[20px] p-[14px] border border-line rounded-[14px] bg-white shadow-[0_7px_18px_rgba(28,22,16,0.05)] animate-[enter_0.35s_both] max-[760px]:grid-cols-[100px_1fr_auto] max-[760px]:gap-[13px] max-[760px]:p-[10px]"
-                      key={item.id}
-                    >
-                      <Link
-                        className="aspect-[1/1.05] overflow-hidden rounded-[10px] bg-[#e9e7e1]"
-                        href={`/products/${item.product.id}`}
+                  cart.items.map((item) =>
+                    !payOnline ? (
+                      /* Reseller app: original item card, unchanged. */
+                      <article
+                        className="relative grid grid-cols-[150px_1fr_auto] gap-[20px] p-[14px] border border-line rounded-[14px] bg-white shadow-[0_7px_18px_rgba(28,22,16,0.05)] animate-[enter_0.35s_both] max-[760px]:grid-cols-[100px_1fr_auto] max-[760px]:gap-[13px] max-[760px]:p-[10px]"
+                        key={item.id}
                       >
-                        {item.product.photoUrls[0] ? (
-                          <BlurImage
-                            className="w-full h-full object-cover"
-                            src={item.product.photoUrls[0]}
-                            alt={item.product.name}
-                          />
-                        ) : (
-                          <span className="h-full grid place-items-center text-[11px] font-bold">
+                        <Link
+                          className="aspect-[1/1.05] overflow-hidden rounded-[10px] bg-[#e9e7e1]"
+                          href={`/products/${item.product.id}`}
+                        >
+                          {item.product.photoUrls[0] ? (
+                            <BlurImage
+                              className="w-full h-full object-cover"
+                              src={item.product.photoUrls[0]}
+                              alt={item.product.name}
+                            />
+                          ) : (
+                            <span className="h-full grid place-items-center text-[11px] font-bold">
+                              {item.product.brand}
+                            </span>
+                          )}
+                        </Link>
+                        <div className="grid content-start">
+                          <p className="mx-0 mt-[2px] mb-[6px] text-[9px] uppercase tracking-[.09em] font-bold">
                             {item.product.brand}
+                          </p>
+                          <h2 className="text-[20px] tracking-[-.055em] leading-none m-0 max-[760px]:text-[17px]">
+                            {item.product.name}
+                          </h2>
+                          <span className="text-[11px] text-[#777] my-[9px] max-[760px]:my-[7px]">
+                            Size {item.variant.size.label}
                           </span>
-                        )}
-                      </Link>
-                      <div className="grid content-start">
-                        <p className="mx-0 mt-[2px] mb-[6px] text-[9px] uppercase tracking-[.09em] font-bold">
-                          {item.product.brand}
-                        </p>
-                        <h2 className="text-[20px] tracking-[-.055em] leading-none m-0 max-[760px]:text-[17px]">
-                          {item.product.name}
-                        </h2>
-                        <span className="text-[11px] text-[#777] my-[9px] max-[760px]:my-[7px]">
-                          Size {item.variant.size.label}
-                        </span>
-                        <strong className="text-[14px]">
-                          {formatCurrency(item.product.price, item.product.currency)}
-                        </strong>
-                        <div className="flex items-center gap-[11px] mt-[17px] max-[760px]:mt-[12px] [&_svg]:w-[13px]">
-                          <button
-                            className="w-[28px] h-[28px] border border-line rounded-[7px] bg-white grid place-items-center disabled:opacity-40"
-                            disabled={pending === item.id || item.quantity === 1}
-                            onClick={() => update(item.id, item.quantity - 1)}
-                            aria-label="Decrease quantity"
-                          >
-                            <Icon name="minus" />
-                          </button>
-                          <b className="text-[12px] min-w-[10px] text-center">{item.quantity}</b>
-                          <button
-                            className="w-[28px] h-[28px] border border-line rounded-[7px] bg-white grid place-items-center disabled:opacity-40"
-                            disabled={pending === item.id}
-                            onClick={() => update(item.id, item.quantity + 1)}
-                            aria-label="Increase quantity"
-                          >
-                            <Icon name="plus" />
-                          </button>
+                          <strong className="text-[14px]">
+                            {formatCurrency(item.product.price, item.product.currency)}
+                          </strong>
+                          <div className="flex items-center gap-[11px] mt-[17px] max-[760px]:mt-[12px] [&_svg]:w-[13px]">
+                            <button
+                              className="w-[28px] h-[28px] border border-line rounded-[7px] bg-white grid place-items-center disabled:opacity-40"
+                              disabled={pending === item.id || item.quantity === 1}
+                              onClick={() => update(item.id, item.quantity - 1)}
+                              aria-label="Decrease quantity"
+                            >
+                              <Icon name="minus" />
+                            </button>
+                            <b className="text-[12px] min-w-[10px] text-center">{item.quantity}</b>
+                            <button
+                              className="w-[28px] h-[28px] border border-line rounded-[7px] bg-white grid place-items-center disabled:opacity-40"
+                              disabled={pending === item.id}
+                              onClick={() => update(item.id, item.quantity + 1)}
+                              aria-label="Increase quantity"
+                            >
+                              <Icon name="plus" />
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                      <button
-                        className="w-[31px] h-[31px] border-0 bg-transparent text-[#777] p-[7px] [&_svg]:w-[17px]"
-                        disabled={pending === item.id}
-                        onClick={() => remove(item.id)}
-                        aria-label={`Remove ${item.product.name}`}
+                        <button
+                          className="w-[31px] h-[31px] border-0 bg-transparent text-[#777] p-[7px] [&_svg]:w-[17px]"
+                          disabled={pending === item.id}
+                          onClick={() => remove(item.id)}
+                          aria-label={`Remove ${item.product.name}`}
+                        >
+                          <Icon name="trash" />
+                        </button>
+                      </article>
+                    ) : (
+                      <article
+                        className="relative overflow-hidden border border-line rounded-[14px] bg-white shadow-[0_7px_18px_rgba(28,22,16,0.05)] animate-[enter_0.35s_both]"
+                        key={item.id}
                       >
-                        <Icon name="trash" />
-                      </button>
-                    </article>
-                  ))
+                        <button
+                          className="absolute right-[8px] top-[8px] z-[1] grid h-[34px] w-[34px] place-items-center rounded-[8px] border-0 bg-transparent text-[#777] transition-colors hover:bg-[#f3f1ec] hover:text-ink disabled:opacity-40 [&_svg]:w-[17px]"
+                          disabled={pending === item.id}
+                          onClick={() => remove(item.id)}
+                          aria-label={`Remove ${item.product.name}`}
+                        >
+                          <Icon name="trash" />
+                        </button>
+
+                        {/* Top: image + details */}
+                        <div className="grid grid-cols-[112px_1fr] items-center gap-[18px] p-[16px] max-[760px]:grid-cols-[88px_1fr] max-[760px]:gap-[14px] max-[760px]:p-[14px]">
+                          <Link
+                            className="aspect-square overflow-hidden rounded-[10px] bg-[#e9e7e1]"
+                            href={`/products/${item.product.id}`}
+                          >
+                            {item.product.photoUrls[0] ? (
+                              <BlurImage
+                                className="w-full h-full object-cover"
+                                src={item.product.photoUrls[0]}
+                                alt={item.product.name}
+                              />
+                            ) : (
+                              <span className="h-full grid place-items-center text-[11px] font-bold">
+                                {item.product.brand}
+                              </span>
+                            )}
+                          </Link>
+                          <div className="grid min-w-0 content-center gap-[6px] pr-[30px]">
+                            <p className="m-0 text-[9px] uppercase tracking-[.1em] font-bold text-[#777]">
+                              {item.product.brand}
+                            </p>
+                            <Link
+                              href={`/products/${item.product.id}`}
+                              className="text-ink no-underline"
+                            >
+                              <h2 className="m-0 text-[18px] leading-[1.1] tracking-[-.045em] max-[760px]:text-[16px]">
+                                {item.product.name}
+                              </h2>
+                            </Link>
+                            <span className="text-[11px] text-[#777]">
+                              Size {item.variant.size.label}
+                            </span>
+                            <span className="mt-[2px] flex flex-wrap items-baseline gap-x-[8px] gap-y-[2px]">
+                              {/* Line total (price × quantity), like the order summary. */}
+                              <strong className="text-[16px] tracking-[-.02em]">
+                                {formatCurrency(
+                                  item.product.price * item.quantity,
+                                  item.product.currency,
+                                )}
+                              </strong>
+                              <s className="text-[12px] text-[#9a9a9a]">
+                                {formatCurrency(
+                                  item.product.price * 2 * item.quantity,
+                                  item.product.currency,
+                                )}
+                              </s>
+                              <span className="text-[10px] font-bold uppercase tracking-[.05em] text-accent">
+                                50% off
+                              </span>
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Bottom: quantity stepper on the right */}
+                        <div className="flex items-center justify-end border-t border-line px-[16px] py-[11px] max-[760px]:px-[14px]">
+                          <div className="inline-flex items-stretch overflow-hidden rounded-[8px] border border-line bg-white [&_svg]:w-[14px]">
+                            <button
+                              className="grid h-[36px] w-[38px] place-items-center border-0 bg-white transition-colors hover:bg-[#f3f1ec] disabled:opacity-35"
+                              disabled={pending === item.id || item.quantity === 1}
+                              onClick={() => update(item.id, item.quantity - 1)}
+                              aria-label="Decrease quantity"
+                            >
+                              <Icon name="minus" />
+                            </button>
+                            <span className="grid w-[44px] place-items-center border-x border-line text-[13px] font-bold">
+                              {item.quantity}
+                            </span>
+                            <button
+                              className="grid h-[36px] w-[38px] place-items-center border-0 bg-white transition-colors hover:bg-[#f3f1ec] disabled:opacity-35"
+                              disabled={pending === item.id}
+                              onClick={() => update(item.id, item.quantity + 1)}
+                              aria-label="Increase quantity"
+                            >
+                              <Icon name="plus" />
+                            </button>
+                          </div>
+                        </div>
+                      </article>
+                    ),
+                  )
                 ) : (
                   /* Step 2: shipping address replaces the product list */
                   <aside className="border border-line rounded-[14px] p-[26px] bg-white shadow-[0_7px_18px_rgba(28,22,16,0.05)] animate-[enter_0.35s_both] max-[760px]:p-[18px]">
-                    <p className="m-0 mb-[20px] text-[10px] tracking-[.16em] uppercase font-bold">
-                      Shipping address
-                    </p>
+                    {payOnline && addressMode === 'list' && savedAddresses.length > 0 ? (
+                      <>
+                        <div className="mb-[18px] flex items-center justify-between gap-[12px]">
+                          <p className="m-0 text-[10px] tracking-[.16em] uppercase font-bold">
+                            Saved addresses
+                          </p>
+                          <button
+                            type="button"
+                            onClick={startNewAddress}
+                            className="inline-flex items-center gap-[6px] rounded-[8px] border border-line bg-white px-[12px] py-[9px] text-[10px] font-bold uppercase tracking-[.08em] transition-colors hover:border-ink [&_svg]:w-[12px]"
+                          >
+                            <Icon name="plus" /> Add new address
+                          </button>
+                        </div>
+                        <div
+                          className="grid gap-[12px]"
+                          role="radiogroup"
+                          aria-label="Saved addresses"
+                        >
+                          {savedAddresses.map((saved) => {
+                            const selected = saved.id === selectedAddressId;
+                            return (
+                              <div
+                                key={saved.id}
+                                role="radio"
+                                aria-checked={selected}
+                                tabIndex={0}
+                                onClick={() => selectSavedAddress(saved)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault();
+                                    selectSavedAddress(saved);
+                                  }
+                                }}
+                                className={`relative cursor-pointer rounded-[12px] border p-[16px] pr-[48px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ink/20 ${
+                                  selected
+                                    ? 'border-ink bg-[#faf8f4]'
+                                    : 'border-line bg-white hover:border-[#bbb]'
+                                }`}
+                              >
+                                <div className="flex gap-[12px]">
+                                  <span
+                                    aria-hidden="true"
+                                    className={`mt-[2px] grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full border-2 ${
+                                      selected ? 'border-ink' : 'border-[#ccc]'
+                                    }`}
+                                  >
+                                    {selected && (
+                                      <span className="h-[8px] w-[8px] rounded-full bg-ink" />
+                                    )}
+                                  </span>
+                                  <div className="grid min-w-0 gap-[2px] text-[12.5px] leading-[1.5] text-[#555]">
+                                    <p className="m-0 text-[14px] font-bold text-ink">
+                                      {saved.name}
+                                    </p>
+                                    <p className="m-0">{saved.line1}</p>
+                                    {saved.line2 && <p className="m-0">{saved.line2}</p>}
+                                    {saved.landmark && <p className="m-0">{saved.landmark}</p>}
+                                    <p className="m-0">
+                                      {saved.city}, {saved.state} - {saved.pincode}
+                                    </p>
+                                    <p className="m-0 mt-[4px]">Phone: {saved.mobileNo}</p>
+                                    {saved.email && (
+                                      <p className="m-0 break-all">Email: {saved.email}</p>
+                                    )}
+                                  </div>
+                                </div>
 
-                    <div className="grid gap-[14px]">
-                      <div className="grid grid-cols-2 gap-[12px] items-start max-[480px]:grid-cols-1">
-                        {renderField('name', 'Full name *')}
-                        {renderField('email', 'Email (optional)', 'email')}
-                      </div>
-                      <div className="grid grid-cols-2 gap-[12px] items-start max-[480px]:grid-cols-1">
-                        {renderField('mobileNo', 'Mobile number *')}
-                        {renderField('altMobileNo', 'Alternative mobile (optional)')}
-                      </div>
-                      {renderField('line1', 'Address line 1 *')}
-                      {renderField('line2', 'Landmark')}
-                      <div className="grid grid-cols-3 gap-[12px] items-start max-[480px]:grid-cols-1">
-                        {renderField('pincode', 'Pincode *')}
-                        {renderField('city', 'City *')}
-                        {renderField('state', 'State *')}
-                      </div>
-                    </div>
+                                {/* ⋮ menu: edit / delete */}
+                                <div className="absolute right-[8px] top-[8px]">
+                                  <button
+                                    type="button"
+                                    aria-label={`Options for ${saved.name}'s address`}
+                                    aria-haspopup="menu"
+                                    aria-expanded={addressMenuId === saved.id}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setAddressMenuId((id) => (id === saved.id ? null : saved.id));
+                                    }}
+                                    className="grid h-[32px] w-[32px] place-items-center rounded-[8px] text-[#777] transition-colors hover:bg-[#f3f1ec] hover:text-ink"
+                                  >
+                                    <svg
+                                      viewBox="0 0 24 24"
+                                      fill="currentColor"
+                                      className="h-[16px] w-[16px]"
+                                      aria-hidden="true"
+                                    >
+                                      <circle cx="12" cy="5" r="1.7" />
+                                      <circle cx="12" cy="12" r="1.7" />
+                                      <circle cx="12" cy="19" r="1.7" />
+                                    </svg>
+                                  </button>
+                                  {addressMenuId === saved.id && (
+                                    <div
+                                      role="menu"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="absolute right-0 top-[36px] z-10 w-[132px] overflow-hidden rounded-[10px] border border-line bg-white shadow-[0_12px_24px_rgba(28,22,16,0.14)]"
+                                    >
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => startEditAddress(saved)}
+                                        className="block w-full px-[14px] py-[10px] text-left text-[12px] hover:bg-[#f5f2eb]"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        type="button"
+                                        role="menuitem"
+                                        onClick={() => void deleteSavedAddressCard(saved)}
+                                        className="block w-full px-[14px] py-[10px] text-left text-[12px] text-[#b3261e] hover:bg-[#fbeeee]"
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="mb-[20px] flex items-center justify-between gap-[12px]">
+                          <p className="m-0 text-[10px] tracking-[.16em] uppercase font-bold">
+                            {editingAddressId ? 'Edit address' : 'Shipping address'}
+                          </p>
+                          {payOnline && savedAddresses.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={backToSavedAddresses}
+                              className="text-[10px] font-bold uppercase tracking-[.08em] text-[#777] transition-colors hover:text-ink"
+                            >
+                              ‹ Saved addresses
+                            </button>
+                          )}
+                        </div>
+
+                        <div className="grid gap-[14px]">
+                          <div className="grid grid-cols-2 gap-[12px] items-start max-[480px]:grid-cols-1">
+                            {renderField('name', 'Full name *')}
+                            {renderField('email', 'Email (optional)', 'email')}
+                          </div>
+                          <div className="grid grid-cols-2 gap-[12px] items-start max-[480px]:grid-cols-1">
+                            {renderField('mobileNo', 'Mobile number *')}
+                            {renderField('altMobileNo', 'Alternative mobile (optional)')}
+                          </div>
+                          {renderField('line1', 'Address line 1 *')}
+                          {renderField('line2', 'Landmark')}
+                          <div className="grid grid-cols-3 gap-[12px] items-start max-[480px]:grid-cols-1">
+                            {renderField('pincode', 'Pincode *')}
+                            {renderField('city', 'City *')}
+                            {renderField('state', 'State *')}
+                          </div>
+                        </div>
+
+                        {payOnline && editingAddressId ? (
+                          <div className="mt-[18px] flex gap-[8px] border-t border-line pt-[16px]">
+                            <button
+                              type="button"
+                              onClick={() => void saveEditedAddress()}
+                              disabled={savingAddress}
+                              className="h-[42px] rounded-[8px] border-0 bg-ink px-[18px] text-[10px] font-bold uppercase tracking-[.08em] text-white transition-opacity disabled:opacity-50"
+                            >
+                              {savingAddress ? 'Saving…' : 'Save address'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={backToSavedAddresses}
+                              className="h-[42px] rounded-[8px] border border-line bg-white px-[18px] text-[10px] font-bold uppercase tracking-[.08em]"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          payOnline && (
+                            <label className="mt-[18px] flex cursor-pointer select-none items-center gap-[10px] border-t border-line pt-[16px]">
+                              <input
+                                type="checkbox"
+                                checked={saveAddressForFuture}
+                                onChange={(e) => setSaveAddressForFuture(e.target.checked)}
+                                className="h-[16px] w-[16px] accent-[#111]"
+                              />
+                              <span className="text-[12px] font-bold leading-snug">
+                                Save this address for future orders
+                              </span>
+                            </label>
+                          )
+                        )}
+                      </>
+                    )}
                   </aside>
                 )}
               </div>
 
               <div
-                className={`grid gap-[20px] content-start col-start-2 row-start-1 max-[760px]:col-auto max-[760px]:row-auto ${
-                  step === 2 ? 'max-[760px]:order-1' : 'max-[760px]:order-2'
+                className={`grid gap-[20px] content-start ${
+                  onCheckoutStep
+                    ? 'order-1'
+                    : 'col-start-2 row-start-1 max-[760px]:col-auto max-[760px]:row-auto max-[760px]:order-2'
                 }`}
               >
                 {/* Step indicator */}
@@ -671,55 +1172,196 @@ export default function CartPage() {
                       1 · Bag
                     </button>
                     <span className="flex-1 h-px bg-[#ddd6c9]" />
-                    <span className={step === 2 ? 'text-ink' : 'text-[#b3ab9c]'}>2 · Shipping</span>
+                    <span className={step === 2 ? 'text-ink' : 'text-[#b3ab9c]'}>2 · Checkout</span>
                   </div>
                 )}
 
-                {/* Order summary (both steps) */}
-                <aside className="border border-ink rounded-[14px] p-[23px] bg-[#f5f2eb] shadow-[0_12px_25px_rgba(28,22,16,0.08)]">
-                  <p className="m-0 mb-[22px] text-[10px] tracking-[.16em] uppercase font-bold">
-                    Order summary
-                  </p>
+                {/* Order summary (bag step only — checkout is just the address form) */}
+                {!onCheckoutStep && (
+                  <aside className="border border-ink rounded-[14px] p-[23px] bg-[#f5f2eb] shadow-[0_12px_25px_rgba(28,22,16,0.08)]">
+                    <p className="m-0 mb-[22px] text-[10px] tracking-[.16em] uppercase font-bold">
+                      Order summary
+                    </p>
 
-                  {/* Product names — shown on the shipping/address step */}
-                  {step === 2 && (
-                    <div className="grid gap-[12px] mb-[18px] pb-[18px]">
-                      {cart.items.map((item) => (
-                        <div className="flex justify-between gap-[16px] items-start" key={item.id}>
-                          <div className="grid gap-[2px]">
-                            <p className="m-0 text-[12px] font-bold leading-snug">
-                              {item.product.name}
-                            </p>
-                            <span className="text-[11px] text-[#777]">
-                              Size {item.variant.size.label} · Qty {item.quantity}
+                    {/* Coupon — web customers only (prepaid). */}
+                    {couponsEnabled && (
+                      <div className="mb-[18px] border-b border-b-[#d6d1c7] pb-[18px]">
+                        <p className="m-0 mb-[11px] text-[10px] tracking-[.16em] uppercase font-bold">
+                          Have a coupon?
+                        </p>
+                        {appliedCoupon ? (
+                          <div className="flex items-center justify-between gap-[12px] rounded-[8px] border border-[#111] bg-white px-[13px] py-[11px]">
+                            <span className="flex items-center gap-[9px] text-[12px] font-bold uppercase tracking-[.08em]">
+                              <span
+                                aria-hidden="true"
+                                className="grid h-[18px] w-[18px] place-items-center rounded-full bg-ink text-white [&_svg]:h-[11px] [&_svg]:w-[11px]"
+                              >
+                                <svg
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="3"
+                                >
+                                  <path
+                                    d="M5 13l4 4L19 7"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                  />
+                                </svg>
+                              </span>
+                              {appliedCoupon.code}
                             </span>
+                            <button
+                              type="button"
+                              onClick={removeCoupon}
+                              className="text-[10px] font-bold uppercase tracking-[.1em] text-[#999] transition-colors hover:text-ink"
+                            >
+                              Remove
+                            </button>
                           </div>
-                          <strong className="text-[12px] whitespace-nowrap">
-                            {formatCurrency(
-                              item.product.price * item.quantity,
-                              item.product.currency,
+                        ) : (
+                          <>
+                            <div className="flex gap-[8px]">
+                              <input
+                                value={couponInput}
+                                onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    void applyCoupon();
+                                  }
+                                }}
+                                placeholder="Enter coupon code"
+                                className="h-[44px] min-w-0 flex-1 rounded-[8px] border border-line bg-white px-[13px] text-[13px] uppercase tracking-[.06em] outline-none transition-colors placeholder:normal-case placeholder:tracking-normal placeholder:text-[#aaa] focus:border-ink"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => void applyCoupon()}
+                                disabled={couponLoading || !couponInput.trim()}
+                                className="inline-flex h-[44px] shrink-0 items-center justify-center rounded-[8px] bg-ink px-[20px] text-[10px] font-bold uppercase tracking-[.08em] text-white transition-opacity hover:bg-[#393834] disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                {couponLoading ? 'Checking…' : 'Apply'}
+                              </button>
+                            </div>
+                            {couponError && (
+                              <p className="m-0 mt-[9px] text-[11px] leading-[1.4] text-[#b3261e]">
+                                {couponError}
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {!payOnline ? (
+                      /* Reseller app: original summary, unchanged. */
+                      <>
+                        {pickupDiscount > 0 && (
+                          <div className="flex justify-between gap-[20px] mt-[7px] text-[12px] text-[#4b7d4b]">
+                            <span>Shipping deduction (pickup / label)</span>
+                            <span>−{formatCurrency(pickupDiscount)}</span>
+                          </div>
+                        )}
+                        <section className="flex justify-between gap-[20px] mt-[7px] border-t border-t-[#d6d1c7] pt-[18px] pb-[11px] text-[14px]">
+                          <span>Total</span>
+                          <strong className="text-[18px]">{formatCurrency(total)}</strong>
+                        </section>
+                      </>
+                    ) : (
+                      <>
+                        {/* Price breakdown: Subtotal → Tax → Delivery (then any discounts). */}
+                        <div className="grid gap-[12px] text-[13px] text-[#555]">
+                          <div className="flex justify-between gap-[20px]">
+                            <span>Subtotal</span>
+                            <span className="text-ink">{formatCurrency(subtotal)}</span>
+                          </div>
+                          <div className="flex justify-between gap-[20px]">
+                            <span>Tax</span>
+                            <span className="text-ink">{formatCurrency(0)}</span>
+                          </div>
+                          {shippingIncluded && (
+                            <div className="flex justify-between gap-[20px]">
+                              <span>Delivery</span>
+                              <span className="font-bold text-[#4b7d4b]">FREE</span>
+                            </div>
+                          )}
+                          {pickupDiscount > 0 && (
+                            <div className="flex justify-between gap-[20px] text-[#4b7d4b]">
+                              <span>Shipping deduction (pickup / label)</span>
+                              <span>−{formatCurrency(pickupDiscount)}</span>
+                            </div>
+                          )}
+                          {couponDiscount > 0 && appliedCoupon && (
+                            <div className="flex justify-between gap-[20px] text-[#4b7d4b]">
+                              <span>Coupon ({appliedCoupon.code})</span>
+                              <span>−{formatCurrency(couponDiscount)}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {shippingIncluded && savings > 0 && (
+                          <div className="mt-[16px] flex items-center justify-center gap-[8px] rounded-[10px] border border-[#cfe0cf] bg-[#f1f7f1] px-[14px] py-[11px] text-[12px] font-bold text-[#3f6b3f]">
+                            <span
+                              aria-hidden="true"
+                              className="grid h-[18px] w-[18px] place-items-center rounded-full bg-[#4b7d4b] text-white [&_svg]:h-[11px] [&_svg]:w-[11px]"
+                            >
+                              <svg
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="3"
+                              >
+                                <path
+                                  d="M5 13l4 4L19 7"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            </span>
+                            You&apos;re saving {formatCurrency(savings)} on this order
+                          </div>
+                        )}
+
+                        <section className="flex items-baseline justify-between gap-[20px] mt-[16px] border-t border-t-[#d6d1c7] pt-[18px] pb-[11px] text-[14px]">
+                          <span>Total</span>
+                          <strong className="text-[20px]">
+                            {formatCurrency(total)}
+                            {shippingIncluded && (
+                              <span className="ml-[8px] text-[10px] font-normal uppercase tracking-[.08em] text-[#8a8378]">
+                                incl. shipping
+                              </span>
                             )}
                           </strong>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                        </section>
 
-                  {pickupDiscount > 0 && (
-                    <div className="flex justify-between gap-[20px] mt-[7px] text-[12px] text-[#4b7d4b]">
-                      <span>Shipping deduction (pickup / label)</span>
-                      <span>−{formatCurrency(pickupDiscount)}</span>
-                    </div>
-                  )}
-                  <section className="flex justify-between gap-[20px] mt-[7px] border-t border-t-[#d6d1c7] pt-[18px] pb-[11px] text-[14px]">
-                    <span>Total</span>
-                    <strong className="text-[18px]">{formatCurrency(total)}</strong>
-                  </section>
-                </aside>
+                        {/* Trust row: secure-checkout line + accepted payment marks. */}
+                        <div className="mt-[14px] border-t border-t-[#e4ded3] pt-[16px]">
+                          <p className="m-0 mb-[12px] flex items-center justify-center gap-[7px] text-[11px] font-bold uppercase tracking-[.1em] text-[#6a6358] [&_svg]:h-[13px] [&_svg]:w-[13px]">
+                            <svg
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                            >
+                              <rect x="5" y="11" width="14" height="9" rx="2" />
+                              <path d="M8 11V8a4 4 0 0 1 8 0v3" strokeLinecap="round" />
+                            </svg>
+                            Guaranteed secure checkout
+                          </p>
+                          <PaymentBadges className="justify-center" />
+                        </div>
+                      </>
+                    )}
+                  </aside>
+                )}
               </div>
 
-              {/* Actions block — always below the summary on mobile */}
-              <div className="grid gap-[14px] content-start col-start-2 row-start-2 max-[760px]:col-auto max-[760px]:row-auto max-[760px]:order-3">
+              {/* Actions block — bag step only (checkout uses the pinned bar) */}
+              <div
+                className={`grid gap-[14px] content-start col-start-2 row-start-2 max-[760px]:col-auto max-[760px]:row-auto max-[760px]:order-3 ${
+                  onCheckoutStep ? 'hidden' : actionsEmptyOnMobile ? 'max-[760px]:hidden' : ''
+                }`}
+              >
                 {step === 1 ? (
                   /* Step 1: proceed to shipping (or straight to pickup for resellers) */
                   <>
@@ -758,61 +1400,83 @@ export default function CartPage() {
                       </>
                     ) : (
                       <button
-                        className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] [&_svg]:w-[14px]"
+                        className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] [&_svg]:w-[14px] max-[760px]:hidden"
                         onClick={goToShipping}
                       >
                         Continue to shipping <Icon name="arrow" />
                       </button>
                     )}
                   </>
-                ) : (
-                  <>
-                    {/* Address verification line */}
-                    <div className="border border-line rounded-[10px] p-[14px] bg-white">
-                      <p className="m-0 mb-[8px] text-[10px] uppercase tracking-[.12em] font-bold text-[#999]">
-                        Please verify your address & contact details before placing the order:
-                      </p>
-                    </div>
-
-                    <TermsCheckbox checked={agreedToTerms} onChange={setAgreedToTerms} />
-
-                    {/* Place order button */}
-                    <button
-                      type="button"
-                      className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] select-none transition-opacity duration-150 disabled:opacity-50 [&_svg]:w-[14px]"
-                      disabled={placing || !agreedToTerms}
-                      onClick={placeOrder}
-                    >
-                      {placing ? (
-                        <>
-                          <i className="w-[15px] h-[15px] border-2 border-white/30 border-t-white rounded-full animate-[spin_0.8s_linear_infinite]" />{' '}
-                          Placing order…
-                        </>
-                      ) : (
-                        <>
-                          <Icon name="bag" /> Place order
-                        </>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      className="w-full text-center text-[10px] uppercase tracking-[.1em] font-bold text-[#76552a]"
-                      onClick={() => setStep(1)}
-                    >
-                      ← Back to bag
-                    </button>
-                  </>
-                )}
+                ) : null}
               </div>
             </div>
           )}
         </section>
       }
 
+      {/* Total + primary action pinned to the bottom of the screen: on the bag
+          step (mobile only) it proceeds to checkout; on the checkout step (all
+          screen sizes) it opens payment. */}
+      {showStickyBar && (
+        <div
+          className={`fixed inset-x-0 bottom-0 z-40 border-t border-line bg-white pt-[12px] pb-[calc(12px+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(28,22,16,0.1)] ${
+            onCheckoutStep ? 'block' : 'hidden max-[760px]:block'
+          }`}
+        >
+          <div className="mx-auto flex w-full max-w-[1280px] items-center justify-between gap-[14px] px-[5.25vw] max-[760px]:px-[15px]">
+            <div className="leading-tight">
+              <p className="m-0 text-[9px] font-bold uppercase tracking-[.14em] text-[#999]">
+                Total
+              </p>
+              <strong className="text-[19px] tracking-[-.02em]">{formatCurrency(total)}</strong>
+              {savings > 0 && shippingIncluded && (
+                <p className="m-0 mt-[1px] text-[10px] font-bold text-[#4b7d4b]">
+                  You save {formatCurrency(savings)}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={onCheckoutStep ? placeOrder : goToShipping}
+              disabled={onCheckoutStep && placing}
+              className="flex h-[48px] max-w-[320px] flex-1 items-center justify-center gap-[9px] rounded-[10px] border-0 bg-ink text-[11px] font-bold uppercase tracking-[.08em] text-white transition-opacity disabled:opacity-60 max-[760px]:max-w-[230px] [&_svg]:h-[14px] [&_svg]:w-[14px]"
+            >
+              {onCheckoutStep && placing ? (
+                <>
+                  <i className="h-[15px] w-[15px] rounded-full border-2 border-white/30 border-t-white animate-[spin_0.8s_linear_infinite]" />
+                  Processing…
+                </>
+              ) : (
+                <>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    aria-hidden="true"
+                  >
+                    <rect x="5" y="11" width="14" height="9" rx="2" />
+                    <path d="M8 11V8a4 4 0 0 1 8 0v3" strokeLinecap="round" />
+                  </svg>
+                  {onCheckoutStep ? 'Continue to payment' : 'Proceed to checkout'}
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
       <Toast message={toast} visible={!!toast} />
 
       <SiteFooter />
+      {/* Clearance so the pinned checkout bar never covers the footer's last
+          line — painted in the footer's colour so it reads as part of it. */}
+      {showStickyBar && (
+        <div
+          aria-hidden="true"
+          className={`h-[88px] bg-[#111] ${onCheckoutStep ? 'block' : 'hidden max-[760px]:block'}`}
+        />
+      )}
     </main>
   );
 }

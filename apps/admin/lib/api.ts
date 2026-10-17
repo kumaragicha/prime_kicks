@@ -3,6 +3,7 @@ import type {
   AdminRazorpayPaymentRow,
   AdminUserRow,
   AuthResponse,
+  Coupon,
   CourierConfig,
   CreditCustomer,
   Dimension,
@@ -16,6 +17,8 @@ import type {
   SizeType,
 } from '@prime-kicks/types';
 import type {
+  CouponQuerySchema,
+  CreateCouponSchema,
   CreateCreditCustomerSchema,
   CreateDimensionCombinationSchema,
   CreateDimensionSchema,
@@ -24,6 +27,7 @@ import type {
   CreateSizeSchema,
   CreateSizeTypeSchema,
   LoginSchema,
+  UpdateCouponSchema,
   UpdateCreditCustomerSchema,
   UpdateDimensionCombinationSchema,
   UpdateDimensionSchema,
@@ -182,7 +186,18 @@ async function request<T>(path: string, init?: RequestInit, allowRetry = true): 
 async function extractMessage(res: Response): Promise<string> {
   const raw = await res.text();
   try {
-    const body = JSON.parse(raw) as { message?: string | string[] };
+    const body = JSON.parse(raw) as {
+      message?: string | string[];
+      errors?: { formErrors?: string[]; fieldErrors?: Record<string, string[]> };
+    };
+    // Zod validation failures carry the useful detail in `errors`, not the
+    // generic top-level "Validation failed" message — surface those first.
+    const fieldErrors = body.errors?.fieldErrors
+      ? Object.values(body.errors.fieldErrors).flat()
+      : [];
+    const details = [...(body.errors?.formErrors ?? []), ...fieldErrors].filter(Boolean);
+    if (details.length) return details.join(', ');
+
     const message = Array.isArray(body.message) ? body.message.join(', ') : body.message;
     if (message) return message;
   } catch {
@@ -519,6 +534,16 @@ export const api = {
   getHeroSlides: () => request<HeroSlide[]>('/hero/admin'),
   updateHeroSlides: (slides: HeroSlideInput[]) =>
     request<HeroSlide[]>('/hero', { method: 'PUT', body: JSON.stringify({ slides }) }),
+
+  // Coupons
+  listCoupons: (params?: Partial<CouponQuerySchema>) =>
+    request<Paginated<Coupon>>(`/coupons${toQuery(params)}`),
+  createCoupon: (body: CreateCouponSchema) =>
+    request<Coupon>('/coupons', { method: 'POST', body: JSON.stringify(body) }),
+  updateCoupon: (id: string, body: UpdateCouponSchema) =>
+    request<Coupon>(`/coupons/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+  deleteCoupon: (id: string) =>
+    request<{ id: string; deleted: boolean }>(`/coupons/${id}`, { method: 'DELETE' }),
 
   // Media uploads (→ Cloudflare R2, returns a public CDN URL)
   uploadImage: (file: File) => uploadFile<{ url: string }>('/uploads/image', file),

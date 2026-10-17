@@ -1,4 +1,5 @@
 export * from './api.js';
+export * from './coupon.js';
 export * from './courier-config.js';
 export * from './credit-customer.js';
 export * from './dimension.js';

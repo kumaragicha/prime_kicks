@@ -138,6 +138,17 @@ const NAV: Array<{ href: string; label: string; icon: ReactNode; adminOnly: bool
     ),
   },
   {
+    href: '/coupons',
+    label: 'Coupons',
+    adminOnly: true,
+    icon: (
+      <Icon>
+        <path d="M4 7h16a1 1 0 0 1 1 1v3a2 2 0 0 0 0 4v3a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-3a2 2 0 0 0 0-4V8a1 1 0 0 1 1-1z" />
+        <path d="M15 7v12" strokeDasharray="2 2" />
+      </Icon>
+    ),
+  },
+  {
     href: '/inventory',
     label: 'Inventory',
     adminOnly: true,

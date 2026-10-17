@@ -23,7 +23,7 @@ export const addressSchema = z.object({
     .min(10, 'Alternative mobile number must be at least 10 digits')
     .optional()
     .or(z.literal('')),
-  mobileNo: z.string().min(10, 'Mobile number is required'),
+  mobileNo: z.string().trim().min(10, 'Enter a valid mobile number (at least 10 digits)'),
   line1: z.string().min(1, 'Address line 1 is required'),
   line2: z.string().optional().default(''),
   landmark: z.string().optional().default(''),
@@ -62,6 +62,9 @@ export const createOrderSchema = z
     // address, keep full reseller pricing. The service only honours it for
     // RESELLER accounts.
     skipAddress: z.boolean().optional(),
+    // Coupon code (web customer prepaid orders only; ignored for reseller/credit/
+    // admin flows). Re-validated server-side at order creation.
+    couponCode: z.string().trim().max(32).optional(),
     address: addressSchema.optional(),
     // --- Admin-only fields (optional; when omitted the web/customer flow is used) ---
     resellerId: z.string().min(1, 'Select a reseller').optional(),

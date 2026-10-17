@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { RolesGuard } from './auth/guards/roles.guard';
 import { CartModule } from './cart/cart.module';
+import { CouponsModule } from './coupons/coupons.module';
 import { CourierConfigModule } from './courier-config/courier-config.module';
 import { CreditCustomersModule } from './credit-customers/credit-customers.module';
 import { DimensionsModule } from './dimensions/dimensions.module';
@@ -54,6 +55,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
     AddressModule,
     AnalyticsModule,
     HeroModule,
+    CouponsModule,
   ],
   controllers: [HealthController],
   providers: [

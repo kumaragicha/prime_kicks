@@ -22,6 +22,7 @@ import type {
 import { AuditEvent, AuditModule, Prisma, type UserRole } from '@prisma/client';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { buildCreatedAtRange } from '../common/date-range.util';
+import { CouponsService } from '../coupons/coupons.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
 import { ShipmentService } from '../shipmozo/shipment.service';
@@ -130,6 +131,8 @@ function toOrderDto(order: OrderWithDetails) {
     items: mapOrderItems(order.items),
     subtotal: order.subtotal,
     shipping: order.shipping,
+    discount: order.discount,
+    couponCode: order.couponCode,
     total: order.total,
     currency: order.currency,
     isPickup: order.isPickup,
@@ -149,6 +152,7 @@ export class OrdersService {
     private readonly audit: AuditLogService,
     private readonly shipment: ShipmentService,
     private readonly settings: SettingsService,
+    private readonly coupons: CouponsService,
   ) {}
 
   /** Guards against overlapping auto-cancel sweeps if one runs long. */
@@ -406,7 +410,27 @@ export class OrdersService {
     // Shipping charge is admin-controlled; a web customer can't set it (the
     // create endpoint is open, so gate it — web orders always default to 0).
     const shipping = isAdminCreated ? (input.shipping ?? 0) : 0;
-    const total = subtotal + shipping;
+
+    // Coupons apply ONLY to web customer prepaid orders — never reseller, credit
+    // or admin-created ones. Re-validated here (fresh) against the authoritative
+    // subtotal; an expired/exhausted code throws, which the Razorpay flow turns
+    // into a full refund (same as an unfulfillable cart).
+    let discount = 0;
+    let couponId: string | null = null;
+    let couponCode: string | null = null;
+    if (!isAdminCreated && prePaid && ownerRole === 'CUSTOMER' && input.couponCode?.trim()) {
+      const validated = await this.coupons.validateForCheckout(input.couponCode, {
+        userId: ownerUserId!,
+        role: ownerRole,
+        subtotal,
+        prepaid: true,
+      });
+      discount = validated.discount;
+      couponId = validated.couponId;
+      couponCode = validated.code;
+    }
+
+    const total = subtotal + shipping - discount;
 
     // Credit-customer orders are always BULK. Admins may set the order type
     // (reseller BULK/SINGLE); a web customer never can — force SINGLE so the
@@ -500,6 +524,15 @@ export class OrdersService {
               await tx.cartItem.deleteMany({ where: { cart: { userId } } });
             }
 
+            // Count the redemption against the coupon's usage limit, atomically
+            // with the order so a crash can't over- or under-count.
+            if (couponId) {
+              await tx.coupon.update({
+                where: { id: couponId },
+                data: { usedCount: { increment: 1 } },
+              });
+            }
+
             return tx.order.create({
               data: {
                 orderNumber,
@@ -512,7 +545,10 @@ export class OrdersService {
                 shippingStatus,
                 subtotal,
                 shipping,
+                discount,
                 total,
+                couponId,
+                couponCode,
                 isPickup: input.isPickup ?? false,
                 ...addressData,
                 items: {
@@ -625,7 +661,12 @@ export class OrdersService {
    */
   async priceCustomerCheckout(
     userId: string,
-    input: { items: CreateOrderSchema['items']; isPickup?: boolean; address?: OrderAddressSchema },
+    input: {
+      items: CreateOrderSchema['items'];
+      isPickup?: boolean;
+      address?: OrderAddressSchema;
+      couponCode?: string;
+    },
   ) {
     const user = await this.prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
@@ -695,8 +736,25 @@ export class OrdersService {
       (sum, item) => sum + item.unitPrice * item.quantity,
       0,
     );
+
+    // Apply a coupon (customer + prepaid only) so the Razorpay amount reflects
+    // the discount. validateForCheckout enforces customer-only eligibility, so a
+    // reseller who somehow sends a code gets a clear error rather than a discount.
+    let discount = 0;
+    let couponCode: string | undefined;
+    if (input.couponCode?.trim()) {
+      const validated = await this.coupons.validateForCheckout(input.couponCode, {
+        userId: user.id,
+        role: user.role,
+        subtotal,
+        prepaid: true,
+      });
+      discount = validated.discount;
+      couponCode = validated.code;
+    }
+
     // Web customer orders never carry a shipping charge (see `create()`).
-    return { itemsWithDetails, subtotal, total: subtotal };
+    return { itemsWithDetails, subtotal, discount, total: subtotal - discount, couponCode };
   }
 
   /** Get orders for the currently authenticated user (web profile). */

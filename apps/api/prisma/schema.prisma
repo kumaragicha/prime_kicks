@@ -34,6 +34,11 @@ enum OrderType {
   SINGLE
 }
 
+enum CouponType {
+  PERCENT // discountValue is a percentage (1–100)
+  FLAT // discountValue is a whole-rupee amount
+}
+
 enum UserRole {
   CUSTOMER
   RESELLER
@@ -118,6 +123,7 @@ model User {
   cart          Cart?
   passwordReset PasswordResetToken?
   refreshTokens RefreshToken[] // one row per active login session (multi-device)
+  savedAddresses SavedAddress[] // checkout addresses the customer chose to save
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -492,8 +498,17 @@ model Order {
   // Pricing
   subtotal Int
   shipping Int    @default(0)
+  // Coupon discount applied at checkout (whole rupees; 0 when none). total =
+  // subtotal + shipping - discount. Web customer (prepaid) orders only.
+  discount Int    @default(0)
   total    Int
   currency String @default("INR")
+
+  // Coupon redeemed on this order, if any. `couponCode` is a snapshot so the
+  // code still shows even if the coupon is later edited or deleted.
+  coupon     Coupon? @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  couponId   String?
+  couponCode String?
 
   // Fulfilment method: false (default) = ship to the address, true = customer picks up in store.
   isPickup Boolean @default(false)
@@ -550,6 +565,69 @@ model Order {
 // BEFORE any Order exists. No Order is created until payment is confirmed: an
 // abandoned/failed checkout leaves no order, no stock touched, cart untouched.
 // Web storefront only — reseller/credit orders never create one of these.
+/// A customer's saved checkout address ("Save this address for future orders").
+/// A customer can keep several and pick one at checkout.
+model SavedAddress {
+  id          String  @id @default(cuid())
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  name        String
+  email       String?
+  mobileNo    String
+  altMobileNo String?
+  line1       String
+  line2       String  @default("")
+  landmark    String  @default("")
+  pincode     String
+  city        String
+  state       String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Backs "my saved addresses" (most recently used first).
+  @@index([userId, updatedAt])
+}
+
+model Coupon {
+  id          String     @id @default(cuid())
+  // Stored uppercased + trimmed; customers type it case-insensitively.
+  code        String     @unique
+  description String     @default("")
+  type        CouponType @default(PERCENT)
+  // For PERCENT: 1–100. For FLAT: whole rupees.
+  value       Int
+  // PERCENT only: cap the rupee discount (null = uncapped). Ignored for FLAT.
+  maxDiscount Int?
+  // Minimum order subtotal (whole rupees) required to use the coupon.
+  minOrderValue Int @default(0)
+
+  // Eligibility. Both default true to match the launch coupon: customer-only,
+  // prepaid-only. Reseller/credit/admin orders never qualify while customerOnly.
+  customerOnly Boolean @default(true)
+  prepaidOnly  Boolean @default(true)
+
+  // Usage caps. `usageLimit` is the total redemptions across everyone (null =
+  // unlimited); `usedCount` is incremented as orders redeem it. `perUserLimit`
+  // caps redemptions per customer (null = unlimited), counted from Orders.
+  usageLimit   Int?
+  usedCount    Int  @default(0)
+  perUserLimit Int?
+
+  // Validity window (null = open-ended on that side).
+  validFrom  DateTime?
+  validUntil DateTime?
+
+  isActive Boolean @default(true)
+
+  orders Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
 model RazorpayCheckoutSession {
   id              String @id @default(cuid())
   user            User   @relation(fields: [userId], references: [id])
@@ -566,6 +644,9 @@ model RazorpayCheckoutSession {
   itemsJson   Json
   addressJson Json?
   isPickup    Boolean @default(false)
+  // Coupon code the customer applied, re-validated at confirmation time before
+  // the order is created (price/eligibility can move between start and pay).
+  couponCode  String?
 
   amount   Int // paise Razorpay was told to collect
   currency String @default("INR")

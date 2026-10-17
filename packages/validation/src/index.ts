@@ -1,3 +1,4 @@
+export * from './coupon.schema.js';
 export * from './credit-customer.schema.js';
 export * from './courier-config.schema.js';
 export * from './dimension.schema.js';
