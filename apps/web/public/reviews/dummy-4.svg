@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="640" viewBox="0 0 360 640">
+<rect width="360" height="640" fill="#efe7dc"/>
+<rect width="360" height="64" fill="#0b6156"/>
+<circle cx="34" cy="34" r="16" fill="#ffffff" opacity=".85"/>
+<rect x="60" y="24" width="110" height="9" rx="4" fill="#fff" opacity=".9"/>
+<rect x="60" y="40" width="64" height="7" rx="3" fill="#fff" opacity=".5"/>
+<rect x="101" y="84" width="243" height="58" rx="12" fill="#d9fdd3"/><rect x="113" y="110.0" width="211" height="6" rx="3" fill="#000" opacity=".07"/><rect x="124" y="156" width="220" height="58" rx="12" fill="#d9fdd3"/><rect x="136" y="182.0" width="170" height="6" rx="3" fill="#000" opacity=".07"/><rect x="16" y="228" width="159" height="72" rx="12" fill="#ffffff"/><rect x="28" y="261.0" width="126" height="6" rx="3" fill="#000" opacity=".07"/><rect x="130" y="310" width="214" height="46" rx="12" fill="#d9fdd3"/><rect x="142" y="330.0" width="176" height="6" rx="3" fill="#000" opacity=".07"/><rect x="16" y="366" width="163" height="46" rx="12" fill="#ffffff"/><rect x="28" y="386.0" width="121" height="6" rx="3" fill="#000" opacity=".07"/><rect x="136" y="422" width="208" height="58" rx="12" fill="#d9fdd3"/><rect x="148" y="448.0" width="148" height="6" rx="3" fill="#000" opacity=".07"/><rect x="156" y="494" width="188" height="34" rx="12" fill="#d9fdd3"/><rect x="168" y="508.0" width="129" height="6" rx="3" fill="#000" opacity=".07"/><rect x="16" y="542" width="143" height="72" rx="12" fill="#ffffff"/><rect x="28" y="575.0" width="89" height="6" rx="3" fill="#000" opacity=".07"/>
+<rect x="12" y="584" width="336" height="40" rx="20" fill="#fff"/>
+<text x="180.0" y="610" font-family="sans-serif" font-size="11" text-anchor="middle" fill="#9a958c" letter-spacing="1.5">DUMMY PLACEHOLDER 4</text>
+</svg>

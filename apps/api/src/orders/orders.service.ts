@@ -235,9 +235,16 @@ export class OrdersService {
     callerRole?: UserRole,
     auditedBy?: string,
     idempotencyKey?: string,
+    // Set ONLY by the Razorpay payment-confirmation flow (PaymentsService),
+    // never by the open `/orders` endpoint: the order is created already-paid
+    // (status/paymentStatus RECEIVED) instead of starting PENDING, because
+    // payment was already verified before this is called. Admin/reseller/
+    // credit orders never set this — isAdminCreated's own status logic below
+    // always takes precedence regardless.
+    prePaid = false,
   ) {
     this.logger.debug(
-      `[ORDER DEBUG] create START userId=${userId} callerRole=${callerRole ?? 'none'} resellerId=${input.resellerId ?? 'none'} items=${input.items.length} idem=${idempotencyKey ?? 'none'}`,
+      `[ORDER DEBUG] create START userId=${userId} callerRole=${callerRole ?? 'none'} resellerId=${input.resellerId ?? 'none'} items=${input.items.length} idem=${idempotencyKey ?? 'none'} prePaid=${prePaid}`,
     );
 
     // Idempotency fast path: a retried checkout (same Idempotency-Key) returns the
@@ -410,12 +417,16 @@ export class OrdersService {
         ? (input.orderType ?? ORDER_TYPE.SINGLE)
         : ORDER_TYPE.SINGLE;
 
-    // Admin-created orders are pre-approved; web orders start as PENDING.
+    // Admin-created orders are pre-approved; a prePaid web order (Razorpay
+    // already verified) is created already-received; any other web order
+    // starts as PENDING.
     const status = isAdminCreated
       ? input.paymentStatus === PAYMENT_STATUS.RECEIVED
         ? ORDER_STATUS.APPROVED_PAYMENT_RECEIVED
         : ORDER_STATUS.APPROVED_PAYMENT_PENDING
-      : ORDER_STATUS.PENDING;
+      : prePaid
+        ? ORDER_STATUS.APPROVED_PAYMENT_RECEIVED
+        : ORDER_STATUS.PENDING;
 
     // Payment status is DERIVED from the order status, never trusted from input:
     // the create endpoint is open to any authenticated user, so a web customer
@@ -600,6 +611,92 @@ export class OrdersService {
     }
 
     return dto;
+  }
+
+  /**
+   * Read-only pricing + validation for a plain web customer's cart, used by
+   * the Razorpay checkout-start flow to know the amount to charge BEFORE any
+   * Order exists. Never touches stock (that only happens atomically inside
+   * `create()`, at payment-confirmation time) — this is a courtesy check so
+   * an obviously-unfulfillable cart is rejected before the customer pays.
+   *
+   * Web customers only: always customer pricing, no reseller/credit/shipping
+   * logic (those flows never go through Razorpay — see `create()`).
+   */
+  async priceCustomerCheckout(
+    userId: string,
+    input: { items: CreateOrderSchema['items']; isPickup?: boolean; address?: OrderAddressSchema },
+  ) {
+    const user = await this.prisma.user.findFirst({
+      where: { id: userId, deletedAt: null },
+      select: { id: true, isActive: true, role: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.isActive) {
+      throw new BadRequestException('Your account is disabled. You cannot place orders.');
+    }
+
+    const isPickup = input.isPickup ?? false;
+    if (isPickup && user.role !== 'RESELLER' && user.role !== 'ADMIN') {
+      throw new BadRequestException('A shipping address is required.');
+    }
+    if (!isPickup && !input.address) {
+      throw new BadRequestException('A shipping address is required.');
+    }
+
+    if (input.items.length === 0) {
+      throw new BadRequestException('Your bag is empty.');
+    }
+
+    const mergedItems = Array.from(
+      input.items
+        .reduce((map, item) => {
+          const key = `${item.productId}::${item.variantId}`;
+          const existing = map.get(key);
+          if (existing) existing.quantity += item.quantity;
+          else map.set(key, { ...item });
+          return map;
+        }, new Map<string, (typeof input.items)[number]>())
+        .values(),
+    );
+
+    const variants = await this.prisma.productVariant.findMany({
+      where: { id: { in: mergedItems.map((i) => i.variantId) } },
+      include: {
+        product: { select: { id: true, name: true, sku: true, customerPrice: true } },
+        size: { select: { label: true } },
+      },
+    });
+    const variantById = new Map(variants.map((v) => [v.id, v]));
+
+    const itemsWithDetails = mergedItems.map((item) => {
+      const variant = variantById.get(item.variantId);
+      if (!variant || variant.productId !== item.productId) {
+        throw new NotFoundException(
+          `Variant ${item.variantId} not found for product ${item.productId}`,
+        );
+      }
+      if (variant.stock < item.quantity) {
+        throw new BadRequestException(
+          `Insufficient stock for "${variant.product.name}" size ${variant.size.label}. Available: ${variant.stock}, requested: ${item.quantity}`,
+        );
+      }
+      return {
+        productId: variant.product.id,
+        variantId: variant.id,
+        title: variant.product.name,
+        sizeLabel: variant.size.label,
+        unitPrice: variant.product.customerPrice,
+        quantity: item.quantity,
+      };
+    });
+
+    const subtotal = itemsWithDetails.reduce(
+      (sum, item) => sum + item.unitPrice * item.quantity,
+      0,
+    );
+    // Web customer orders never carry a shipping charge (see `create()`).
+    return { itemsWithDetails, subtotal, total: subtotal };
   }
 
   /** Get orders for the currently authenticated user (web profile). */

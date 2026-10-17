@@ -17,6 +17,7 @@ import { HeroModule } from './hero/hero.module';
 import { MailModule } from './mail/mail.module';
 import { MastersModule } from './masters/masters.module';
 import { OrdersModule } from './orders/orders.module';
+import { PaymentsModule } from './payments/payments.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ProductsModule } from './products/products.module';
 import { SettingsModule } from './settings/settings.module';
@@ -48,6 +49,7 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
     CourierConfigModule,
     CartModule,
     OrdersModule,
+    PaymentsModule,
     UploadsModule,
     AddressModule,
     AnalyticsModule,

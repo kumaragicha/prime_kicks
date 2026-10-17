@@ -1,6 +1,6 @@
 'use client';
 
-import type { AuthResponse } from '@prime-kicks/types';
+import type { AuthResponse, Product } from '@prime-kicks/types';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useState } from 'react';
 import { api, type HeroSlide } from './api';
@@ -162,11 +162,12 @@ export function useHeroSlides(initialData?: HeroSlide[]) {
   });
 }
 
-export function useProduct(id: string) {
+export function useProduct(id: string, initialData?: Product) {
   return useQuery({
     queryKey: ['product', id],
     queryFn: () => api.getProduct(id),
     enabled: Boolean(id),
+    initialData,
   });
 }
 

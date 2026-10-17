@@ -56,13 +56,17 @@ export function SiteFooter() {
     >
       <section className="pb-[65px] border-b border-[#444] flex flex-col items-start max-[800px]:pb-[47px]">
         <p className="m-0 mb-[11px] text-[10px] tracking-[.16em] uppercase font-bold text-accent">
-          Can&apos;t find your pair?
+          Looking for a specific pair or size?
         </p>
-        <h2 className="text-[clamp(43px,6vw,86px)] leading-[1] tracking-[-.09em] m-0 mb-[29px] max-[800px]:text-[49px]">
-          Tell us —
+        <h2 className="text-[clamp(43px,6vw,86px)] leading-[1] tracking-[-.09em] m-0 mb-[24px] max-[800px]:text-[49px] max-[800px]:mb-[18px]">
+          Request it —
           <br />
-          <em className="font-[Georgia,serif] font-normal">{`we'll find it.`}</em>
+          <em className="font-[Georgia,serif] font-normal">{`we'll make it happen.`}</em>
         </h2>
+        <p className="mb-[28px] max-w-[460px] text-[14px] leading-[1.7] text-[#bbb] max-[800px]:mb-[22px]">
+          Share the pair and size you need — we&apos;ll personally verify availability and confirm
+          with you, with nothing charged until then.
+        </p>
         <Link
           className="text-[#111] rounded-[8px] bg-accent no-underline py-[14px] px-[17px] text-[10px] uppercase tracking-[.09em] font-bold flex items-center gap-[12px] [&_svg]:w-[15px]"
           href="/contact"
@@ -102,20 +106,22 @@ export function SiteFooter() {
       </section> */}
 
       <div className="grid grid-cols-[1fr_1fr_1.7fr] gap-[30px] pt-[39px] px-0 pb-[53px] max-[800px]:grid-cols-2 max-[800px]:py-[31px] max-[800px]:px-0 max-[800px]:gap-x-[16px] max-[800px]:gap-y-[28px]">
-        <div className="grid content-start gap-[11px]">
-          <p className="text-[10px] uppercase tracking-[.1em] font-bold text-[#aaa] m-0 mb-[5px]">
-            Prime Kicks
-          </p>
-          <Link className="text-white text-[12px] no-underline hover:underline" href="/#new">
-            New arrivals
-          </Link>
-          <Link className="text-white text-[12px] no-underline hover:underline" href="/search">
-            Shop all
-          </Link>
-          <Link className="text-white text-[12px] no-underline hover:underline" href="/#brands">
-            Brands
-          </Link>
-        </div>
+        {process.env.NEXT_PUBLIC_STOREFRONT !== 'reseller' && (
+          <div className="grid content-start gap-[11px]">
+            <p className="text-[10px] uppercase tracking-[.1em] font-bold text-[#aaa] m-0 mb-[5px]">
+              Prime Kicks
+            </p>
+            <Link className="text-white text-[12px] no-underline hover:underline" href="/#new">
+              New arrivals
+            </Link>
+            <Link className="text-white text-[12px] no-underline hover:underline" href="/search">
+              Shop all
+            </Link>
+            <Link className="text-white text-[12px] no-underline hover:underline" href="/#brands">
+              Brands
+            </Link>
+          </div>
+        )}
         <div className="grid content-start gap-[11px]">
           <p className="text-[10px] uppercase tracking-[.1em] font-bold text-[#aaa] m-0 mb-[5px]">
             Help
@@ -128,6 +134,21 @@ export function SiteFooter() {
             href="/shipping-returns"
           >
             Shipping & returns
+          </Link>
+          <Link
+            className="text-white text-[12px] no-underline hover:underline"
+            href="/privacy-policy"
+          >
+            Privacy policy
+          </Link>
+          <Link className="text-white text-[12px] no-underline hover:underline" href="/terms">
+            Terms & conditions
+          </Link>
+          <Link
+            className="text-white text-[12px] no-underline hover:underline"
+            href="/refund-policy"
+          >
+            Refund policy
           </Link>
         </div>
         <div className="grid content-start gap-[11px] max-[800px]:col-[1/-1] max-[800px]:mt-[10px]">

@@ -26,6 +26,7 @@ import {
   type OrderListParams,
   type ParsedAddress,
   type ProductListParams,
+  type RazorpayPaymentListParams,
   type UserListParams,
 } from './api';
 
@@ -165,28 +166,6 @@ export function useSetUserActive() {
   });
 }
 
-export function useMakeReseller() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api.makeReseller(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['users'] });
-      qc.invalidateQueries({ queryKey: ['resellers'] });
-    },
-  });
-}
-
-export function useMakeCustomer() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (id: string) => api.makeCustomer(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['users'] });
-      qc.invalidateQueries({ queryKey: ['resellers'] });
-    },
-  });
-}
-
 export function useDeleteUser() {
   const qc = useQueryClient();
   return useMutation({
@@ -310,6 +289,14 @@ export function useOrders(params?: OrderListParams) {
   return useQuery({
     queryKey: ['orders', params ?? {}],
     queryFn: () => api.listOrders(params),
+    placeholderData: (prev) => prev,
+  });
+}
+
+export function useRazorpayPayments(params?: RazorpayPaymentListParams) {
+  return useQuery({
+    queryKey: ['razorpay-payments', params ?? {}],
+    queryFn: () => api.listRazorpayPayments(params),
     placeholderData: (prev) => prev,
   });
 }

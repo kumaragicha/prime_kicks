@@ -7,8 +7,6 @@ import { useAuth } from '@/lib/auth';
 import {
   useDebouncedValue,
   useDeleteUser,
-  useMakeCustomer,
-  useMakeReseller,
   useSetUserActive,
   useUsers,
 } from '@/lib/hooks';
@@ -16,7 +14,7 @@ import { useToast } from '@/lib/toast';
 import type { AdminUserRow } from '@prime-kicks/types';
 import { Badge, Button } from '@prime-kicks/ui';
 import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 
 const columnHelper = createColumnHelper<AdminUserRow>();
 const PAGE_SIZE = 10;
@@ -40,25 +38,6 @@ export default function UsersPage() {
   });
   const setActive = useSetUserActive();
   const deleteUser = useDeleteUser();
-  const makeReseller = useMakeReseller();
-  const handleMakeReseller = useCallback(
-    (id: string, name: string) =>
-      makeReseller.mutate(id, {
-        onSuccess: () => toast.success(`${name} is now a reseller`),
-        onError: (error: Error) => toast.error(error.message),
-      }),
-    [makeReseller, toast],
-  );
-  const makeCustomer = useMakeCustomer();
-  const handleMakeCustomer = useCallback(
-    (id: string, name: string) =>
-      makeCustomer.mutate(id, {
-        onSuccess: () => toast.success(`${name} reverted to customer`),
-        onError: (error: Error) => toast.error(error.message),
-      }),
-    [makeCustomer, toast],
-  );
-
   const resetTo =
     <T,>(setter: (v: T) => void) =>
     (v: T) => {
@@ -69,12 +48,7 @@ export default function UsersPage() {
   const columns = useMemo(
     () => [
       columnHelper.accessor('name', { header: 'Name' }),
-      columnHelper.accessor('email', { header: 'Email' }),
       columnHelper.accessor('mobileNo', { header: 'Mobile' }),
-      columnHelper.accessor((row) => `${row.city}, ${row.state}`, {
-        id: 'location',
-        header: 'Location',
-      }),
       columnHelper.accessor('role', {
         header: 'Role',
         cell: (c) => <Badge>{c.getValue()}</Badge>,
@@ -102,28 +76,6 @@ export default function UsersPage() {
           }
           return (
             <div className="flex justify-end gap-1 items-center">
-              {user.role === 'CUSTOMER' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 px-2 text-xs"
-                  disabled={makeReseller.isPending}
-                  onClick={() => handleMakeReseller(user.id, user.name)}
-                >
-                  Reseller
-                </Button>
-              )}
-              {user.role === 'RESELLER' && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 px-2 text-xs"
-                  disabled={makeCustomer.isPending}
-                  onClick={() => handleMakeCustomer(user.id, user.name)}
-                >
-                  Undo
-                </Button>
-              )}
               <Toggle
                 checked={user.isActive}
                 label={`${user.isActive ? 'Disable' : 'Enable'} ${user.name}`}
@@ -148,10 +100,6 @@ export default function UsersPage() {
       }),
     ],
     [
-      handleMakeReseller,
-      handleMakeCustomer,
-      makeReseller.isPending,
-      makeCustomer.isPending,
       setActive,
       toast,
       currentUser?.id,

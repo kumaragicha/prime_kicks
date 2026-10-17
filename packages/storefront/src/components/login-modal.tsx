@@ -59,6 +59,8 @@ export function LoginModal({
   const [isSuccess, setIsSuccess] = useState(false);
   const [resendNotice, setResendNotice] = useState('');
   const [cooldown, setCooldown] = useState(0);
+  // True while the server is making the visitor wait; drives a live countdown line.
+  const [waiting, setWaiting] = useState(false);
   const queryClient = useQueryClient();
   const codeInputRef = useRef<HTMLInputElement>(null);
 
@@ -69,6 +71,22 @@ export function LoginModal({
     const timer = setTimeout(() => setCooldown((s) => s - 1), 1000);
     return () => clearTimeout(timer);
   }, [cooldown]);
+
+  // The countdown line disappears by itself when the wait is over.
+  useEffect(() => {
+    if (cooldown <= 0) setWaiting(false);
+  }, [cooldown]);
+
+  /** A "please wait" response becomes a running countdown, not a fixed error. */
+  function showWait(err: unknown, fallback: string) {
+    if (err instanceof ApiError && err.retryAfterSeconds) {
+      setCooldown(err.retryAfterSeconds);
+      setWaiting(true);
+      setError('');
+      return;
+    }
+    setError(err instanceof ApiError ? err.message : fallback);
+  }
 
   // Focus the code box as soon as we land on step 2 — on mobile this also brings
   // up the numeric keypad without an extra tap.
@@ -86,9 +104,7 @@ export function LoginModal({
       setStep('code');
       setCooldown(RESEND_COOLDOWN_SECONDS);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : 'We couldn’t send a code. Please try again.',
-      );
+      showWait(err, 'We couldn’t send a code. Please try again.');
     } finally {
       setSubmitting(false);
     }
@@ -119,9 +135,7 @@ export function LoginModal({
       setCode('');
       setCooldown(RESEND_COOLDOWN_SECONDS);
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : 'Couldn’t resend the code. Please try again.',
-      );
+      showWait(err, 'Couldn’t resend the code. Please try again.');
     }
   }
 
@@ -269,6 +283,11 @@ export function LoginModal({
               />
             </label>
             {error && <p className="m-0 text-[11px] text-[#ae2222]">{error}</p>}
+            {waiting && cooldown > 0 && (
+              <p className="m-0 text-[11px] text-[#ae2222]">
+                Please wait {cooldown}s before requesting another code.
+              </p>
+            )}
             {resendNotice && <p className="m-0 text-[11px] text-accent">{resendNotice}</p>}
             <button
               type="submit"
@@ -342,12 +361,21 @@ export function LoginModal({
             />
           </label>
           {error && <p className="m-0 text-[11px] text-[#ae2222]">{error}</p>}
+          {waiting && cooldown > 0 && (
+            <p className="m-0 text-[11px] text-[#ae2222]">
+              Please wait {cooldown}s before requesting another code.
+            </p>
+          )}
           <button
             type="submit"
-            disabled={submitting || !isPlausibleMobile(mobileNo)}
+            disabled={submitting || !isPlausibleMobile(mobileNo) || (waiting && cooldown > 0)}
             className={submitClass}
           >
-            {submitting ? 'Sending code…' : 'Continue'}{' '}
+            {submitting
+              ? 'Sending code…'
+              : waiting && cooldown > 0
+                ? `Try again in ${cooldown}s`
+                : 'Continue'}{' '}
             <span className="ml-[23px] text-[16px]">→</span>
           </button>
         </form>

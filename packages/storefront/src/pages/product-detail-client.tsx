@@ -14,14 +14,21 @@ import { Toast } from '@/components/toast';
 import { ApiError, api } from '@/lib/api';
 import { downloadMedia, downloadMediaSequentially, mediaFilename } from '@/lib/download-media';
 import { notifyStore, useProduct, useSimilarProducts } from '@/lib/hooks';
+import type { Product } from '@prime-kicks/types';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
-export default function ProductDetailClient({ id }: { id: string }) {
+export default function ProductDetailClient({
+  id,
+  initialProduct,
+}: {
+  id: string;
+  initialProduct?: Product;
+}) {
   const router = useRouter();
-  const { data: product, isLoading, isError } = useProduct(id);
+  const { data: product, isLoading, isError } = useProduct(id, initialProduct);
   const { data: similar = [] } = useSimilarProducts(id);
   const [activeMedia, setActiveMedia] = useState(0);
   const [size, setSize] = useState('');

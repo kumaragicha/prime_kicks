@@ -18,11 +18,16 @@ function getInitials(name: string) {
 // sections ("New arrivals" and the brand row), while "Shop all" opens the full
 // catalogue — browsable without typing a query, and reachable from every page.
 // Shared by the desktop nav and the mobile menu.
-const navLinks = [
-  { href: '/search', label: 'Shop all' },
-  { href: '/#new', label: 'New arrivals' },
-  { href: '/#brands', label: 'Brands' },
-];
+// The reseller app is a wholesale catalogue that opens straight on search, so it
+// has no public browse links at all.
+const isReseller = process.env.NEXT_PUBLIC_STOREFRONT === 'reseller';
+const navLinks = isReseller
+  ? []
+  : [
+      { href: '/search', label: 'Shop all' },
+      { href: '/#new', label: 'New arrivals' },
+      { href: '/#brands', label: 'Brands' },
+    ];
 
 /** Canonical storefront header, shared across home, search, product, and profile pages. */
 export function SiteHeader() {
@@ -156,16 +161,18 @@ export function SiteHeader() {
           )}
         </nav>
         <div className="flex gap-[7px] items-center max-[800px]:gap-[1px]">
-          <button
-            className="relative border-0 bg-transparent w-[34px] h-[38px] p-[8px] text-ink max-[800px]:w-[35px] [&_svg]:w-[19px] [&_svg]:h-[19px]"
-            onClick={() => {
-              measureOverlayTop();
-              setSearchOpen(true);
-            }}
-            aria-label="Search"
-          >
-            <Icon name="search" />
-          </button>
+          {!isReseller && (
+            <button
+              className="relative border-0 bg-transparent w-[34px] h-[38px] p-[8px] text-ink max-[800px]:w-[35px] [&_svg]:w-[19px] [&_svg]:h-[19px]"
+              onClick={() => {
+                measureOverlayTop();
+                setSearchOpen(true);
+              }}
+              aria-label="Search"
+            >
+              <Icon name="search" />
+            </button>
+          )}
           <button
             className="relative border-0 bg-transparent w-[34px] h-[38px] p-[8px] text-ink max-[800px]:w-[35px] [&_svg]:w-[19px] [&_svg]:h-[19px]"
             onClick={goAccount}

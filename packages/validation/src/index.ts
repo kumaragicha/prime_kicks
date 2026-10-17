@@ -4,6 +4,7 @@ export * from './dimension.schema.js';
 export * from './hero.schema.js';
 export * from './order.schema.js';
 export * from './product.schema.js';
+export * from './razorpay.schema.js';
 export * from './settings.schema.js';
 export * from './size.schema.js';
 export * from './user.schema.js';

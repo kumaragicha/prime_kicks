@@ -127,6 +127,17 @@ const NAV: Array<{ href: string; label: string; icon: ReactNode; adminOnly: bool
     ),
   },
   {
+    href: '/razorpay-payments',
+    label: 'Razorpay Payments',
+    adminOnly: true,
+    icon: (
+      <Icon>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v10M9 10h4.5a2 2 0 0 1 0 4H9" />
+      </Icon>
+    ),
+  },
+  {
     href: '/inventory',
     label: 'Inventory',
     adminOnly: true,

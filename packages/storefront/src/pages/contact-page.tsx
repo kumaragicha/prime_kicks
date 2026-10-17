@@ -4,6 +4,7 @@ import { Announcement } from '@/components/announcement';
 import { Icon } from '@/components/icon';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
+import { business } from '@/lib/business';
 
 const WHATSAPP_URL = 'https://api.whatsapp.com/send?phone=918866929090';
 
@@ -56,6 +57,18 @@ export default function ContactPage() {
                 </p>
               </div>
             ))}
+          </div>
+
+          {/* Legal business details — see packages/storefront/src/lib/business.ts */}
+          <div className="mt-[34px] max-w-[500px] border-t border-line pt-[20px] grid gap-[4px] text-[12.5px] leading-[1.65] text-[#666]">
+            <p className="m-0 font-bold text-ink">{business.name}</p>
+            <p className="m-0">{business.address}</p>
+            <p className="m-0">
+              Support:{' '}
+              <a className="text-[#666] hover:text-accent" href={`mailto:${business.email}`}>
+                {business.email}
+              </a>
+            </p>
           </div>
         </div>
 

@@ -8,5 +8,8 @@ import { OrdersService } from './orders.service';
   imports: [ShipmozoModule, SettingsModule],
   controllers: [OrdersController],
   providers: [OrdersService],
+  // PaymentsModule reuses approve() to confirm a verified Razorpay payment —
+  // the same transition an admin triggers manually for a COD order.
+  exports: [OrdersService],
 })
 export class OrdersModule {}

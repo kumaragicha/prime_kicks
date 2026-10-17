@@ -11,6 +11,61 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+// Razorpay Checkout's own global, injected by the script we load lazily below.
+// Only the handful of fields this page actually uses are typed.
+interface RazorpayCheckoutOptions {
+  key: string;
+  amount: number;
+  currency: string;
+  name: string;
+  description?: string;
+  order_id: string;
+  /**
+   * Where Razorpay form-POSTs the result when a payment method forces the
+   * browser to leave this page entirely (e.g. a bank's own 3-D Secure/OTP
+   * page) — the in-page `handler` below never gets a chance to fire there,
+   * since that JS context is gone. See POST /payments/razorpay/callback.
+   */
+  callback_url?: string;
+  /** Required alongside callback_url, or Razorpay ignores it and stays in-page. */
+  redirect?: boolean;
+  prefill?: { name?: string; email?: string; contact?: string };
+  theme?: { color?: string };
+  handler: (response: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) => void;
+  modal?: { ondismiss?: () => void };
+}
+declare global {
+  interface Window {
+    Razorpay?: new (options: RazorpayCheckoutOptions) => { open: () => void };
+  }
+}
+
+const RAZORPAY_CHECKOUT_SRC = 'https://checkout.razorpay.com/v1/checkout.js';
+let razorpayScriptPromise: Promise<boolean> | null = null;
+
+/** Loads Razorpay's Checkout script once and caches the (shared) promise. */
+function loadRazorpayScript(): Promise<boolean> {
+  if (typeof window === 'undefined') return Promise.resolve(false);
+  if (window.Razorpay) return Promise.resolve(true);
+  if (!razorpayScriptPromise) {
+    razorpayScriptPromise = new Promise((resolve) => {
+      const script = document.createElement('script');
+      script.src = RAZORPAY_CHECKOUT_SRC;
+      script.onload = () => resolve(true);
+      script.onerror = () => {
+        razorpayScriptPromise = null; // allow a retry on the next attempt
+        resolve(false);
+      };
+      document.body.appendChild(script);
+    });
+  }
+  return razorpayScriptPromise;
+}
+
 type AddressForm = {
   name: string;
   email: string;
@@ -23,6 +78,51 @@ type AddressForm = {
   city: string;
   state: string;
 };
+
+/** Checkout consent checkbox — must be ticked before an order can be placed. */
+function TermsCheckbox({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex items-start gap-[10px] border border-line rounded-[10px] p-[14px] bg-white cursor-pointer select-none">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="mt-[2px] w-[16px] h-[16px] shrink-0 accent-[#111]"
+      />
+      <span className="text-[11.5px] leading-[1.5] text-[#555]">
+        I agree to the{' '}
+        <Link className="text-ink underline" href="/terms" target="_blank" rel="noreferrer">
+          Terms &amp; Conditions
+        </Link>
+        ,{' '}
+        <Link
+          className="text-ink underline"
+          href="/privacy-policy"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Privacy Policy
+        </Link>{' '}
+        and{' '}
+        <Link
+          className="text-ink underline"
+          href="/refund-policy"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Refund Policy
+        </Link>
+        .
+      </span>
+    </label>
+  );
+}
 
 const emptyAddress: AddressForm = {
   name: '',
@@ -50,12 +150,14 @@ export default function CartPage() {
   const [errors, setErrors] = useState<Partial<Record<keyof AddressForm, string>>>({});
   const [errKey, setErrKey] = useState(0);
   const [placing, setPlacing] = useState(false);
-  const [addressBlock, setAddressBlock] = useState('');
-  const [parsing, setParsing] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isPickup, setIsPickup] = useState(false);
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   // The reseller app has no address step — one tap places the order.
   const skipAddress = process.env.NEXT_PUBLIC_STOREFRONT === 'reseller';
+  // Online prepayment is web-only — reseller/credit orders keep today's
+  // admin-confirms-payment-manually flow, completely untouched.
+  const payOnline = process.env.NEXT_PUBLIC_STOREFRONT !== 'reseller';
   // Per-unit amount stripped from reseller prices on pickup/label orders.
   const [shippingDeduction, setShippingDeduction] = useState(0);
   // Idempotency key for the in-flight checkout; survives retries, cleared on success.
@@ -211,39 +313,12 @@ export default function CartPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
-  async function parseAddressBlock() {
-    if (!addressBlock.trim()) {
-      notify('Please paste an address block first.');
-      return;
-    }
-    setParsing(true);
-    try {
-      const result = await api.parseAddress(addressBlock);
-      const parsed = result.parsed;
-      setAddress((prev) => ({
-        ...prev,
-        name: parsed.name || prev.name,
-        email: parsed.email || prev.email,
-        mobileNo: parsed.mobileNo || prev.mobileNo,
-        altMobileNo: parsed.altMobileNo || prev.altMobileNo,
-        line1: parsed.line1 || prev.line1,
-        // Landmark is folded into line 2 by the parser (Shipmozo has no landmark field).
-        line2: parsed.line2 || prev.line2,
-        pincode: parsed.pincode || prev.pincode,
-        city: parsed.city || prev.city,
-        state: parsed.state || prev.state,
-      }));
-      notify('Address parsed successfully!');
-    } catch (error) {
-      if (error instanceof ApiError) notify(error.message);
-      else notify('Failed to parse address. Please try again.');
-    } finally {
-      setParsing(false);
-    }
-  }
-
   async function placeOrder() {
     if (!cart || cart.items.length === 0) return;
+    if (!agreedToTerms) {
+      notify('Please agree to the Terms & Conditions, Privacy Policy and Refund Policy to continue.');
+      return;
+    }
     // Pickup orders collect in store — no shipping address required, so skip validation.
     const fieldErrors = isPickup || skipAddress ? {} : validateAddress(address);
     const firstError = Object.values(fieldErrors)[0];
@@ -256,8 +331,10 @@ export default function CartPage() {
     setErrors({});
     setPlacing(true);
     // Reuse one idempotency key across retries of THIS checkout so a
-    // double-submit (or a lost response) can't create a second order; it's
-    // cleared on success so the next checkout gets a fresh key.
+    // double-submit (or a lost response/dismissed payment, for the web flow)
+    // can't create a second order or open a second Razorpay session. Web:
+    // cleared only once payment is actually confirmed. Reseller: cleared
+    // right after the order is created, same as always.
     if (!idempotencyKeyRef.current) {
       idempotencyKeyRef.current =
         typeof crypto !== 'undefined' && crypto.randomUUID
@@ -265,7 +342,32 @@ export default function CartPage() {
           : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     }
     try {
-      const result = await api.createOrder(
+      if (!payOnline) {
+        // Reseller/credit: fully unchanged — order is created immediately,
+        // admin confirms payment manually, same as today.
+        const result = await api.createOrder(
+          {
+            items: cart.items.map((item) => ({
+              productId: item.product.id,
+              variantId: item.variant.id,
+              quantity: item.quantity,
+            })),
+            isPickup,
+            skipAddress: skipAddress || undefined,
+            address: isPickup || skipAddress ? undefined : address,
+          },
+          idempotencyKeyRef.current,
+        );
+        idempotencyKeyRef.current = null; // order placed — retire this key
+        router.replace(`/order-confirmed?order=${encodeURIComponent(result.orderNumber)}`);
+        return;
+      }
+
+      // Web: NO order is created yet — only a Razorpay checkout session for
+      // the cart as it stands right now. Nothing is written to the database
+      // until payment is confirmed; an abandoned/failed payment here leaves
+      // no order, no stock touched, and the cart exactly as it was.
+      const session = await api.startRazorpayCheckout(
         {
           items: cart.items.map((item) => ({
             productId: item.product.id,
@@ -273,15 +375,65 @@ export default function CartPage() {
             quantity: item.quantity,
           })),
           isPickup,
-          skipAddress: skipAddress || undefined,
-          address: isPickup || skipAddress ? undefined : address,
+          address: isPickup ? undefined : address,
         },
         idempotencyKeyRef.current,
       );
-      idempotencyKeyRef.current = null; // order placed — retire this key
-      // Redirect to a dedicated confirmation route so the success screen has its
-      // own URL — a refresh keeps showing it instead of falling back to the cart.
-      router.replace(`/order-confirmed?order=${encodeURIComponent(result.orderNumber)}`);
+
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded || !window.Razorpay) {
+        notify('Could not load the payment gateway. Please try again.');
+        return; // nothing was created — cart and bag are untouched
+      }
+
+      const checkout = new window.Razorpay({
+        key: session.keyId,
+        amount: session.amount,
+        currency: session.currency,
+        name: 'Prime Kicks',
+        description: 'Prime Kicks order',
+        order_id: session.razorpayOrderId,
+        callback_url: `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api'}/payments/razorpay/callback`,
+        prefill: isPickup
+          ? undefined
+          : { name: address.name, email: address.email || undefined, contact: address.mobileNo },
+        theme: { color: '#111111' },
+        handler: (response) => {
+          void (async () => {
+            try {
+              const result = await api.verifyRazorpayPayment({
+                razorpay_order_id: response.razorpay_order_id,
+                razorpay_payment_id: response.razorpay_payment_id,
+                razorpay_signature: response.razorpay_signature,
+              });
+              if (result.outcome === 'confirmed' || result.outcome === 'already_confirmed') {
+                idempotencyKeyRef.current = null; // order placed — retire this key
+                router.replace(`/order-confirmed?order=${encodeURIComponent(result.orderNumber)}`);
+              } else if (result.outcome === 'refunded') {
+                // An item sold out between checkout and payment — the
+                // customer was never left paying for something undeliverable.
+                notify(
+                  "Sorry — something in your bag sold out while you were paying. You have NOT been charged (a full refund was issued automatically).",
+                );
+                router.replace('/');
+              } else {
+                notify('Payment received, but confirming it failed — contact us if you were charged.');
+                router.replace('/orders');
+              }
+            } catch {
+              notify('Payment received, but confirming it failed — contact us if you were charged.');
+              router.replace('/orders');
+            }
+          })();
+        },
+        modal: {
+          ondismiss: () => {
+            // Nothing was ever created — the bag is exactly as it was.
+            notify('Payment not completed.');
+          },
+        },
+      });
+      checkout.open();
     } catch (error) {
       if (error instanceof ApiError) notify(error.message);
       else notify('Something went wrong. Please try again.');
@@ -333,27 +485,31 @@ export default function CartPage() {
       </header>
       {menuOpen && (
         <nav className="fixed top-[107px] left-0 right-0 px-[6vw] pt-[24px] pb-[29px] z-[9] bg-paper border-b border-line grid gap-[20px] animate-[drop_0.22s_ease-out] max-[800px]:top-[92px]">
-          <Link
-            className="text-ink no-underline uppercase tracking-[.08em] font-bold text-[14px]"
-            href="/#new"
-            onClick={() => setMenuOpen(false)}
-          >
-            New arrivals
-          </Link>
-          <Link
-            className="text-ink no-underline uppercase tracking-[.08em] font-bold text-[14px]"
-            href="/#shop"
-            onClick={() => setMenuOpen(false)}
-          >
-            Shop all
-          </Link>
-          <Link
-            className="text-ink no-underline uppercase tracking-[.08em] font-bold text-[14px]"
-            href="/#brands"
-            onClick={() => setMenuOpen(false)}
-          >
-            Brands
-          </Link>
+          {!skipAddress && (
+            <>
+              <Link
+                className="text-ink no-underline uppercase tracking-[.08em] font-bold text-[14px]"
+                href="/#new"
+                onClick={() => setMenuOpen(false)}
+              >
+                New arrivals
+              </Link>
+              <Link
+                className="text-ink no-underline uppercase tracking-[.08em] font-bold text-[14px]"
+                href="/#shop"
+                onClick={() => setMenuOpen(false)}
+              >
+                Shop all
+              </Link>
+              <Link
+                className="text-ink no-underline uppercase tracking-[.08em] font-bold text-[14px]"
+                href="/#brands"
+                onClick={() => setMenuOpen(false)}
+              >
+                Brands
+              </Link>
+            </>
+          )}
 
           <Link
             className="text-ink no-underline uppercase tracking-[.08em] font-bold text-[14px]"
@@ -478,50 +634,6 @@ export default function CartPage() {
                       Shipping address
                     </p>
 
-                    {/* Quick fill option - Paste address block (always visible) */}
-                    <div className="mb-[20px]">
-                      <p className="m-0 mb-[10px] text-[11px] text-[#666] font-bold">
-                        📋 Quick Fill: Paste full address block (optional)
-                      </p>
-                      <div className="p-[16px] bg-[#f9f8f6] rounded-[10px] border border-dashed border-[#d6d1c7]">
-                        <p className="m-0 mb-[10px] text-[11px] text-[#666]">
-                          {`Paste the full address block here and click "Parse Address" to auto-fill
-                          all fields: `}
-                        </p>
-                        <textarea
-                          className="w-full border rounded-[8px] px-[13px] py-[11px] text-[13px] bg-white placeholder:text-[#aaa] outline-none transition-colors border-line focus:border-ink min-h-[100px] resize-y"
-                          placeholder="Example:&#10;John Doe&#10;john@example.com&#10;9876543210&#10;123 Main Street, Apartment 4B&#10;Near City Mall&#10;Mumbai, Maharashtra 400001"
-                          value={addressBlock}
-                          onChange={(e) => setAddressBlock(e.target.value)}
-                        />
-                        <button
-                          className="mt-[10px] w-full h-[42px] border-0 rounded-[8px] bg-ink text-white uppercase tracking-[.08em] text-[10px] font-bold flex items-center justify-center gap-[8px] disabled:cursor-not-allowed [&_svg]:w-[14px]"
-                          disabled={parsing || !addressBlock.trim()}
-                          onClick={parseAddressBlock}
-                        >
-                          {parsing ? (
-                            <>
-                              <i className="w-[14px] h-[14px] border-2 border-white/30 border-t-white rounded-full animate-[spin_0.8s_linear_infinite]" />{' '}
-                              Parsing…
-                            </>
-                          ) : (
-                            <>
-                              <Icon name="search" /> Parse Address
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-[12px] mb-[20px]">
-                      <div className="flex-1 h-px bg-[#ddd6c9]" />
-                      <span className="text-[11px] text-[#999] uppercase tracking-[.08em] font-bold">
-                        or enter manually
-                      </span>
-                      <div className="flex-1 h-px bg-[#ddd6c9]" />
-                    </div>
-
-                    {/* Manual entry form */}
                     <div className="grid gap-[14px]">
                       <div className="grid grid-cols-2 gap-[12px] items-start max-[480px]:grid-cols-1">
                         {renderField('name', 'Full name *')}
@@ -625,22 +737,25 @@ export default function CartPage() {
                       </label>
                     )}
                     {isPickup || skipAddress ? (
-                      <button
-                        className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] select-none transition-opacity duration-150 disabled:opacity-50 [&_svg]:w-[14px]"
-                        disabled={placing}
-                        onClick={placeOrder}
-                      >
-                        {placing ? (
-                          <>
-                            <i className="w-[15px] h-[15px] border-2 border-white/30 border-t-white rounded-full animate-[spin_0.8s_linear_infinite]" />{' '}
-                            Placing order…
-                          </>
-                        ) : (
-                          <>
-                            <Icon name="bag" /> Place order
-                          </>
-                        )}
-                      </button>
+                      <>
+                        <TermsCheckbox checked={agreedToTerms} onChange={setAgreedToTerms} />
+                        <button
+                          className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] select-none transition-opacity duration-150 disabled:opacity-50 [&_svg]:w-[14px]"
+                          disabled={placing || !agreedToTerms}
+                          onClick={placeOrder}
+                        >
+                          {placing ? (
+                            <>
+                              <i className="w-[15px] h-[15px] border-2 border-white/30 border-t-white rounded-full animate-[spin_0.8s_linear_infinite]" />{' '}
+                              Placing order…
+                            </>
+                          ) : (
+                            <>
+                              <Icon name="bag" /> Place order
+                            </>
+                          )}
+                        </button>
+                      </>
                     ) : (
                       <button
                         className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] [&_svg]:w-[14px]"
@@ -659,11 +774,13 @@ export default function CartPage() {
                       </p>
                     </div>
 
+                    <TermsCheckbox checked={agreedToTerms} onChange={setAgreedToTerms} />
+
                     {/* Place order button */}
                     <button
                       type="button"
                       className="w-full h-[50px] border-0 rounded-[10px] bg-ink text-white uppercase tracking-[.08em] text-[11px] font-bold flex items-center justify-center gap-[12px] select-none transition-opacity duration-150 disabled:opacity-50 [&_svg]:w-[14px]"
-                      disabled={placing}
+                      disabled={placing || !agreedToTerms}
                       onClick={placeOrder}
                     >
                       {placing ? (

@@ -32,6 +32,8 @@ export class ApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** Set when the server asks the caller to wait (e.g. OTP resend cooldown). */
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -61,11 +63,15 @@ function collectValidationMessages(errors?: ValidationErrors): string | null {
 async function toApiError(res: Response): Promise<ApiError> {
   const text = await res.text();
   try {
-    const body = JSON.parse(text) as { message?: string | string[]; errors?: ValidationErrors };
+    const body = JSON.parse(text) as {
+      message?: string | string[];
+      errors?: ValidationErrors;
+      retryAfterSeconds?: number;
+    };
     const fieldMessages = collectValidationMessages(body.errors);
     if (fieldMessages) return new ApiError(res.status, fieldMessages);
     const message = Array.isArray(body.message) ? body.message.join(', ') : body.message;
-    if (message) return new ApiError(res.status, message);
+    if (message) return new ApiError(res.status, message, body.retryAfterSeconds);
   } catch {
     // non-JSON body — fall through to raw text
   }
@@ -196,10 +202,10 @@ export const api = {
    * a name before verifying — an existing number just signs in.
    */
   otpStart: (mobileNo: string) =>
-    request<{ mobileNo: string; isNewUser: boolean; expiresInMinutes: number }>(
-      '/auth/otp/start',
-      { method: 'POST', body: JSON.stringify({ mobileNo }) },
-    ),
+    request<{ mobileNo: string; isNewUser: boolean; expiresInMinutes: number }>('/auth/otp/start', {
+      method: 'POST',
+      body: JSON.stringify({ mobileNo }),
+    }),
   /**
    * Step 2: confirm the code and receive tokens. `name` is required only when
    * step 1 reported `isNewUser` — it creates the account.
@@ -279,6 +285,59 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
       headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    }),
+  /**
+   * Start a Razorpay checkout session for the caller's cart. No order exists
+   * yet — one is created only once payment is confirmed (verifyRazorpayPayment).
+   */
+  startRazorpayCheckout: (
+    body: {
+      items: Array<{ productId: string; variantId: string; quantity: number }>;
+      isPickup?: boolean;
+      address?: {
+        name: string;
+        email?: string;
+        altMobileNo?: string;
+        mobileNo: string;
+        line1: string;
+        line2?: string;
+        landmark?: string;
+        pincode: string;
+        city: string;
+        state: string;
+      };
+    },
+    // Idempotency key: a retried/double-submitted checkout with the same key
+    // reuses the existing session instead of opening a duplicate.
+    idempotencyKey?: string,
+  ) =>
+    authenticatedRequest<{
+      keyId: string;
+      razorpayOrderId: string;
+      amount: number;
+      currency: string;
+    }>('/payments/razorpay/order', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+    }),
+  /**
+   * Confirm a Razorpay Checkout success callback. Every outcome here reflects
+   * an already-verified payment, including `refunded` (the cart could no
+   * longer be fulfilled — e.g. an item sold out — so it was auto-refunded in
+   * full and no order was created).
+   */
+  verifyRazorpayPayment: (body: {
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) =>
+    authenticatedRequest<
+      | { outcome: 'confirmed' | 'already_confirmed'; orderNumber: string }
+      | { outcome: 'refunded' | 'invalid' }
+    >('/payments/razorpay/verify', {
+      method: 'POST',
+      body: JSON.stringify(body),
     }),
   /** Get the current user's order history (for the profile page). */
   getMyOrders: () => authenticatedRequest<Order[]>('/orders/my'),

@@ -114,6 +114,7 @@ model User {
   lastLoginAt      DateTime?
 
   orders        Order[]
+  razorpayCheckoutSessions RazorpayCheckoutSession[]
   cart          Cart?
   passwordReset PasswordResetToken?
   refreshTokens RefreshToken[] // one row per active login session (multi-device)
@@ -509,6 +510,17 @@ model Order {
   city               String
   state              String
 
+  // Razorpay payment (web storefront only — reseller/credit orders never set
+  // these). Set when a checkout session is created, then confirmed by either
+  // the client-side verify call or the payment.captured webhook, whichever
+  // arrives first — both paths are idempotent against each other.
+  razorpayOrderId   String? @unique
+  razorpayPaymentId String? @unique
+  // Reverse side of RazorpayCheckoutSession.order — set once the session that
+  // paid for this order is confirmed. Most orders (reseller/credit/admin) have
+  // none; Prisma needs this field purely to express the relation both ways.
+  razorpayCheckoutSession RazorpayCheckoutSession?
+
   // Shipmozo shipment integration. An order is pushed to the Shipmozo panel
   // right after creation; the courier + tracking id arrive in a later step.
   shipmentStatus      ShipmentStatus @default(NOT_SHIPPED)
@@ -532,6 +544,59 @@ model Order {
   // Backs the admin order list's common case: no status filter, sorted by date
   // (a bare createdAt sort neither composite index above can serve).
   @@index([createdAt])
+}
+
+// A web customer's checkout "intent" — created when Razorpay checkout opens,
+// BEFORE any Order exists. No Order is created until payment is confirmed: an
+// abandoned/failed checkout leaves no order, no stock touched, cart untouched.
+// Web storefront only — reseller/credit orders never create one of these.
+model RazorpayCheckoutSession {
+  id              String @id @default(cuid())
+  user            User   @relation(fields: [userId], references: [id])
+  userId          String
+  razorpayOrderId String @unique
+  // Optional client-supplied idempotency key (from the `Idempotency-Key`
+  // header) — a retried "Place order" click with the same key reuses this
+  // session's Razorpay order instead of opening a duplicate.
+  idempotencyKey  String? @unique
+
+  // Snapshot of what the customer intended to buy — re-validated (stock +
+  // price) again at payment-confirmation time, since time has passed and
+  // either can have moved; this snapshot is just the original intent.
+  itemsJson   Json
+  addressJson Json?
+  isPickup    Boolean @default(false)
+
+  amount   Int // paise Razorpay was told to collect
+  currency String @default("INR")
+
+  // PENDING: checkout opened, not yet confirmed.
+  // CONSUMING: payment signature verified, Order creation in progress — an
+  //   atomic claim held by exactly one of (verify / redirect callback /
+  //   webhook), however many of them fire for the same payment. Transient;
+  //   should never be visible for more than the duration of one DB
+  //   transaction. Stuck here means the order-creation attempt crashed
+  //   mid-flight and needs a human (payment captured, no order, no refund).
+  // CONSUMED: payment verified, Order created (see orderId).
+  // REFUNDED: payment captured but the order couldn't be fulfilled (e.g. the
+  //   item sold out in the meantime) — auto-refunded, no Order created.
+  // FAILED: payment never completed (informational only; nothing to clean up
+  //   since no stock/order was ever touched).
+  status            String  @default("PENDING")
+  order             Order?  @relation(fields: [orderId], references: [id])
+  orderId           String? @unique
+  razorpayPaymentId String? // set once captured, kept even if later refunded
+  refundId          String? // Razorpay refund id, set only if status = REFUNDED
+  refundedAt        DateTime?
+  /// Why the order couldn't be fulfilled (e.g. which item sold out) — shown to admins.
+  refundReason      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Backs the admin-visible list and periodic cleanup of old PENDING sessions.
+  @@index([userId, createdAt])
+  @@index([status, createdAt])
 }
 
 model Cart {

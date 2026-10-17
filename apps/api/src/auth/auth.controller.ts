@@ -46,8 +46,11 @@ export class AuthController {
   @Public()
   @HttpCode(200)
   @Post('otp/start')
-  otpStart(@Body(new ZodValidationPipe(otpStartSchema)) body: OtpStartSchema) {
-    return this.auth.startOtp(body.mobileNo);
+  otpStart(
+    @Body(new ZodValidationPipe(otpStartSchema)) body: OtpStartSchema,
+    @CurrentStorefront() storefront: Storefront,
+  ) {
+    return this.auth.startOtp(body.mobileNo, storefront);
   }
 
   /**

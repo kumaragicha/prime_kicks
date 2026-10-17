@@ -1,5 +1,6 @@
 import type {
   AdminOrderRow,
+  AdminRazorpayPaymentRow,
   AdminUserRow,
   AuthResponse,
   CourierConfig,
@@ -237,6 +238,11 @@ export type UserListParams = {
   search?: string;
   role?: string;
   status?: string;
+};
+
+export type RazorpayPaymentListParams = {
+  page?: number;
+  pageSize?: number;
 };
 
 export type OrderListParams = {
@@ -526,8 +532,6 @@ export const api = {
   listResellers: () => request<Paginated<AdminUserRow>>(`/users?role=RESELLER&pageSize=100`),
   disableUser: (id: string) => request<AdminUserRow>(`/users/${id}/disable`, { method: 'PATCH' }),
   enableUser: (id: string) => request<AdminUserRow>(`/users/${id}/enable`, { method: 'PATCH' }),
-  makeReseller: (id: string) => request<AdminUserRow>(`/users/${id}/reseller`, { method: 'PATCH' }),
-  makeCustomer: (id: string) => request<AdminUserRow>(`/users/${id}/customer`, { method: 'PATCH' }),
   deleteUser: (id: string) =>
     request<{ id: string; deleted: boolean }>(`/users/${id}`, { method: 'DELETE' }),
 
@@ -567,6 +571,9 @@ export const api = {
   getInventory: () => request<InventoryData>('/analytics/inventory'),
   listOrders: (params?: OrderListParams) =>
     request<Paginated<AdminOrderRow>>(`/orders${toQuery(params)}`),
+  /** Read-only — every order that went through Razorpay checkout (web only). */
+  listRazorpayPayments: (params?: RazorpayPaymentListParams) =>
+    request<Paginated<AdminRazorpayPaymentRow>>(`/payments/razorpay${toQuery(params)}`),
   getOrder: (id: string) => request<Order>(`/orders/${id}`),
   updateOrderStatus: (id: string, status: string) =>
     request<Order>(`/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),

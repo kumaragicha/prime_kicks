@@ -127,3 +127,45 @@ export type CreateOrderInput = {
   userId: string;
   items: Array<{ productId: string; variantId: string; quantity: number }>;
 };
+
+/**
+ * Checkout-session lifecycle for the admin-only, read-only Razorpay payments
+ * table. Reflects RazorpayCheckoutSession.status — reseller/credit orders
+ * never create a session, so they never appear in this table.
+ */
+export const RAZORPAY_PAYMENT_STATUS = {
+  /** Checkout opened, not yet confirmed. */
+  PENDING: 'PENDING',
+  /** Payment signature verified, Order creation in progress (transient — a
+   *  row stuck here means it crashed mid-flight and needs manual follow-up:
+   *  payment captured, no order, no refund). */
+  CONSUMING: 'CONSUMING',
+  /** Payment verified, Order created. */
+  CONSUMED: 'CONSUMED',
+  /** Payment captured but the order couldn't be fulfilled (e.g. an item sold
+   *  out in the meantime) — auto-refunded, no Order exists. */
+  REFUNDED: 'REFUNDED',
+  /** Payment never completed — informational only. */
+  FAILED: 'FAILED',
+} as const;
+
+export type RazorpayPaymentStatus =
+  (typeof RAZORPAY_PAYMENT_STATUS)[keyof typeof RAZORPAY_PAYMENT_STATUS];
+
+/** One row of the admin-only, read-only Razorpay payments table — one per
+ *  checkout session (not per Order; an abandoned/failed/refunded checkout
+ *  has no Order at all, but still shows up here). */
+export interface AdminRazorpayPaymentRow {
+  id: string;
+  /** Null until the session is CONSUMED (payment verified, Order created). */
+  orderNumber: string | null;
+  razorpayOrderId: string;
+  /** Set once captured — kept even if later refunded. */
+  razorpayPaymentId: string | null;
+  status: RazorpayPaymentStatus;
+  /** Why the order couldn't be fulfilled — set only when status is REFUNDED. */
+  refundReason: string | null;
+  amount: number;
+  currency: string;
+  createdAt: string;
+}

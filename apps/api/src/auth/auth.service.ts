@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   ServiceUnavailableException,
@@ -177,6 +178,25 @@ export class AuthService {
   }
 
   /**
+   * A customer account may only sign in on the public site, and a reseller
+   * account only on the reseller site. Signing in on the wrong one is refused
+   * (before any OTP is sent) so the two audiences stay separate. Admins are not
+   * restricted.
+   */
+  private assertRightStorefront(role: UserRole, storefront: Storefront, masked: string): void {
+    const wrongSite =
+      (role === 'CUSTOMER' && storefront === 'reseller') ||
+      (role === 'RESELLER' && storefront !== 'reseller');
+    if (!wrongSite) return;
+    this.logger.warn(`Login refused for ${masked}: ${role} account on the ${storefront} storefront`);
+    throw new ForbiddenException(
+      role === 'CUSTOMER'
+        ? 'This number is registered as a customer account and cannot be used on the reseller site. Please contact admin.'
+        : 'This number is registered as a reseller account and cannot be used on the main website. Please contact admin.',
+    );
+  }
+
+  /**
    * Step 1: send a WhatsApp code to a mobile number.
    *
    * Deliberately reveals whether the number already has an account (`isNewUser`),
@@ -185,7 +205,7 @@ export class AuthService {
    * for their name on every login is worse, and the same fact is observable from
    * the sign-in screen of essentially every OTP-based app.
    */
-  async startOtp(mobileNo: string) {
+  async startOtp(mobileNo: string, storefront: Storefront = 'web') {
     const canonical = this.normalizeMobile(mobileNo);
     const masked = this.maskMobile(canonical);
     const existing = await this.findUserByMobile(canonical);
@@ -194,6 +214,9 @@ export class AuthService {
       this.logger.warn(`OTP refused for disabled account ${masked}`);
       throw new UnauthorizedException('This account is disabled.');
     }
+
+    // Checked before a code is generated, so a wrong-site attempt never sends an OTP.
+    if (existing) this.assertRightStorefront(existing.role, storefront, masked);
 
     // Throttle before sending: an un-cooled request must not cost us a message.
     const live = await this.prisma.mobileOtp.findUnique({ where: { mobileNo: canonical } });
@@ -275,6 +298,7 @@ export class AuthService {
 
     if (existing) {
       if (!existing.isActive) throw new UnauthorizedException('This account is disabled.');
+      this.assertRightStorefront(existing.role, storefront, masked);
       await this.prisma.mobileOtp.delete({ where: { id: record.id } });
       this.logger.log(`OTP login for existing account ${masked}`);
       return this.issueTokens(existing, { lastLoginAt: new Date() });
@@ -393,7 +417,14 @@ export class AuthService {
     const elapsedSeconds = (Date.now() - lastSentAt.getTime()) / 1000;
     if (elapsedSeconds < OTP_RESEND_COOLDOWN_SECONDS) {
       const wait = Math.ceil(OTP_RESEND_COOLDOWN_SECONDS - elapsedSeconds);
-      throw new BadRequestException(`Please wait ${wait}s before requesting another code.`);
+      // `retryAfterSeconds` lets the client run a live countdown instead of
+      // showing a fixed number that is stale a second later.
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: `Please wait ${wait}s before requesting another code.`,
+        retryAfterSeconds: wait,
+      });
     }
   }
 

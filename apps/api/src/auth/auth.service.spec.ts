@@ -113,6 +113,38 @@ describe('AuthService — mobile number normalization', () => {
   });
 });
 
+describe('AuthService — storefront separation', () => {
+  const CUSTOMER = { ...ACTIVE_USER, role: 'CUSTOMER' as const };
+
+  it('refuses a customer account on the reseller site, before sending an OTP', async () => {
+    const { service, whatsapp } = build({ user: CUSTOMER });
+    await expect(service.startOtp('9876543210', 'reseller')).rejects.toThrow(/contact admin/i);
+    expect(whatsapp.sendOtp).not.toHaveBeenCalled();
+  });
+
+  it('refuses a reseller account on the main website, before sending an OTP', async () => {
+    const { service, whatsapp } = build({ user: ACTIVE_USER });
+    await expect(service.startOtp('9876543210', 'web')).rejects.toThrow(/contact admin/i);
+    expect(whatsapp.sendOtp).not.toHaveBeenCalled();
+  });
+
+  it('lets each account type use its own site', async () => {
+    await expect(
+      build({ user: CUSTOMER }).service.startOtp('9876543210', 'web'),
+    ).resolves.toMatchObject({ isNewUser: false });
+    await expect(
+      build({ user: ACTIVE_USER }).service.startOtp('9876543210', 'reseller'),
+    ).resolves.toMatchObject({ isNewUser: false });
+  });
+
+  it('also refuses at verify, so an old code cannot sidestep the rule', async () => {
+    const { service } = build({ otp: liveOtp(), user: CUSTOMER });
+    await expect(
+      service.verifyOtp({ mobileNo: '9876543210', code: '123456' }, 'reseller'),
+    ).rejects.toThrow(/contact admin/i);
+  });
+});
+
 describe('AuthService — startOtp', () => {
   it('reports a number with no account as new', async () => {
     const { service } = build();
@@ -121,7 +153,9 @@ describe('AuthService — startOtp', () => {
 
   it('reports a number with an account as returning', async () => {
     const { service } = build({ user: ACTIVE_USER });
-    await expect(service.startOtp('9876543210')).resolves.toMatchObject({ isNewUser: false });
+    await expect(service.startOtp('9876543210', 'reseller')).resolves.toMatchObject({
+      isNewUser: false,
+    });
   });
 
   it('masks the number in the response', async () => {
@@ -196,14 +230,14 @@ describe('AuthService — verifyOtp', () => {
 
   it('signs an existing account in without needing a name', async () => {
     const { service, prisma } = build({ otp: liveOtp(), user: ACTIVE_USER });
-    const result = await service.verifyOtp(verify());
+    const result = await service.verifyOtp(verify(), 'reseller');
     expect(result).toHaveProperty('accessToken');
     expect(prisma.user.create).not.toHaveBeenCalled();
   });
 
   it('never overwrites an existing account’s name on sign-in', async () => {
     const { service, prisma } = build({ otp: liveOtp(), user: ACTIVE_USER });
-    await service.verifyOtp(verify({ name: 'Someone Else' }));
+    await service.verifyOtp(verify({ name: 'Someone Else' }), 'reseller');
     expect(prisma.user.create).not.toHaveBeenCalled();
     expect(prisma.user.update).not.toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ name: 'Someone Else' }) }),
@@ -228,7 +262,7 @@ describe('AuthService — verifyOtp', () => {
 
   it('consumes the code on success so it cannot be replayed', async () => {
     const { service, prisma } = build({ otp: liveOtp(), user: ACTIVE_USER });
-    await service.verifyOtp(verify());
+    await service.verifyOtp(verify(), 'reseller');
     expect(prisma.mobileOtp.delete).toHaveBeenCalledWith({ where: { id: 'otp1' } });
   });
 

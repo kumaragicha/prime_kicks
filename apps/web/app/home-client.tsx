@@ -3,9 +3,11 @@
 import { Announcement } from '@/components/announcement';
 import { BrandCollection } from '@/components/brand-collection';
 import { FilterDrawer } from '@/components/filter-drawer';
+import { GodownGallery } from '@/components/godown-gallery';
 import { Icon } from '@/components/icon';
 import { LoginModal } from '@/components/login-modal';
 import { type StoreProduct } from '@/components/product-card';
+import { ReviewScreenshots } from '@/components/review-screenshots';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
 import { TagCollection } from '@/components/tag-collection';
@@ -14,6 +16,8 @@ import { ApiError, api, type HeroSlide } from '@/lib/api';
 import { HeroCarousel } from '@/components/hero-carousel';
 import { notifyStore, useAuthCart, useHeroSlides } from '@/lib/hooks';
 import { useRouter } from 'next/navigation';
+import { GODOWN_MEDIA } from './godown-media';
+import { REVIEW_IMAGES } from './review-images';
 import { Suspense, useEffect, useState } from 'react';
 
 /**
@@ -133,6 +137,8 @@ export function HomeClient({ initialHeroSlides }: { initialHeroSlides: HeroSlide
           id={section.id}
         />
       ))}
+      <ReviewScreenshots images={REVIEW_IMAGES} />
+      <GodownGallery media={GODOWN_MEDIA} />
       <SiteFooter />
       <Toast message={toast} visible={toastVisible} />
       <Suspense fallback={null}>
