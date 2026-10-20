@@ -26,6 +26,7 @@ export type AddHandler = (
 export function TagCollection({
   title,
   tag,
+  query,
   onAdd,
   priority = false,
   limit = 4,
@@ -34,7 +35,13 @@ export function TagCollection({
   /** Heading shown above the row. Defaults to the tag name. */
   title?: string;
   /** Tag name to fetch by (matched case-insensitively on the API). */
-  tag: string;
+  tag?: string;
+  /**
+   * Explicit product-filter params (e.g. `{ brandId }` or `{ sizeTypeId }`) for
+   * rows backed by something other than a tag. Overrides `tag` when set; the
+   * "View all" link carries the same params into search.
+   */
+  query?: Record<string, string>;
   onAdd: AddHandler;
   /** Eager-load the card images (use for the first, above-the-fold row). */
   priority?: boolean;
@@ -42,13 +49,22 @@ export function TagCollection({
   limit?: number;
   id?: string;
 }) {
-  const { data, isLoading, isError, refetch } = useProducts({ tag, pageSize: String(limit) });
+  const fetchParams = query ?? (tag ? { tag } : {});
+  const { data, isLoading, isError, refetch } = useProducts({
+    ...fetchParams,
+    pageSize: String(limit),
+  });
   const { data: filters } = useFilters();
   const products = useMemo<StoreProduct[]>(() => data?.data.map(toStoreProduct) ?? [], [data]);
 
-  // "View all" reuses the search + filter path, keyed on the tag's id.
+  // "View all" reuses the search + filter path — carry the explicit query when
+  // given, otherwise key on the tag's id.
   const tagId = filters?.tags?.find((entry) => entry.name === tag)?.id;
-  const viewAllHref = tagId ? `/search?tagId=${tagId}` : '/search';
+  const viewAllHref = query
+    ? `/search?${new URLSearchParams(query).toString()}`
+    : tagId
+      ? `/search?tagId=${tagId}`
+      : '/search';
 
   // Nothing to show and nothing pending — drop the section entirely.
   if (!isLoading && !isError && products.length === 0) return null;

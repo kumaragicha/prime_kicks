@@ -24,12 +24,22 @@ import { Suspense, useEffect, useState } from 'react';
  * Curated homepage sections, each backed by a merchandising tag. `id` is the
  * scroll anchor the header nav links target (e.g. "New arrivals" → /#new).
  */
-const TAG_SECTIONS = [
+type HomeSection = {
+  title: string;
+  id: string;
+  /** Tag-backed row (matched by tag name). */
+  tag?: string;
+  /** Or an explicit product filter (brand / size type) for non-tag rows. */
+  query?: Record<string, string>;
+};
+
+const TAG_SECTIONS: HomeSection[] = [
   { title: 'New arrivals', tag: 'New Arrivals', id: 'new' },
   { title: 'Hot selling', tag: 'Hot Selling', id: 'shop' },
-  { title: 'Flip flops', tag: 'Flip Flops', id: 'flip-flops' },
-  { title: 'Crocs', tag: 'Crocs', id: 'crocs' },
-] as const;
+  // Flip Flops is a size type (not a tag); Crocs is a brand. Filter by id.
+  { title: 'Flip flops', query: { sizeTypeId: 'cmv6lrajj02cd8n99keupneyx' }, id: 'flip-flops' },
+  { title: 'Crocs', query: { brandId: 'cmsvshxas01f58nhyrn8bkng9' }, id: 'crocs' },
+];
 
 /**
  * Interactive storefront home. Rendered by the server component in `page.tsx`,
@@ -131,9 +141,10 @@ export function HomeClient({ initialHeroSlides }: { initialHeroSlides: HeroSlide
 
       {TAG_SECTIONS.map((section, index) => (
         <TagCollection
-          key={section.tag}
+          key={section.id}
           title={section.title}
           tag={section.tag}
+          query={section.query}
           onAdd={addToCart}
           priority={index === 0}
           id={section.id}
