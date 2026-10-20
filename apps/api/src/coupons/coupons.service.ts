@@ -267,6 +267,7 @@ export class CouponsService {
       type: coupon!.type,
       value: coupon!.value,
       discount: validated.discount,
+      prepaidOnly: coupon!.prepaidOnly,
       subtotal,
       total: subtotal - validated.discount,
     };

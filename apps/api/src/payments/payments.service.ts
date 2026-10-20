@@ -69,7 +69,7 @@ export class PaymentsService {
     input: StartRazorpayCheckoutSchema,
     idempotencyKey?: string,
   ) {
-    const idemKey = idempotencyKey?.trim() || undefined;
+    let idemKey = idempotencyKey?.trim() || undefined;
 
     // Idempotency fast path: a retried "Place order" click (same key) reuses
     // the existing session's Razorpay order instead of opening a duplicate.
@@ -80,7 +80,22 @@ export class PaymentsService {
       const existing = await this.prisma.razorpayCheckoutSession.findUnique({
         where: { idempotencyKey: idemKey },
       });
+      // The same key with different payment terms (method or coupon changed since
+      // the payment window was last opened) must NOT reuse the old Razorpay order
+      // — its amount is stale. Open a fresh session without the key instead.
+      const sameTerms =
+        !!existing &&
+        existing.paymentMethod === (input.paymentMethod ?? 'ONLINE') &&
+        (existing.couponCode ?? '') === (input.couponCode?.trim().toUpperCase() ?? '');
       if (
+        existing &&
+        existing.userId === userId &&
+        existing.status === RAZORPAY_PAYMENT_STATUS.PENDING &&
+        !sameTerms
+      ) {
+        this.logger.debug(`Checkout terms changed for key ${idemKey} — opening a fresh session`);
+        idemKey = undefined;
+      } else if (
         existing &&
         existing.userId === userId &&
         existing.status === RAZORPAY_PAYMENT_STATUS.PENDING
@@ -103,8 +118,11 @@ export class PaymentsService {
       isPickup: input.isPickup,
       address: input.address,
       couponCode: input.couponCode,
+      paymentMethod: input.paymentMethod,
     });
-    const amount = priced.total * 100; // Razorpay wants paise; `total` is whole rupees
+    // Razorpay collects what's due now: the full total (ONLINE) or the COD
+    // advance. Paise; `payNow` is whole rupees.
+    const amount = priced.payNow * 100;
 
     const razorpayOrder = await this.razorpay.instance.orders.create({
       amount,
@@ -123,6 +141,7 @@ export class PaymentsService {
           addressJson: input.address ?? undefined,
           isPickup: input.isPickup ?? false,
           couponCode: priced.couponCode ?? null,
+          paymentMethod: priced.paymentMethod,
           amount,
           currency: 'INR',
           status: RAZORPAY_PAYMENT_STATUS.PENDING,
@@ -318,6 +337,7 @@ export class PaymentsService {
           // Re-validated inside create() against the fresh subtotal; the Razorpay
           // amount was already discounted by this same coupon at checkout start.
           couponCode: session.couponCode ?? undefined,
+          paymentMethod: session.paymentMethod,
         },
         undefined,
         'razorpay-confirm',

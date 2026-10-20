@@ -38,63 +38,69 @@ const CONFETTI = Array.from({ length: 16 }, (_, i) => {
   };
 });
 
+/** Parcel + sneaker + tick + confetti — shared by both confirmation screens. */
+export function SuccessAnimation() {
+  return (
+    <div className="relative mx-auto mb-[34px] h-[172px] w-[172px]">
+      {/* Confetti burst */}
+      {CONFETTI.map((c, i) => (
+        <span
+          key={i}
+          aria-hidden="true"
+          className="absolute left-1/2 top-1/2 -ml-[4px] -mt-[4px] opacity-0 animate-[confetti-burst_1.15s_ease-out_forwards] motion-reduce:hidden"
+          style={
+            {
+              width: c.size,
+              height: c.size,
+              background: c.color,
+              borderRadius: c.round ? '9999px' : '2px',
+              animationDelay: `${c.delay}ms`,
+              '--dx': `${c.dx}px`,
+              '--dy': `${c.dy}px`,
+              '--r': `${c.r}deg`,
+            } as CSSProperties
+          }
+        />
+      ))}
+
+      {/* Parcel */}
+      <div className="absolute inset-0 grid place-items-center animate-[box-pop_0.55s_cubic-bezier(0.2,0.8,0.2,1)_both] motion-reduce:animate-none">
+        <div className="grid h-[150px] w-[150px] place-items-center rounded-[32px] border-2 border-ink bg-accent-soft shadow-[0_16px_34px_rgba(28,22,16,0.16)]">
+          <span
+            className="block text-[92px] leading-none animate-[shoe-drop_0.7s_cubic-bezier(0.2,0.8,0.2,1)_0.15s_both] motion-reduce:animate-none"
+            role="img"
+            aria-label="sneaker"
+          >
+            👟
+          </span>
+        </div>
+      </div>
+
+      {/* Tick badge */}
+      <span
+        aria-hidden="true"
+        className="absolute right-[6px] top-[6px] grid h-[44px] w-[44px] place-items-center rounded-full border-2 border-paper bg-accent text-white shadow-[0_6px_14px_rgba(28,22,16,0.22)] animate-[badge-pop_0.4s_cubic-bezier(0.2,0.8,0.2,1)_0.5s_both] motion-reduce:animate-none"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          className="h-[22px] w-[22px] [&_path]:[stroke-dasharray:30] [&_path]:animate-[check-draw_0.5s_0.6s_both] motion-reduce:[&_path]:animate-none"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="M5 12l5 5L20 7" />
+        </svg>
+      </span>
+    </div>
+  );
+}
+
 export function OrderSuccess({ orderNumber }: { orderNumber: string }) {
   return (
     <section className="max-w-[600px] mx-auto pt-[86px] px-[5.25vw] pb-[100px] text-center max-[760px]:pt-[54px]">
-      {/* Animation stage */}
-      <div className="relative mx-auto mb-[34px] h-[172px] w-[172px]">
-        {/* Confetti burst */}
-        {CONFETTI.map((c, i) => (
-          <span
-            key={i}
-            aria-hidden="true"
-            className="absolute left-1/2 top-1/2 -ml-[4px] -mt-[4px] opacity-0 animate-[confetti-burst_1.15s_ease-out_forwards] motion-reduce:hidden"
-            style={
-              {
-                width: c.size,
-                height: c.size,
-                background: c.color,
-                borderRadius: c.round ? '9999px' : '2px',
-                animationDelay: `${c.delay}ms`,
-                '--dx': `${c.dx}px`,
-                '--dy': `${c.dy}px`,
-                '--r': `${c.r}deg`,
-              } as CSSProperties
-            }
-          />
-        ))}
-
-        {/* Parcel */}
-        <div className="absolute inset-0 grid place-items-center animate-[box-pop_0.55s_cubic-bezier(0.2,0.8,0.2,1)_both] motion-reduce:animate-none">
-          <div className="grid h-[150px] w-[150px] place-items-center rounded-[32px] border-2 border-ink bg-accent-soft shadow-[0_16px_34px_rgba(28,22,16,0.16)]">
-            <span
-              className="block text-[92px] leading-none animate-[shoe-drop_0.7s_cubic-bezier(0.2,0.8,0.2,1)_0.15s_both] motion-reduce:animate-none"
-              role="img"
-              aria-label="sneaker"
-            >
-              👟
-            </span>
-          </div>
-        </div>
-
-        {/* Tick badge */}
-        <span
-          aria-hidden="true"
-          className="absolute right-[6px] top-[6px] grid h-[44px] w-[44px] place-items-center rounded-full border-2 border-paper bg-accent text-white shadow-[0_6px_14px_rgba(28,22,16,0.22)] animate-[badge-pop_0.4s_cubic-bezier(0.2,0.8,0.2,1)_0.5s_both] motion-reduce:animate-none"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            className="h-[22px] w-[22px] [&_path]:[stroke-dasharray:30] [&_path]:animate-[check-draw_0.5s_0.6s_both] motion-reduce:[&_path]:animate-none"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="3"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M5 12l5 5L20 7" />
-          </svg>
-        </span>
-      </div>
+      <SuccessAnimation />
 
       {/* Copy */}
       <div className="animate-[rise_0.45s_0.35s_both] motion-reduce:animate-none">

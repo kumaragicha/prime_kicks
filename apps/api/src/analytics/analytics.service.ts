@@ -7,6 +7,7 @@ import {
   resolveRangeBoundary,
 } from '../common/date-range.util';
 import { PrismaService } from '../prisma/prisma.service';
+import { orderKind } from '../orders/orders.service';
 
 /** Row caps for the "top N" breakdowns on the Analytics page. */
 const TOP_PRODUCTS = 20;
@@ -49,8 +50,7 @@ export class AnalyticsService {
     const todayKey = istDateKey(now);
     // Resolve the requested window; fall back to today for missing/empty bounds.
     const gte = resolveRangeBoundary(from, 'start') ?? today.gte;
-    const lte =
-      resolveRangeBoundary(to, 'end') ?? resolveRangeBoundary(from, 'end') ?? today.lte;
+    const lte = resolveRangeBoundary(to, 'end') ?? resolveRangeBoundary(from, 'end') ?? today.lte;
     const range = { gte, lte };
     const inRange = { createdAt: range };
 
@@ -77,7 +77,8 @@ export class AnalyticsService {
       this.prisma.order.groupBy({
         by: ['userId'],
         where: { status: ORDER_STATUS.APPROVED_PAYMENT_PENDING },
-        _sum: { total: true },
+        // COD orders' advance is already paid — only the balance is outstanding.
+        _sum: { total: true, advancePaid: true },
         _count: { _all: true },
       }),
       // Profit needs (soldPrice - inhouseCost) * qty across a join, which Prisma
@@ -122,6 +123,9 @@ export class AnalyticsService {
           courierPartner: o.courierPartner,
           itemsCount: o.items.reduce((sum, i) => sum + i.quantity, 0),
           total: o.total,
+          paymentMethod: o.paymentMethod,
+          codAmount: o.codAmount,
+          orderKind: orderKind(o),
           currency: o.currency,
           createdAt: o.createdAt.toISOString(),
         })),
@@ -129,7 +133,10 @@ export class AnalyticsService {
       pendingPayment: {
         customers: pendingGroup.length,
         orders: pendingGroup.reduce((n, g) => n + g._count._all, 0),
-        outstanding: pendingGroup.reduce((n, g) => n + (g._sum.total ?? 0), 0),
+        outstanding: pendingGroup.reduce(
+          (n, g) => n + (g._sum.total ?? 0) - (g._sum.advancePaid ?? 0),
+          0,
+        ),
       },
     };
   }
@@ -191,7 +198,9 @@ export class AnalyticsService {
 
     const rows = products.map((p) => {
       const units = p.variants.reduce((n, v) => n + v.stock, 0);
-      const lowVariants = p.variants.filter((v) => v.stock > 0 && v.stock <= LOW_STOCK_THRESHOLD).length;
+      const lowVariants = p.variants.filter(
+        (v) => v.stock > 0 && v.stock <= LOW_STOCK_THRESHOLD,
+      ).length;
       const oosVariants = p.variants.filter((v) => v.stock <= 0).length;
       const productInhouse = units * p.inhouseCost;
       const productRetail = units * p.customerPrice;
@@ -335,7 +344,7 @@ export class AnalyticsService {
       }),
       this.prisma.order.findMany({
         where: { status: ORDER_STATUS.APPROVED_PAYMENT_PENDING },
-        select: { createdAt: true, total: true },
+        select: { createdAt: true, total: true, advancePaid: true },
       }),
       // Variants at/below the low-stock line, freshest concern first.
       this.prisma.productVariant.findMany({
@@ -378,7 +387,14 @@ export class AnalyticsService {
     // ---- Breakdowns + brand profit + period profit from line items --------
     const productMap = new Map<
       string,
-      { productId: string; title: string; sku: string; brand: string; units: number; revenue: number }
+      {
+        productId: string;
+        title: string;
+        sku: string;
+        brand: string;
+        units: number;
+        revenue: number;
+      }
     >();
     const brandMap = new Map<
       string,
@@ -476,7 +492,7 @@ export class AnalyticsService {
       const ageDays = (now.getTime() - o.createdAt.getTime()) / DAY_MS;
       const slot = ageDays <= 7 ? aging[0]! : ageDays <= 30 ? aging[1]! : aging[2]!;
       slot.orders += 1;
-      slot.amount += o.total;
+      slot.amount += o.total - o.advancePaid;
     }
 
     // ---- Low / out-of-stock ------------------------------------------------
@@ -536,7 +552,9 @@ export class AnalyticsService {
         orders: trendBuckets.get(date)!.orders,
         revenue: trendBuckets.get(date)!.revenue,
       })),
-      topProducts: [...productMap.values()].sort((a, b) => b.units - a.units).slice(0, TOP_PRODUCTS),
+      topProducts: [...productMap.values()]
+        .sort((a, b) => b.units - a.units)
+        .slice(0, TOP_PRODUCTS),
       topBrands: [...brandMap.values()].sort((a, b) => b.units - a.units).slice(0, TOP_BRANDS),
       profitByBrand: [...brandMap.values()]
         .map((b) => ({ brand: b.brand, profit: Math.round(b.profit), revenue: b.revenue }))

@@ -323,6 +323,8 @@ export const api = {
       };
       /** Coupon code applied at checkout (customer, prepaid only). */
       couponCode?: string;
+      /** ONLINE = pay the full total now; COD = pay the advance now, rest on delivery. */
+      paymentMethod?: 'ONLINE' | 'COD';
     },
     // Idempotency key: a retried/double-submitted checkout with the same key
     // reuses the existing session instead of opening a duplicate.

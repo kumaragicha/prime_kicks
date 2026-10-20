@@ -30,6 +30,8 @@ export interface CouponPreview {
   value: number;
   /** Discount in whole rupees that would be applied. */
   discount: number;
+  /** True when the coupon only applies to orders paid fully online. */
+  prepaidOnly: boolean;
   subtotal: number;
   total: number;
 }

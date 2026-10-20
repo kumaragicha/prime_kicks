@@ -3,6 +3,7 @@
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CreateOrderForm } from '@/components/create-order-form';
 import { DateRangePicker } from '@/components/date-range-picker';
+import { ORDER_KIND_FILTERS } from '@/components/order-kind-badge';
 import { type OrderStatusAction } from '@/components/order-status-actions';
 import { OrdersTable } from '@/components/orders-table';
 import { controlClass, Pagination, selectClass } from '@/components/table-controls';
@@ -17,6 +18,7 @@ export default function OrdersPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [kind, setKind] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [showCreateOrder, setShowCreateOrder] = useState(false);
@@ -32,6 +34,7 @@ export default function OrdersPage() {
     pageSize: PAGE_SIZE,
     search: debouncedSearch || undefined,
     status: status || undefined,
+    kind: kind || undefined,
     startDate: startDate || undefined,
     endDate: endDate || undefined,
   });
@@ -79,6 +82,19 @@ export default function OrdersPage() {
           <option value={ORDER_STATUS.APPROVED_PAYMENT_PENDING}>Approved (Payment Pending)</option>
           <option value={ORDER_STATUS.REJECTED}>Rejected</option>
         </select>
+        <select
+          className={`${selectClass} w-full sm:w-auto`}
+          value={kind}
+          onChange={(e) => resetTo(setKind)(e.target.value)}
+          aria-label="Filter by order type"
+        >
+          <option value="">All order types</option>
+          {ORDER_KIND_FILTERS.map((k) => (
+            <option key={k.value} value={k.value}>
+              {k.label}
+            </option>
+          ))}
+        </select>
 
         <DateRangePicker
           start={startDate}
@@ -121,9 +137,7 @@ export default function OrdersPage() {
 
       {/* Create Order modal — only mounted while open, so its reseller/product
           queries don't run in the background behind the orders list. */}
-      {showCreateOrder && (
-        <CreateOrderForm open onClose={() => setShowCreateOrder(false)} />
-      )}
+      {showCreateOrder && <CreateOrderForm open onClose={() => setShowCreateOrder(false)} />}
 
       {/* Delete confirmation */}
       <ConfirmDialog
@@ -163,7 +177,9 @@ export default function OrdersPage() {
         isConfirming={updateStatus.isPending}
         confirmLabel="Confirm"
         confirmPendingLabel="Updating…"
-        confirmTone={statusChange?.action.tone === 'default' ? 'neutral' : statusChange?.action.tone}
+        confirmTone={
+          statusChange?.action.tone === 'default' ? 'neutral' : statusChange?.action.tone
+        }
         onClose={() => {
           setStatusChange(null);
           updateStatus.reset();

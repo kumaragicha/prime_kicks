@@ -4,6 +4,7 @@ export * from './courier-config.js';
 export * from './credit-customer.js';
 export * from './dimension.js';
 export * from './order.js';
+export * from './payment.js';
 export * from './product.js';
 export * from './settings.js';
 export * from './size.js';

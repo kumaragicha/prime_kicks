@@ -15,7 +15,8 @@
     "@prime-kicks/types": "*",
     "@prime-kicks/ui": "*",
     "@prime-kicks/utils": "*",
-    "@prime-kicks/validation": "*"
+    "@prime-kicks/validation": "*",
+    "canvas-confetti": "^1.9.3"
   },
   "peerDependencies": {
     "@tanstack/react-query": "^5.64.1",
@@ -27,6 +28,7 @@
   "devDependencies": {
     "@prime-kicks/typescript-config": "*",
     "@tanstack/react-query": "^5.64.1",
+    "@types/canvas-confetti": "^1.9.0",
     "@types/react": "^19.0.7",
     "@types/react-dom": "^19.0.3",
     "framer-motion": "^13.0.0",

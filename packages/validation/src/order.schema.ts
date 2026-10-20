@@ -65,6 +65,9 @@ export const createOrderSchema = z
     // Coupon code (web customer prepaid orders only; ignored for reseller/credit/
     // admin flows). Re-validated server-side at order creation.
     couponCode: z.string().trim().max(32).optional(),
+    // Web customer prepaid flow only (set by the Razorpay confirmation): ONLINE or
+    // COD. Ignored for reseller/credit/admin orders.
+    paymentMethod: z.enum(['ONLINE', 'COD']).optional(),
     address: addressSchema.optional(),
     // --- Admin-only fields (optional; when omitted the web/customer flow is used) ---
     resellerId: z.string().min(1, 'Select a reseller').optional(),
@@ -124,6 +127,8 @@ export const orderQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(100).default(20),
   search: z.string().optional(),
+  // Admin filter by order type (see OrderKind in @prime-kicks/types).
+  kind: z.enum(['PREPAID', 'COD', 'RESELLER', 'CREDIT']).optional(),
   status: orderStatusSchema.optional(),
   // Inclusive created-at range as IST calendar days (YYYY-MM-DD). endDate
   // covers the whole day. Resolved to UTC instants in the service layer.

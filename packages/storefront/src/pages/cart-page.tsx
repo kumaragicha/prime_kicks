@@ -7,6 +7,9 @@ import { PaymentBadges } from '@/components/payment-badges';
 import { SiteFooter } from '@/components/site-footer';
 import { Toast } from '@/components/toast';
 import { ApiError, api, type SavedAddress, type StoreCart } from '@/lib/api';
+import { celebrateFromBottom } from '@/lib/celebrate';
+import { DELIVERY_WINDOW, expectedDeliveryDate, formatDeliveryDate } from '@/lib/delivery';
+import { COD_ADVANCE_PERCENT, splitPayment, type PaymentMethod } from '@prime-kicks/types';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -141,7 +144,16 @@ export default function CartPage() {
   const [toast, setToast] = useState('');
   const [pending, setPending] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [step, setStep] = useState<1 | 2>(1);
+  // Customer site: 1 Bag → 2 Address → 3 Payment. (Reseller never leaves step 1.)
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('ONLINE');
+  // A prepaid-only coupon removed because the customer picked COD — kept so we
+  // can say so on the COD option and offer a one-tap re-apply for online payment.
+  const [removedCoupon, setRemovedCoupon] = useState<{
+    code: string;
+    discount: number;
+    prepaidOnly: boolean;
+  } | null>(null);
   const [address, setAddress] = useState<AddressForm>(emptyAddress);
   // Customer site: saved addresses offered as selectable cards at checkout.
   const [saveAddressForFuture, setSaveAddressForFuture] = useState(true);
@@ -168,9 +180,11 @@ export default function CartPage() {
   const [shippingDeduction, setShippingDeduction] = useState(0);
   // Coupon state (web customers only). `applied` holds the validated discount.
   const [couponInput, setCouponInput] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discount: number } | null>(
-    null,
-  );
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discount: number;
+    prepaidOnly: boolean;
+  } | null>(null);
   const [couponError, setCouponError] = useState('');
   const [couponLoading, setCouponLoading] = useState(false);
   // Idempotency key for the in-flight checkout; survives retries, cleared on success.
@@ -186,7 +200,8 @@ export default function CartPage() {
   const stickyCheckout = step === 1 && !isPickup && !skipAddress;
   const actionsEmptyOnMobile = stickyCheckout && !isReseller;
   // The checkout (address) step is just the form + a pinned bar on every screen size.
-  const onCheckoutStep = step === 2;
+  const onCheckoutStep = step === 2 || step === 3;
+  const onPaymentStep = step === 3;
   const showStickyBar = Boolean(
     cart && cart.items.length > 0 && (stickyCheckout || onCheckoutStep),
   );
@@ -265,8 +280,16 @@ export default function CartPage() {
     );
   }, [cart, isReseller, isPickup, shippingDeduction]);
   const itemCount = cart?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
-  const couponDiscount = appliedCoupon?.discount ?? 0;
+  // A prepaid-only coupon (e.g. PREPAID10) doesn't apply to COD — it stays
+  // remembered and comes back if the customer switches to paying online.
+  const couponActive = Boolean(
+    appliedCoupon && (paymentMethod === 'ONLINE' || !appliedCoupon.prepaidOnly),
+  );
+  const couponDiscount = couponActive ? (appliedCoupon?.discount ?? 0) : 0;
   const total = subtotal - pickupDiscount - couponDiscount;
+  // What's charged online now vs. collected on delivery (COD advance split).
+  const { payNow, payOnDelivery } = splitPayment(total, payOnline ? paymentMethod : 'ONLINE');
+  const deliveryBy = useMemo(() => formatDeliveryDate(expectedDeliveryDate()), []);
   // Struck MRP convention matches the product page ("50% off" → MRP is 2× the
   // selling price). Savings = everything off the MRP, including any coupon.
   const originalTotal = subtotal * 2;
@@ -296,8 +319,18 @@ export default function CartPage() {
           quantity: item.quantity,
         })),
       });
-      setAppliedCoupon({ code: preview.code, discount: preview.discount });
+      setRemovedCoupon(null);
+      setAppliedCoupon({
+        code: preview.code,
+        discount: preview.discount,
+        // Missing flag (older API) → treat as prepaid-only: never show a discount
+        // on COD that checkout would then reject.
+        prepaidOnly: preview.prepaidOnly ?? true,
+      });
       setCouponInput(preview.code);
+      // Celebrate the saving: confetti blast from the bottom + a toast.
+      void celebrateFromBottom();
+      notify(`${preview.code} applied — you saved ${formatCurrency(preview.discount)}!`);
     } catch (error) {
       setAppliedCoupon(null);
       setCouponError(error instanceof Error ? error.message : 'That coupon could not be applied.');
@@ -308,8 +341,33 @@ export default function CartPage() {
 
   function removeCoupon() {
     setAppliedCoupon(null);
+    setRemovedCoupon(null);
     setCouponInput('');
     setCouponError('');
+  }
+
+  /**
+   * Switch payment method. COD automatically removes a prepaid-only coupon
+   * (e.g. PREPAID10) — the COD option then says it was removed.
+   */
+  function selectPaymentMethod(method: PaymentMethod) {
+    setPaymentMethod(method);
+    if (method === 'COD' && appliedCoupon?.prepaidOnly) {
+      setRemovedCoupon(appliedCoupon);
+      setAppliedCoupon(null);
+      setCouponInput('');
+      setCouponError('');
+    }
+  }
+
+  /** Bring back a coupon removed for COD, switching to online payment. */
+  function reapplyRemovedCoupon() {
+    if (!removedCoupon) return;
+    setPaymentMethod('ONLINE');
+    setAppliedCoupon(removedCoupon);
+    void celebrateFromBottom();
+    setCouponInput(removedCoupon.code);
+    setRemovedCoupon(null);
   }
 
   function updateField(field: keyof AddressForm, value: string) {
@@ -482,9 +540,46 @@ export default function CartPage() {
     }
   }
 
+  // Changing how/what the customer pays must open a fresh payment session.
+  useEffect(() => {
+    idempotencyKeyRef.current = null;
+  }, [paymentMethod, couponActive, appliedCoupon?.code]);
+
   function goToShipping() {
     if (!cart || cart.items.length === 0) return;
     setStep(2);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  /** Address step → payment step: validate the address and save it if asked. */
+  function goToPayment() {
+    if (!cart || cart.items.length === 0) return;
+    if (editingAddressId) {
+      notify('Save your address changes first.');
+      return;
+    }
+    const fieldErrors = validateAddress(address);
+    const firstError = Object.values(fieldErrors)[0];
+    if (firstError) {
+      setErrors(fieldErrors);
+      setErrKey((k) => k + 1);
+      notify(firstError);
+      return;
+    }
+    setErrors({});
+    // Remember a newly typed address if they asked to. Never blocks checkout —
+    // a failed save just means it won't be offered next time.
+    if (addressMode === 'form' && saveAddressForFuture) {
+      void api
+        .createSavedAddress(address)
+        .then((saved) => {
+          setSavedAddresses((list) => [saved, ...list.filter((a) => a.id !== saved.id)]);
+          setSelectedAddressId(saved.id);
+          setAddressMode('list');
+        })
+        .catch(() => undefined);
+    }
+    setStep(3);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -512,23 +607,6 @@ export default function CartPage() {
       return;
     }
     setErrors({});
-    // Customer site: remember a newly typed address if they asked to. Never
-    // blocks checkout — a failed save just means it won't be offered next time.
-    if (
-      payOnline &&
-      !isPickup &&
-      !skipAddress &&
-      addressMode === 'form' &&
-      !editingAddressId &&
-      saveAddressForFuture
-    ) {
-      void api
-        .createSavedAddress(address)
-        .then((saved) =>
-          setSavedAddresses((list) => [saved, ...list.filter((a) => a.id !== saved.id)]),
-        )
-        .catch(() => undefined);
-    }
     setPlacing(true);
     // Reuse one idempotency key across retries of THIS checkout so a
     // double-submit (or a lost response/dismissed payment, for the web flow)
@@ -576,7 +654,9 @@ export default function CartPage() {
           })),
           isPickup,
           address: isPickup ? undefined : address,
-          couponCode: couponsEnabled ? (appliedCoupon?.code ?? undefined) : undefined,
+          couponCode:
+            couponsEnabled && couponActive ? (appliedCoupon?.code ?? undefined) : undefined,
+          paymentMethod: payOnline ? paymentMethod : undefined,
         },
         idempotencyKeyRef.current,
       );
@@ -646,6 +726,15 @@ export default function CartPage() {
       setPlacing(false);
     }
   }
+
+  // The current step's main action — shared by the phone bottom bar and the
+  // tablet/desktop summary card so both always do and say the same thing.
+  const primaryAction = onPaymentStep ? placeOrder : onCheckoutStep ? goToPayment : goToShipping;
+  const primaryLabel = onPaymentStep
+    ? `Pay ${formatCurrency(payNow)}`
+    : onCheckoutStep
+      ? 'Continue to payment'
+      : 'Proceed to checkout';
 
   return (
     <main>
@@ -783,14 +872,16 @@ export default function CartPage() {
             <div
               className={
                 onCheckoutStep
-                  ? 'grid max-w-[760px] grid-cols-1 gap-y-[20px] items-start'
+                  ? // Checkout steps: one column on phones/tablets; from 1024px the
+                    // form sits left and the summary + action card sits right.
+                    'grid grid-cols-1 gap-y-[20px] items-start max-[1023px]:max-w-[760px] min-[1024px]:grid-cols-[minmax(0,1fr)_360px] min-[1024px]:gap-x-[48px]'
                   : 'grid grid-cols-[minmax(0,1fr)_380px] gap-x-[60px] gap-y-[20px] items-start max-[760px]:grid-cols-1 max-[760px]:gap-y-[24px]'
               }
             >
               <div
                 className={`grid gap-[14px] content-start ${
                   onCheckoutStep
-                    ? 'order-2'
+                    ? 'order-2 min-[1024px]:order-none min-[1024px]:col-start-1 min-[1024px]:row-start-1 min-[1024px]:row-span-2'
                     : 'col-start-1 row-start-1 row-span-2 max-[760px]:col-auto max-[760px]:row-auto max-[760px]:row-span-1 max-[760px]:order-1'
                 }`}
               >
@@ -955,6 +1046,159 @@ export default function CartPage() {
                       </article>
                     ),
                   )
+                ) : step === 3 ? (
+                  /* Step 3: delivery + payment method (customer site only) */
+                  <aside className="grid gap-[22px] border border-line rounded-[14px] p-[26px] bg-white shadow-[0_7px_18px_rgba(28,22,16,0.05)] animate-[enter_0.35s_both] max-[760px]:p-[18px]">
+                    <section>
+                      <p className="m-0 mb-[12px] text-[10px] tracking-[.16em] uppercase font-bold">
+                        Delivery method
+                      </p>
+                      <div className="flex gap-[12px] rounded-[12px] border border-ink bg-[#faf8f4] p-[16px]">
+                        <span
+                          aria-hidden="true"
+                          className="mt-[2px] grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full border-2 border-ink"
+                        >
+                          <span className="h-[8px] w-[8px] rounded-full bg-ink" />
+                        </span>
+                        <div className="grid gap-[3px] text-[12.5px] leading-[1.5] text-[#555]">
+                          <p className="m-0 text-[14px] font-bold text-ink">
+                            Standard delivery <span className="text-[#4b7d4b]">· FREE</span>
+                          </p>
+                          <p className="m-0">Delivered in {DELIVERY_WINDOW}</p>
+                          <p className="m-0">
+                            Expected by <b className="text-ink">{deliveryBy}</b>
+                          </p>
+                        </div>
+                      </div>
+                    </section>
+
+                    <section>
+                      <p className="m-0 mb-[12px] text-[10px] tracking-[.16em] uppercase font-bold">
+                        Payment method
+                      </p>
+                      <div
+                        className="grid gap-[12px]"
+                        role="radiogroup"
+                        aria-label="Payment method"
+                      >
+                        {(['ONLINE', 'COD'] as const).map((method) => {
+                          const selected = paymentMethod === method;
+                          const codSplit = splitPayment(subtotal - pickupDiscount, 'COD');
+                          return (
+                            <div
+                              key={method}
+                              role="radio"
+                              aria-checked={selected}
+                              tabIndex={0}
+                              onClick={() => selectPaymentMethod(method)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                  e.preventDefault();
+                                  selectPaymentMethod(method);
+                                }
+                              }}
+                              className={`flex cursor-pointer gap-[12px] rounded-[12px] border p-[16px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ink/20 ${
+                                selected
+                                  ? 'border-ink bg-[#faf8f4]'
+                                  : 'border-line bg-white hover:border-[#bbb]'
+                              }`}
+                            >
+                              <span
+                                aria-hidden="true"
+                                className={`mt-[2px] grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full border-2 ${
+                                  selected ? 'border-ink' : 'border-[#ccc]'
+                                }`}
+                              >
+                                {selected && (
+                                  <span className="h-[8px] w-[8px] rounded-full bg-ink" />
+                                )}
+                              </span>
+                              {method === 'ONLINE' ? (
+                                <div className="grid min-w-0 gap-[8px]">
+                                  <p className="m-0 flex flex-wrap items-center gap-[8px] text-[14px] font-bold">
+                                    Pay online
+                                    <span className="rounded-full bg-[#4b7d4b] px-[8px] py-[3px] text-[9px] uppercase tracking-[.08em] text-white">
+                                      Recommended
+                                    </span>
+                                  </p>
+                                  <p className="m-0 text-[12px] text-[#555]">
+                                    UPI, credit/debit cards &amp; net banking via Razorpay. Pay the
+                                    full amount now.
+                                  </p>
+                                  <PaymentBadges />
+                                  {appliedCoupon && (
+                                    <p className="m-0 text-[11.5px] font-bold text-[#4b7d4b]">
+                                      Coupon {appliedCoupon.code} applied (−
+                                      {formatCurrency(appliedCoupon.discount)})
+                                    </p>
+                                  )}
+                                  {!appliedCoupon && removedCoupon && (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        reapplyRemovedCoupon();
+                                      }}
+                                      className="w-fit border-0 bg-transparent p-0 text-left text-[11.5px] font-bold text-[#4b7d4b] underline underline-offset-2"
+                                    >
+                                      Re-apply {removedCoupon.code} (save{' '}
+                                      {formatCurrency(removedCoupon.discount)})
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="grid min-w-0 gap-[6px]">
+                                  <p className="m-0 text-[14px] font-bold">Cash on delivery</p>
+                                  <p className="m-0 text-[12px] text-[#555]">
+                                    Pay {COD_ADVANCE_PERCENT}% advance online now (
+                                    <b className="text-ink">{formatCurrency(codSplit.payNow)}</b>),
+                                    the rest (
+                                    <b className="text-ink">
+                                      {formatCurrency(codSplit.payOnDelivery)}
+                                    </b>
+                                    ) in cash on delivery.
+                                  </p>
+                                  {removedCoupon && (
+                                    <p className="m-0 flex items-start gap-[6px] rounded-[8px] bg-[#fbeeee] px-[10px] py-[8px] text-[11.5px] font-medium leading-[1.4] text-[#b3261e]">
+                                      <span aria-hidden="true">✕</span>
+                                      <span>
+                                        Coupon <b>{removedCoupon.code}</b> removed — it&apos;s valid
+                                        on online payment only.
+                                      </span>
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </section>
+
+                    {/* What's charged now vs. on delivery (phones; the side card shows it on larger screens) */}
+                    <section className="grid gap-[10px] border-t border-line pt-[18px] text-[13px] text-[#555] min-[761px]:hidden">
+                      <div className="flex justify-between gap-[20px]">
+                        <span>Order total</span>
+                        <span className="text-ink">{formatCurrency(total)}</span>
+                      </div>
+                      {couponDiscount > 0 && appliedCoupon && (
+                        <div className="flex justify-between gap-[20px] text-[#4b7d4b]">
+                          <span>Includes coupon ({appliedCoupon.code})</span>
+                          <span>−{formatCurrency(couponDiscount)}</span>
+                        </div>
+                      )}
+                      <div className="flex justify-between gap-[20px] font-bold text-ink">
+                        <span>{paymentMethod === 'COD' ? 'Pay now (advance)' : 'Pay now'}</span>
+                        <span>{formatCurrency(payNow)}</span>
+                      </div>
+                      {paymentMethod === 'COD' && (
+                        <div className="flex justify-between gap-[20px]">
+                          <span>Pay on delivery (cash)</span>
+                          <span className="text-ink">{formatCurrency(payOnDelivery)}</span>
+                        </div>
+                      )}
+                    </section>
+                  </aside>
                 ) : (
                   /* Step 2: shipping address replaces the product list */
                   <aside className="border border-line rounded-[14px] p-[26px] bg-white shadow-[0_7px_18px_rgba(28,22,16,0.05)] animate-[enter_0.35s_both] max-[760px]:p-[18px]">
@@ -1157,7 +1401,7 @@ export default function CartPage() {
               <div
                 className={`grid gap-[20px] content-start ${
                   onCheckoutStep
-                    ? 'order-1'
+                    ? 'order-1 min-[1024px]:order-none min-[1024px]:col-start-2 min-[1024px]:row-start-1'
                     : 'col-start-2 row-start-1 max-[760px]:col-auto max-[760px]:row-auto max-[760px]:order-2'
                 }`}
               >
@@ -1172,7 +1416,15 @@ export default function CartPage() {
                       1 · Bag
                     </button>
                     <span className="flex-1 h-px bg-[#ddd6c9]" />
-                    <span className={step === 2 ? 'text-ink' : 'text-[#b3ab9c]'}>2 · Checkout</span>
+                    <button
+                      type="button"
+                      onClick={() => step === 3 && setStep(2)}
+                      className={step === 2 ? 'text-ink' : 'text-[#b3ab9c]'}
+                    >
+                      2 · Address
+                    </button>
+                    <span className="flex-1 h-px bg-[#ddd6c9]" />
+                    <span className={step === 3 ? 'text-ink' : 'text-[#b3ab9c]'}>3 · Payment</span>
                   </div>
                 )}
 
@@ -1409,6 +1661,83 @@ export default function CartPage() {
                   </>
                 ) : null}
               </div>
+
+              {/* Tablet/desktop checkout card: summary + the step's action, in the
+                  page flow (phones use the bar pinned to the bottom instead). */}
+              {onCheckoutStep && (
+                <aside className="order-3 grid gap-[12px] rounded-[14px] border border-ink bg-[#f5f2eb] p-[22px] text-[13px] text-[#555] shadow-[0_12px_25px_rgba(28,22,16,0.08)] max-[760px]:hidden min-[1024px]:order-none min-[1024px]:col-start-2 min-[1024px]:row-start-2 min-[1024px]:sticky min-[1024px]:top-[96px]">
+                  <p className="m-0 mb-[4px] text-[10px] font-bold uppercase tracking-[.16em] text-ink">
+                    Order summary
+                  </p>
+                  <div className="flex justify-between gap-[16px]">
+                    <span>
+                      Subtotal ({itemCount} {itemCount === 1 ? 'item' : 'items'})
+                    </span>
+                    <span className="text-ink">{formatCurrency(subtotal)}</span>
+                  </div>
+                  {couponDiscount > 0 && appliedCoupon && (
+                    <div className="flex justify-between gap-[16px] text-[#4b7d4b]">
+                      <span>Coupon ({appliedCoupon.code})</span>
+                      <span>−{formatCurrency(couponDiscount)}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between gap-[16px]">
+                    <span>Delivery</span>
+                    <span className="font-bold text-[#4b7d4b]">FREE</span>
+                  </div>
+                  <div className="flex items-baseline justify-between gap-[16px] border-t border-t-[#d6d1c7] pt-[12px] text-[14px] text-ink">
+                    <span>Total</span>
+                    <strong className="text-[20px]">{formatCurrency(total)}</strong>
+                  </div>
+                  {onPaymentStep && paymentMethod === 'COD' && (
+                    <>
+                      <div className="flex justify-between gap-[16px] font-bold text-ink">
+                        <span>Pay now (advance)</span>
+                        <span>{formatCurrency(payNow)}</span>
+                      </div>
+                      <div className="flex justify-between gap-[16px]">
+                        <span>Pay on delivery (cash)</span>
+                        <span className="text-ink">{formatCurrency(payOnDelivery)}</span>
+                      </div>
+                    </>
+                  )}
+                  {savings > 0 && !(onPaymentStep && paymentMethod === 'COD') && (
+                    <p className="m-0 text-[11.5px] font-bold text-[#4b7d4b]">
+                      You save {formatCurrency(savings)} on this order
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={primaryAction}
+                    disabled={onPaymentStep && placing}
+                    className="mt-[6px] flex h-[50px] w-full items-center justify-center gap-[10px] rounded-[10px] border-0 bg-ink text-[11px] font-bold uppercase tracking-[.08em] text-white transition-opacity disabled:opacity-60 [&_svg]:h-[14px] [&_svg]:w-[14px]"
+                  >
+                    {onPaymentStep && placing ? (
+                      <>
+                        <i className="h-[15px] w-[15px] rounded-full border-2 border-white/30 border-t-white animate-[spin_0.8s_linear_infinite]" />
+                        Processing…
+                      </>
+                    ) : (
+                      <>
+                        <svg
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          aria-hidden="true"
+                        >
+                          <rect x="5" y="11" width="14" height="9" rx="2" />
+                          <path d="M8 11V8a4 4 0 0 1 8 0v3" strokeLinecap="round" />
+                        </svg>
+                        {primaryLabel}
+                      </>
+                    )}
+                  </button>
+                  <p className="m-0 flex items-center justify-center gap-[6px] text-[10px] font-bold uppercase tracking-[.1em] text-[#6a6358]">
+                    Guaranteed secure checkout
+                  </p>
+                </aside>
+              )}
             </div>
           )}
         </section>
@@ -1419,9 +1748,7 @@ export default function CartPage() {
           screen sizes) it opens payment. */}
       {showStickyBar && (
         <div
-          className={`fixed inset-x-0 bottom-0 z-40 border-t border-line bg-white pt-[12px] pb-[calc(12px+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(28,22,16,0.1)] ${
-            onCheckoutStep ? 'block' : 'hidden max-[760px]:block'
-          }`}
+          className={`fixed inset-x-0 bottom-0 z-40 border-t border-line bg-white pt-[12px] pb-[calc(12px+env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(28,22,16,0.1)] ${'hidden max-[760px]:block'}`}
         >
           <div className="mx-auto flex w-full max-w-[1280px] items-center justify-between gap-[14px] px-[5.25vw] max-[760px]:px-[15px]">
             <div className="leading-tight">
@@ -1429,19 +1756,26 @@ export default function CartPage() {
                 Total
               </p>
               <strong className="text-[19px] tracking-[-.02em]">{formatCurrency(total)}</strong>
-              {savings > 0 && shippingIncluded && (
-                <p className="m-0 mt-[1px] text-[10px] font-bold text-[#4b7d4b]">
-                  You save {formatCurrency(savings)}
+              {onPaymentStep && paymentMethod === 'COD' ? (
+                <p className="m-0 mt-[1px] text-[10px] font-bold text-[#555]">
+                  {formatCurrency(payNow)} now · {formatCurrency(payOnDelivery)} on delivery
                 </p>
+              ) : (
+                savings > 0 &&
+                shippingIncluded && (
+                  <p className="m-0 mt-[1px] text-[10px] font-bold text-[#4b7d4b]">
+                    You save {formatCurrency(savings)}
+                  </p>
+                )
               )}
             </div>
             <button
               type="button"
-              onClick={onCheckoutStep ? placeOrder : goToShipping}
-              disabled={onCheckoutStep && placing}
-              className="flex h-[48px] max-w-[320px] flex-1 items-center justify-center gap-[9px] rounded-[10px] border-0 bg-ink text-[11px] font-bold uppercase tracking-[.08em] text-white transition-opacity disabled:opacity-60 max-[760px]:max-w-[230px] [&_svg]:h-[14px] [&_svg]:w-[14px]"
+              onClick={primaryAction}
+              disabled={onPaymentStep && placing}
+              className="flex h-[48px] max-w-[320px] flex-1 items-center justify-center gap-[9px] whitespace-nowrap rounded-[10px] border-0 bg-ink text-[11px] font-bold uppercase tracking-[.08em] text-white transition-opacity disabled:opacity-60 max-[760px]:max-w-[230px] [&_svg]:h-[14px] [&_svg]:w-[14px] [&_svg]:shrink-0"
             >
-              {onCheckoutStep && placing ? (
+              {onPaymentStep && placing ? (
                 <>
                   <i className="h-[15px] w-[15px] rounded-full border-2 border-white/30 border-t-white animate-[spin_0.8s_linear_infinite]" />
                   Processing…
@@ -1458,7 +1792,13 @@ export default function CartPage() {
                     <rect x="5" y="11" width="14" height="9" rx="2" />
                     <path d="M8 11V8a4 4 0 0 1 8 0v3" strokeLinecap="round" />
                   </svg>
-                  {onCheckoutStep ? 'Continue to payment' : 'Proceed to checkout'}
+                  {onPaymentStep
+                    ? // COD's split is spelled out next to the total, so the button
+                      // stays one line on phones: always "Pay <amount due now>".
+                      `Pay ${formatCurrency(payNow)}`
+                    : onCheckoutStep
+                      ? 'Continue to payment'
+                      : 'Proceed to checkout'}
                 </>
               )}
             </button>
@@ -1472,10 +1812,7 @@ export default function CartPage() {
       {/* Clearance so the pinned checkout bar never covers the footer's last
           line — painted in the footer's colour so it reads as part of it. */}
       {showStickyBar && (
-        <div
-          aria-hidden="true"
-          className={`h-[88px] bg-[#111] ${onCheckoutStep ? 'block' : 'hidden max-[760px]:block'}`}
-        />
+        <div aria-hidden="true" className="hidden h-[88px] bg-[#111] max-[760px]:block" />
       )}
     </main>
   );

@@ -32,6 +32,20 @@ const orderPushInclude = {
 type OrderForPush = Prisma.OrderGetPayload<{ include: typeof orderPushInclude }>;
 
 /**
+ * Courier payment terms for an order: a web COD order tells Shipmozo to collect
+ * the outstanding balance in cash; everything else ships PREPAID (nothing to
+ * collect), exactly as before.
+ */
+function codFields(order: Pick<OrderForPush, 'paymentMethod' | 'codAmount'>): {
+  payment_type: 'PREPAID' | 'COD';
+  cod_amount: string;
+} {
+  return order.paymentMethod === 'COD' && order.codAmount > 0
+    ? { payment_type: 'COD', cod_amount: String(order.codAmount) }
+    : { payment_type: 'PREPAID', cod_amount: '' };
+}
+
+/**
  * A courier candidate for auto-assignment: an admin-configured courier for the
  * order's weight slab that the rate calculator confirmed is available on this
  * route. Assignment is attempted in the admin's priority order (index 0 first),
@@ -667,12 +681,11 @@ export class ShipmentService {
       order_id: '',
       pickup_pincode: pickup,
       delivery_pincode: delivery,
-      payment_type: 'PREPAID',
+      ...codFields(order),
       shipment_type: 'FORWARD',
       order_amount: order.total,
       type_of_package: 'SPS',
       rov_type: 'ROV_OWNER',
-      cod_amount: '',
       weight: box.weight,
       dimensions: [
         {
@@ -1047,8 +1060,7 @@ export class ShipmentService {
       consignee_city: order.city,
       consignee_state: order.state,
       product_detail,
-      payment_type: 'PREPAID',
-      cod_amount: '',
+      ...codFields(order),
       weight,
       length,
       width,

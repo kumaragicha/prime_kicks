@@ -1,6 +1,7 @@
 'use client';
 
 import { BlurImage } from '@/components/blur-image';
+import { customerOrderStatus } from '@/components/order-details';
 import { SiteFooter } from '@/components/site-footer';
 import { SiteHeader } from '@/components/site-header';
 import { useCurrentUser, useMyOrders } from '@/lib/hooks';
@@ -17,6 +18,76 @@ const STATUS_LABELS: Record<string, string> = {
   APPROVED_PAYMENT_PENDING: 'Approved · Payment Pending',
   REJECTED: 'Rejected',
 };
+
+/** Customer site = everything except the reseller app. */
+const IS_CUSTOMER_STORE = process.env.NEXT_PUBLIC_STOREFRONT !== 'reseller';
+
+/** Customer site: one compact row per order; tap through for full details. */
+function CustomerOrderRow({ order }: { order: Order }) {
+  const status = customerOrderStatus(order);
+  const units = order.items.reduce((n, i) => n + i.quantity, 0);
+  const first = order.items[0];
+  return (
+    <Link
+      href={`/orders/${order.id}`}
+      className="group flex items-center gap-[14px] rounded-[14px] border border-line bg-white p-[14px] text-ink no-underline shadow-[0_7px_18px_rgba(28,22,16,0.04)] transition-[border-color,transform] duration-200 hover:-translate-y-[1px] hover:border-ink"
+      aria-label={`Order ${formatOrderId(order.orderNumber)} — view details`}
+    >
+      <div className="relative h-[64px] w-[64px] shrink-0 overflow-hidden rounded-[10px] bg-[#f0eee9]">
+        {first?.product.photoUrls[0] && (
+          <BlurImage
+            src={first.product.photoUrls[0]}
+            alt={first.title}
+            shimmer={false}
+            className="h-full w-full object-cover"
+          />
+        )}
+        {order.items.length > 1 && (
+          <span className="absolute bottom-[4px] right-[4px] rounded-full bg-ink px-[6px] py-[1px] text-[9px] font-bold text-white">
+            +{order.items.length - 1}
+          </span>
+        )}
+      </div>
+      <div className="grid min-w-0 flex-1 gap-[3px]">
+        <div className="flex flex-wrap items-center gap-x-[8px] gap-y-[4px]">
+          <span className="text-[13px] font-bold">{formatOrderId(order.orderNumber)}</span>
+          <span
+            className={`rounded px-[7px] py-[2px] text-[9px] font-bold uppercase tracking-[.08em] ${status.className}`}
+          >
+            {status.label}
+          </span>
+        </div>
+        <p className="m-0 truncate text-[12px] text-[#555]">
+          {first?.title}
+          {order.items.length > 1 ? ` + ${order.items.length - 1} more` : ''}
+        </p>
+        <p className="m-0 text-[11px] text-[#888]">
+          {new Date(order.createdAt).toLocaleDateString('en-IN', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          })}{' '}
+          · {units} item{units > 1 ? 's' : ''}
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-[8px]">
+        <span className="text-[14px] font-bold">{formatCurrency(order.total, order.currency)}</span>
+        <svg
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          className="h-[16px] w-[16px] text-[#999] transition-transform duration-150 group-hover:translate-x-[2px]"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        >
+          <path d="m9 6 6 6-6 6" />
+        </svg>
+      </div>
+    </Link>
+  );
+}
 
 function OrderCard({ order }: { order: Order }) {
   const [copied, setCopied] = useState(false);
@@ -212,10 +283,19 @@ export default function OrdersPage() {
   // Outstanding = total of this user's orders still awaiting payment — both
   // unapproved (PENDING) and approved-on-credit (APPROVED_PAYMENT_PENDING).
   // Only surfaced when there's something owed.
-  const pendingOrders = (orders ?? []).filter(
-    (o) => o.status === ORDER_STATUS.PENDING || o.status === ORDER_STATUS.APPROVED_PAYMENT_PENDING,
+  // Customer site: what's owed is only the cash still due on COD orders (their
+  // advance is already paid). Reseller site: unchanged — pay-later orders.
+  const pendingOrders = (orders ?? []).filter((o) =>
+    IS_CUSTOMER_STORE
+      ? o.paymentMethod === 'COD' &&
+        o.paymentStatus !== 'RECEIVED' &&
+        o.status !== ORDER_STATUS.REJECTED
+      : o.status === ORDER_STATUS.PENDING || o.status === ORDER_STATUS.APPROVED_PAYMENT_PENDING,
   );
-  const pendingTotal = pendingOrders.reduce((sum, o) => sum + o.total, 0);
+  const pendingTotal = pendingOrders.reduce(
+    (sum, o) => sum + (IS_CUSTOMER_STORE ? o.codAmount : o.total),
+    0,
+  );
   const pendingCurrency = pendingOrders[0]?.currency ?? 'INR';
 
   if (!hydrated)
@@ -280,22 +360,27 @@ export default function OrdersPage() {
           {pendingTotal > 0 && (
             <div className="mb-[18px] border border-yellow-300 bg-yellow-50 p-[18px] max-[700px]:px-[15px]">
               <p className="text-[9px] uppercase font-bold tracking-[.08em] text-yellow-800 m-0 mb-[6px]">
-                Payment pending
+                {IS_CUSTOMER_STORE ? 'To pay on delivery' : 'Payment pending'}
               </p>
               <p className="text-[22px] font-bold text-yellow-900 m-0 leading-none">
                 {formatCurrency(pendingTotal, pendingCurrency)}
               </p>
               <p className="text-[11px] text-yellow-800 m-0 mt-[6px]">
-                Outstanding across {pendingOrders.length} order
+                {IS_CUSTOMER_STORE ? 'Cash due on delivery for' : 'Outstanding across'}{' '}
+                {pendingOrders.length} order
                 {pendingOrders.length > 1 ? 's' : ''}.
               </p>
             </div>
           )}
           {orders && orders.length > 0 ? (
-            <div className="grid gap-[14px]">
-              {orders.map((order) => (
-                <OrderCard key={order.id} order={order} />
-              ))}
+            <div className={`grid ${IS_CUSTOMER_STORE ? 'gap-[10px]' : 'gap-[14px]'}`}>
+              {orders.map((order) =>
+                IS_CUSTOMER_STORE ? (
+                  <CustomerOrderRow key={order.id} order={order} />
+                ) : (
+                  <OrderCard key={order.id} order={order} />
+                ),
+              )}
             </div>
           ) : (
             !ordersLoading && (

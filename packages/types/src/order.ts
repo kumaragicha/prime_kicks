@@ -77,6 +77,16 @@ export interface OrderAddress {
   state: string;
 }
 
+/**
+ * What kind of order this is, for the admin:
+ * PREPAID  — web customer paid online in full (Razorpay)
+ * COD      — web customer paid an advance online, balance in cash on delivery
+ * RESELLER — placed by / for a reseller account (pay-later, reseller pricing)
+ * CREDIT   — bulk order billed to a credit customer
+ * CUSTOMER — older customer order with no recorded payment method
+ */
+export type OrderKind = 'PREPAID' | 'COD' | 'RESELLER' | 'CREDIT' | 'CUSTOMER';
+
 export interface Order {
   id: string;
   orderNumber: string;
@@ -93,6 +103,15 @@ export interface Order {
   discount: number;
   /** Code of the coupon redeemed on this order, if any. */
   couponCode: string | null;
+  /** Web customer orders: ONLINE (paid in full) or COD; null otherwise. */
+  paymentMethod: 'ONLINE' | 'COD' | null;
+  /** Amount paid online at checkout (the full total, or the COD advance). */
+  advancePaid: number;
+  /** COD only: balance the courier collects on delivery (0 otherwise). */
+  codAmount: number;
+  orderKind: OrderKind;
+  /** Razorpay payment id for web orders paid online (prepaid or COD advance). */
+  razorpayPaymentId: string | null;
   total: number;
   currency: 'INR';
   /** True when the customer will pick the order up in store (no shipment). */
@@ -123,6 +142,11 @@ export interface AdminOrderRow {
   courierPartner: string | null;
   itemsCount: number;
   total: number;
+  /** Web customer orders: ONLINE or COD; null for reseller/credit/admin orders. */
+  paymentMethod: 'ONLINE' | 'COD' | null;
+  /** COD only: balance still to collect on delivery. */
+  codAmount: number;
+  orderKind: OrderKind;
   currency: string;
   createdAt: string;
 }

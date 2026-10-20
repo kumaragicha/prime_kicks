@@ -10,6 +10,8 @@ import {
   ORDER_STATUS,
   ORDER_TYPE,
   PAYMENT_STATUS,
+  splitPayment,
+  type OrderKind,
   type OrderStatus,
   type PaymentStatus,
 } from '@prime-kicks/types';
@@ -46,13 +48,40 @@ const PAYMENT_FOR_STATUS: Record<OrderStatus, PaymentStatus> = {
  * we deliberately avoid re-fetching product name/sku here.
  */
 const orderDetailInclude = {
-  user: { select: { id: true, name: true } },
+  user: { select: { id: true, name: true, role: true } },
   creditCustomer: { select: { id: true, name: true } },
   items: {
     include: { product: { select: { photoUrls: true } } },
     orderBy: { id: 'asc' },
   },
 } satisfies Prisma.OrderInclude;
+
+/** Classify an order for the admin (see OrderKind). Shared with analytics. */
+export function orderKind(order: {
+  creditCustomerId: string | null;
+  paymentMethod: 'ONLINE' | 'COD' | null;
+  user: { role: UserRole } | null;
+}): OrderKind {
+  if (order.creditCustomerId) return 'CREDIT';
+  if (order.paymentMethod === 'COD') return 'COD';
+  if (order.paymentMethod === 'ONLINE') return 'PREPAID';
+  if (order.user?.role === 'RESELLER') return 'RESELLER';
+  return 'CUSTOMER';
+}
+
+/** Prisma filter for an admin "order type" selection. */
+function orderKindWhere(kind: Exclude<OrderKind, 'CUSTOMER'>): Prisma.OrderWhereInput {
+  switch (kind) {
+    case 'PREPAID':
+      return { paymentMethod: 'ONLINE' };
+    case 'COD':
+      return { paymentMethod: 'COD' };
+    case 'RESELLER':
+      return { creditCustomerId: null, paymentMethod: null, user: { role: 'RESELLER' } };
+    case 'CREDIT':
+      return { creditCustomerId: { not: null } };
+  }
+}
 
 /** An order's owner is either a login User or a CreditCustomer — return the display name. */
 function ownerName(order: {
@@ -133,6 +162,11 @@ function toOrderDto(order: OrderWithDetails) {
     shipping: order.shipping,
     discount: order.discount,
     couponCode: order.couponCode,
+    paymentMethod: order.paymentMethod,
+    advancePaid: order.advancePaid,
+    codAmount: order.codAmount,
+    orderKind: orderKind(order),
+    razorpayPaymentId: order.razorpayPaymentId,
     total: order.total,
     currency: order.currency,
     isPickup: order.isPickup,
@@ -415,15 +449,21 @@ export class OrdersService {
     // or admin-created ones. Re-validated here (fresh) against the authoritative
     // subtotal; an expired/exhausted code throws, which the Razorpay flow turns
     // into a full refund (same as an unfulfillable cart).
+    // Web customer (Razorpay) orders are paid ONLINE in full or COD (advance now,
+    // balance on delivery). Every other kind of order has no payment method.
+    const isWebPaidOrder = !isAdminCreated && prePaid;
+    const paymentMethod = isWebPaidOrder ? (input.paymentMethod ?? 'ONLINE') : null;
+
     let discount = 0;
     let couponId: string | null = null;
     let couponCode: string | null = null;
-    if (!isAdminCreated && prePaid && ownerRole === 'CUSTOMER' && input.couponCode?.trim()) {
+    if (isWebPaidOrder && ownerRole === 'CUSTOMER' && input.couponCode?.trim()) {
       const validated = await this.coupons.validateForCheckout(input.couponCode, {
         userId: ownerUserId!,
         role: ownerRole,
         subtotal,
-        prepaid: true,
+        // A COD order is not fully prepaid, so prepaid-only coupons don't apply.
+        prepaid: paymentMethod !== 'COD',
       });
       discount = validated.discount;
       couponId = validated.couponId;
@@ -431,6 +471,10 @@ export class OrdersService {
     }
 
     const total = subtotal + shipping - discount;
+    // What was paid online at checkout vs. what the courier collects.
+    const { payNow: advancePaid, payOnDelivery: codAmount } = paymentMethod
+      ? splitPayment(total, paymentMethod)
+      : { payNow: 0, payOnDelivery: 0 };
 
     // Credit-customer orders are always BULK. Admins may set the order type
     // (reseller BULK/SINGLE); a web customer never can — force SINGLE so the
@@ -449,7 +493,10 @@ export class OrdersService {
         ? ORDER_STATUS.APPROVED_PAYMENT_RECEIVED
         : ORDER_STATUS.APPROVED_PAYMENT_PENDING
       : prePaid
-        ? ORDER_STATUS.APPROVED_PAYMENT_RECEIVED
+        ? // COD: the advance is in, the balance is still owed until delivery.
+          paymentMethod === 'COD'
+          ? ORDER_STATUS.APPROVED_PAYMENT_PENDING
+          : ORDER_STATUS.APPROVED_PAYMENT_RECEIVED
         : ORDER_STATUS.PENDING;
 
     // Payment status is DERIVED from the order status, never trusted from input:
@@ -547,6 +594,9 @@ export class OrdersService {
                 shipping,
                 discount,
                 total,
+                paymentMethod,
+                advancePaid,
+                codAmount,
                 couponId,
                 couponCode,
                 isPickup: input.isPickup ?? false,
@@ -666,8 +716,10 @@ export class OrdersService {
       isPickup?: boolean;
       address?: OrderAddressSchema;
       couponCode?: string;
+      paymentMethod?: 'ONLINE' | 'COD';
     },
   ) {
+    const paymentMethod = input.paymentMethod ?? 'ONLINE';
     const user = await this.prisma.user.findFirst({
       where: { id: userId, deletedAt: null },
       select: { id: true, isActive: true, role: true },
@@ -747,14 +799,25 @@ export class OrdersService {
         userId: user.id,
         role: user.role,
         subtotal,
-        prepaid: true,
+        prepaid: paymentMethod !== 'COD',
       });
       discount = validated.discount;
       couponCode = validated.code;
     }
 
     // Web customer orders never carry a shipping charge (see `create()`).
-    return { itemsWithDetails, subtotal, discount, total: subtotal - discount, couponCode };
+    const total = subtotal - discount;
+    const { payNow, payOnDelivery } = splitPayment(total, paymentMethod);
+    return {
+      itemsWithDetails,
+      subtotal,
+      discount,
+      total,
+      couponCode,
+      paymentMethod,
+      payNow,
+      payOnDelivery,
+    };
   }
 
   /** Get orders for the currently authenticated user (web profile). */
@@ -792,7 +855,7 @@ export class OrdersService {
   }
 
   async findAll(query: OrderQuerySchema, auditedBy?: string) {
-    const { page, pageSize, search, status, startDate, endDate, sort } = query;
+    const { page, pageSize, search, status, startDate, endDate, sort, kind } = query;
 
     this.logger.debug(
       `[ORDER DEBUG] findAll START page=${page} pageSize=${pageSize} search=${search ?? 'none'} status=${status ?? 'none'}`,
@@ -800,6 +863,7 @@ export class OrdersService {
 
     const where: Record<string, unknown> = {};
     if (status) where['status'] = status;
+    if (kind) Object.assign(where, orderKindWhere(kind));
     if (search) {
       where['OR'] = [
         { orderNumber: { contains: search, mode: 'insensitive' } },
@@ -856,6 +920,9 @@ export class OrdersService {
         // Total units ordered (sum of line-item quantities), not the number of lines.
         itemsCount: order.items.reduce((sum, i) => sum + i.quantity, 0),
         total: order.total,
+        paymentMethod: order.paymentMethod,
+        codAmount: order.codAmount,
+        orderKind: orderKind(order),
         currency: order.currency,
         createdAt: order.createdAt.toISOString(),
       })),
@@ -874,7 +941,8 @@ export class OrdersService {
     const grouped = await this.prisma.order.groupBy({
       by: ['userId'],
       where: { status: ORDER_STATUS.APPROVED_PAYMENT_PENDING },
-      _sum: { total: true },
+      // COD orders already had their advance paid online — only the balance is owed.
+      _sum: { total: true, advancePaid: true },
       _count: { _all: true },
     });
 
@@ -892,7 +960,7 @@ export class OrdersService {
         userId: g.userId,
         userName: nameById.get(g.userId) ?? 'Unknown',
         orderCount: g._count._all,
-        totalPending: g._sum.total ?? 0,
+        totalPending: (g._sum.total ?? 0) - (g._sum.advancePaid ?? 0),
       }))
       .sort((a, b) => b.totalPending - a.totalPending);
 
@@ -934,7 +1002,7 @@ export class OrdersService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const totalPending = orders.reduce((sum, o) => sum + o.total, 0);
+    const totalPending = orders.reduce((sum, o) => sum + o.total - o.advancePaid, 0);
 
     this.logger.debug(
       `[ORDER DEBUG] paymentPendingForUser found ${orders.length} orders for userId=${userId} totalPending=${totalPending}`,

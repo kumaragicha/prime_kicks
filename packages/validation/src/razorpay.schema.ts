@@ -29,6 +29,9 @@ export const startRazorpayCheckoutSchema = z
     // Optional coupon code (customer, prepaid only). Validated server-side; an
     // invalid/ineligible code fails the checkout rather than being silently dropped.
     couponCode: z.string().trim().max(32).optional(),
+    // ONLINE pays the full total now; COD pays a 20% advance now and the rest
+    // in cash on delivery (see splitPayment in @prime-kicks/types).
+    paymentMethod: z.enum(['ONLINE', 'COD']).optional().default('ONLINE'),
   })
   .superRefine((val, ctx) => {
     if (!val.isPickup && !val.address) {

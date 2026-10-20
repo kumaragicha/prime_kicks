@@ -4,6 +4,7 @@ import { DeleteIcon, IconButton } from '@/components/action-controls';
 import { OrderStatusActions, type OrderStatusAction } from '@/components/order-status-actions';
 import { DataTable } from '@/components/table-controls';
 import { type AdminOrderRow, type OrderStatus, type ShipmentStatus } from '@prime-kicks/types';
+import { OrderKindBadge } from '@/components/order-kind-badge';
 import { Badge } from '@prime-kicks/ui';
 import { formatCurrency } from '@prime-kicks/utils';
 import { createColumnHelper, getCoreRowModel, useReactTable } from '@tanstack/react-table';
@@ -114,6 +115,10 @@ export function OrdersTable({
           );
         },
       }),
+      columnHelper.accessor('orderKind', {
+        header: 'Type',
+        cell: (c) => <OrderKindBadge kind={c.getValue()} />,
+      }),
       columnHelper.accessor('status', {
         header: 'Status',
         cell: (c) => <StatusBadge status={c.getValue()} />,
@@ -139,7 +144,19 @@ export function OrdersTable({
       columnHelper.accessor('itemsCount', { header: 'Items' }),
       columnHelper.accessor('total', {
         header: 'Total',
-        cell: (c) => formatCurrency(c.getValue(), c.row.original.currency),
+        cell: (c) => {
+          const row = c.row.original;
+          return (
+            <div className="grid gap-1">
+              <span>{formatCurrency(c.getValue(), row.currency)}</span>
+              {row.paymentMethod === 'COD' && row.codAmount > 0 && (
+                <span className="text-xs text-amber-700">
+                  {formatCurrency(row.codAmount, row.currency)} to collect
+                </span>
+              )}
+            </div>
+          );
+        },
       }),
       columnHelper.accessor('createdAt', {
         header: 'Date',

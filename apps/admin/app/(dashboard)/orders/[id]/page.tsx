@@ -7,6 +7,7 @@ import { ShipmentPanel } from '@/components/shipment-panel';
 import { useOrder, useUpdateOrderStatus } from '@/lib/hooks';
 import { ORDER_STATUS, PAYMENT_STATUS, type OrderStatus } from '@prime-kicks/types';
 import { Badge } from '@prime-kicks/ui';
+import { ORDER_KIND_INFO, OrderKindBadge } from '@/components/order-kind-badge';
 import { formatCurrency } from '@prime-kicks/utils';
 import { useParams, useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -187,10 +188,82 @@ export default function OrderDetailPage() {
                   {order.shipping === 0 ? 'Free' : formatCurrency(order.shipping)}
                 </span>
               </div>
+              {order.discount > 0 && (
+                <div className="flex justify-between text-green-700">
+                  <span>Coupon{order.couponCode ? ` (${order.couponCode})` : ''}</span>
+                  <span className="font-medium">−{formatCurrency(order.discount)}</span>
+                </div>
+              )}
               <div className="flex justify-between pt-2 mt-1 border-t border-neutral-200 text-base">
                 <span className="font-semibold">Total</span>
                 <span className="font-bold">{formatCurrency(order.total)}</span>
               </div>
+            </div>
+
+            {/* Order type + type-specific payment details */}
+            <div className="mt-4 space-y-2 border-t border-neutral-200 pt-4 text-sm">
+              <div className="flex items-center justify-between">
+                <span className="text-neutral-600">Order type</span>
+                <OrderKindBadge kind={order.orderKind} />
+              </div>
+              <p className="text-xs text-neutral-500">{ORDER_KIND_INFO[order.orderKind ?? 'CUSTOMER'].hint}.</p>
+
+              {order.orderKind === 'PREPAID' && (
+                <div className="flex justify-between">
+                  <span className="text-neutral-600">Paid online</span>
+                  <span className="font-medium">{formatCurrency(order.advancePaid)}</span>
+                </div>
+              )}
+
+              {order.orderKind === 'COD' && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-600">Advance paid online</span>
+                    <span className="font-medium">{formatCurrency(order.advancePaid)}</span>
+                  </div>
+                  {order.paymentStatus === 'RECEIVED' ? (
+                    <div className="flex justify-between text-green-700">
+                      <span>Balance collected</span>
+                      <span className="font-semibold">{formatCurrency(order.codAmount)}</span>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between">
+                      <span className="font-semibold text-amber-800">
+                        Collect on delivery (cash)
+                      </span>
+                      <span className="font-bold text-amber-800">
+                        {formatCurrency(order.codAmount)}
+                      </span>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {(order.orderKind === 'RESELLER' || order.orderKind === 'CREDIT') && (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-600">Payment</span>
+                    <span
+                      className={`font-medium ${order.paymentStatus === 'RECEIVED' ? 'text-green-700' : 'text-amber-700'}`}
+                    >
+                      {order.paymentStatus === 'RECEIVED' ? 'Received' : 'Pending (pay later)'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-neutral-600">Fulfilment</span>
+                    <span className="font-medium">
+                      {order.isPickup ? 'Pickup / label' : 'Shipped to address'}
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {order.razorpayPaymentId && (
+                <div className="flex justify-between gap-3">
+                  <span className="text-neutral-600">Razorpay payment</span>
+                  <span className="truncate font-mono text-xs">{order.razorpayPaymentId}</span>
+                </div>
+              )}
             </div>
           </div>
 

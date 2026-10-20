@@ -34,6 +34,12 @@ enum OrderType {
   SINGLE
 }
 
+// How a web customer order is paid. Null on reseller / credit / admin orders.
+enum PaymentMethod {
+  ONLINE // full amount paid online (Razorpay)
+  COD // advance paid online, balance collected in cash on delivery
+}
+
 enum CouponType {
   PERCENT // discountValue is a percentage (1–100)
   FLAT // discountValue is a whole-rupee amount
@@ -504,6 +510,12 @@ model Order {
   total    Int
   currency String @default("INR")
 
+  // Web customer payment: ONLINE (paid in full) or COD (advancePaid now via
+  // Razorpay, codAmount collected by the courier). Null for other order kinds.
+  paymentMethod PaymentMethod?
+  advancePaid   Int @default(0)
+  codAmount     Int @default(0)
+
   // Coupon redeemed on this order, if any. `couponCode` is a snapshot so the
   // code still shows even if the coupon is later edited or deleted.
   coupon     Coupon? @relation(fields: [couponId], references: [id], onDelete: SetNull)
@@ -644,6 +656,8 @@ model RazorpayCheckoutSession {
   itemsJson   Json
   addressJson Json?
   isPickup    Boolean @default(false)
+  // ONLINE = `amount` is the full total; COD = `amount` is the advance only.
+  paymentMethod PaymentMethod @default(ONLINE)
   // Coupon code the customer applied, re-validated at confirmation time before
   // the order is created (price/eligibility can move between start and pay).
   couponCode  String?

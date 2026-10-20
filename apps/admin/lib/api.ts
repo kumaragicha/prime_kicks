@@ -265,6 +265,8 @@ export type OrderListParams = {
   pageSize?: number;
   search?: string;
   status?: string;
+  /** Order type filter: PREPAID | COD | RESELLER | CREDIT. */
+  kind?: string;
   startDate?: string;
   endDate?: string;
   sort?: 'newest' | 'oldest';
