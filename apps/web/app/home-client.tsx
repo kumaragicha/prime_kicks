@@ -27,6 +27,8 @@ import { Suspense, useEffect, useState } from 'react';
 const TAG_SECTIONS = [
   { title: 'New arrivals', tag: 'New Arrivals', id: 'new' },
   { title: 'Hot selling', tag: 'Hot Selling', id: 'shop' },
+  { title: 'Flip flops', tag: 'Flip Flops', id: 'flip-flops' },
+  { title: 'Crocs', tag: 'Crocs', id: 'crocs' },
 ] as const;
 
 /**
