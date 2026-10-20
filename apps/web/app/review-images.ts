@@ -21,7 +21,6 @@ const REVIEW_FILES: string[] = [
   'WhatsApp Image 2026-10-17 at 11.33.20 (1).jpeg',
   'WhatsApp Image 2026-10-17 at 11.33.19.jpeg',
   'WhatsApp Image 2026-10-17 at 11.33.19 (1).jpeg',
-  'WhatsApp Image 2026-10-17 at 11.56.48 (2).jpeg',
 ];
 
 export const REVIEW_IMAGES: string[] = REVIEW_FILES.map(

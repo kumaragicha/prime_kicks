@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import GoogleAnalyticsWrapper from './GoogleAnalytics';
+import { WelcomeOfferModal } from '@/components/welcome-offer-modal';
 import { Providers } from '@/providers';
 
 /**
@@ -90,7 +91,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
         <GoogleAnalyticsWrapper />
 
-        <Providers>{children}</Providers>
+        <Providers>
+          <WelcomeOfferModal />
+          {children}
+        </Providers>
       </body>
     </html>
   );
