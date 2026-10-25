@@ -4,9 +4,9 @@ import { useAuthCart } from '@/lib/hooks';
 import { useState } from 'react';
 
 // ─── Edit these to change the bar ────────────────────────────────────────────
-const MESSAGES = ['Prepaid order get 10% discount'];
+const MESSAGES = ['Use PRIME200 for flat ₹200 off'];
 /** Coupon code shown with a copy button. Set to '' to hide the code + button. */
-const COUPON_CODE = 'WELCOME10';
+const COUPON_CODE = 'PRIME200';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function Announcement() {

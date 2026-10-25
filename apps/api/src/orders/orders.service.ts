@@ -11,6 +11,7 @@ import {
   ORDER_TYPE,
   PAYMENT_STATUS,
   splitPayment,
+  calculateCodCashHandlingFee,
   type OrderKind,
   type OrderStatus,
   type PaymentStatus,
@@ -256,7 +257,9 @@ export class OrdersService {
    * gap, which is normal for sequences. Old orders keep their previous numbers.
    */
   private async nextOrderNumber(): Promise<string> {
-    const [row] = await this.prisma.$queryRaw<{ n: bigint }[]>`SELECT nextval('order_number_seq') AS n`;
+    const [row] = await this.prisma.$queryRaw<
+      { n: bigint }[]
+    >`SELECT nextval('order_number_seq') AS n`;
     return row!.n.toString();
   }
 
@@ -449,8 +452,8 @@ export class OrdersService {
     // or admin-created ones. Re-validated here (fresh) against the authoritative
     // subtotal; an expired/exhausted code throws, which the Razorpay flow turns
     // into a full refund (same as an unfulfillable cart).
-    // Web customer (Razorpay) orders are paid ONLINE in full or COD (advance now,
-    // balance on delivery). Every other kind of order has no payment method.
+    // Web customer orders are paid ONLINE in full or with a ₹300-per-shoe COD
+    // courier cash-handling payment through Razorpay. Every other kind has no payment method.
     const isWebPaidOrder = !isAdminCreated && prePaid;
     const paymentMethod = isWebPaidOrder ? (input.paymentMethod ?? 'ONLINE') : null;
 
@@ -470,10 +473,17 @@ export class OrdersService {
       couponCode = validated.code;
     }
 
-    const total = subtotal + shipping - discount;
+    // The COD fee is part of the amount collected by the courier, not an online
+    // advance. Store it in the total so admin receivables and shipment COD
+    // fields always agree with what the customer saw at checkout.
+    const codCashHandlingFee = calculateCodCashHandlingFee(
+      itemsWithDetails.reduce((count, item) => count + item.quantity, 0),
+    );
+    const total =
+      subtotal + shipping - discount + (paymentMethod === 'COD' ? codCashHandlingFee : 0);
     // What was paid online at checkout vs. what the courier collects.
     const { payNow: advancePaid, payOnDelivery: codAmount } = paymentMethod
-      ? splitPayment(total, paymentMethod)
+      ? splitPayment(total, paymentMethod, codCashHandlingFee)
       : { payNow: 0, payOnDelivery: 0 };
 
     // Credit-customer orders are always BULK. Admins may set the order type
@@ -493,8 +503,7 @@ export class OrdersService {
         ? ORDER_STATUS.APPROVED_PAYMENT_RECEIVED
         : ORDER_STATUS.APPROVED_PAYMENT_PENDING
       : prePaid
-        ? // COD: the advance is in, the balance is still owed until delivery.
-          paymentMethod === 'COD'
+        ? paymentMethod === 'COD'
           ? ORDER_STATUS.APPROVED_PAYMENT_PENDING
           : ORDER_STATUS.APPROVED_PAYMENT_RECEIVED
         : ORDER_STATUS.PENDING;
@@ -806,8 +815,11 @@ export class OrdersService {
     }
 
     // Web customer orders never carry a shipping charge (see `create()`).
-    const total = subtotal - discount;
-    const { payNow, payOnDelivery } = splitPayment(total, paymentMethod);
+    const codCashHandlingFee = calculateCodCashHandlingFee(
+      itemsWithDetails.reduce((count, item) => count + item.quantity, 0),
+    );
+    const total = subtotal - discount + (paymentMethod === 'COD' ? codCashHandlingFee : 0);
+    const { payNow, payOnDelivery } = splitPayment(total, paymentMethod, codCashHandlingFee);
     return {
       itemsWithDetails,
       subtotal,
@@ -941,7 +953,8 @@ export class OrdersService {
     const grouped = await this.prisma.order.groupBy({
       by: ['userId'],
       where: { status: ORDER_STATUS.APPROVED_PAYMENT_PENDING },
-      // COD orders already had their advance paid online — only the balance is owed.
+      // COD's fixed cash-handling payment is already paid; the courier collects
+      // only the remaining shoe amount.
       _sum: { total: true, advancePaid: true },
       _count: { _all: true },
     });
@@ -1123,7 +1136,10 @@ export class OrdersService {
    * the order is pushed to Shipmozo in the background.
    */
   async addAddress(id: string, addr: OrderAddressSchema, auditedBy?: string) {
-    const order = await this.prisma.order.findUnique({ where: { id }, include: orderDetailInclude });
+    const order = await this.prisma.order.findUnique({
+      where: { id },
+      include: orderDetailInclude,
+    });
     if (!order) throw new NotFoundException(`Order ${id} not found`);
     if (order.isPickup) {
       throw new BadRequestException('Pickup orders do not have a delivery address.');
@@ -1167,7 +1183,9 @@ export class OrdersService {
     // order page refreshes while the push is in progress.
     void this.shipment.pushForOrder(id, auditedBy).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(`Shipmozo push after address add threw for ${order.orderNumber}: ${message}`);
+      this.logger.error(
+        `Shipmozo push after address add threw for ${order.orderNumber}: ${message}`,
+      );
     });
 
     return toOrderDto(updated);

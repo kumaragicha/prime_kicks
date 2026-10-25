@@ -284,7 +284,7 @@ export default function OrdersPage() {
   // unapproved (PENDING) and approved-on-credit (APPROVED_PAYMENT_PENDING).
   // Only surfaced when there's something owed.
   // Customer site: what's owed is only the cash still due on COD orders (their
-  // advance is already paid). Reseller site: unchanged — pay-later orders.
+  // no part of a COD order is paid online). Reseller site: unchanged — pay-later orders.
   const pendingOrders = (orders ?? []).filter((o) =>
     IS_CUSTOMER_STORE
       ? o.paymentMethod === 'COD' &&

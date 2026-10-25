@@ -4,9 +4,9 @@ import { useAuthCart } from '@/lib/hooks';
 import { useEffect, useState } from 'react';
 
 // ─── Edit these to change the offer ──────────────────────────────────────────
-const OFFER_CODE = 'WELCOME10';
-const OFFER_TITLE = 'Here’s 10% off';
-const OFFER_TEXT = 'Use this code at checkout on your first order.';
+const OFFER_CODE = 'PRIME200';
+const OFFER_TITLE = 'Get ₹200 off';
+const OFFER_TEXT = 'Use this code at checkout on your prepaid order.';
 /** Delay before the modal opens, in ms. */
 const OPEN_DELAY_MS = 2500;
 // ─────────────────────────────────────────────────────────────────────────────
@@ -19,8 +19,7 @@ export function WelcomeOfferModal() {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  const isReseller =
-    user?.role === 'RESELLER' || process.env.NEXT_PUBLIC_STOREFRONT === 'reseller';
+  const isReseller = user?.role === 'RESELLER' || process.env.NEXT_PUBLIC_STOREFRONT === 'reseller';
 
   // Open once per session, a couple of seconds after landing.
   useEffect(() => {
@@ -90,7 +89,9 @@ export function WelcomeOfferModal() {
           ×
         </button>
 
-        <p className="m-0 text-[11px] uppercase tracking-[.18em] text-accent">Welcome to Prime Kicks</p>
+        <p className="m-0 text-[11px] uppercase tracking-[.18em] text-accent">
+          Welcome to Prime Kicks
+        </p>
         <h2 className="mt-[10px] mb-[6px] text-[30px] font-bold text-ink">{OFFER_TITLE}</h2>
         <p className="m-0 text-[13px] text-[#666]">{OFFER_TEXT}</p>
 

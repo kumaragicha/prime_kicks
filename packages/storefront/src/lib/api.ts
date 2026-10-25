@@ -279,6 +279,10 @@ export const api = {
       isPickup?: boolean;
       /** Reseller one-click checkout: no address collected, full reseller price. */
       skipAddress?: boolean;
+      /** Customer COD orders are collected entirely by the courier at delivery. */
+      paymentMethod?: 'COD';
+      /** Coupon code, if eligible for the selected payment method. */
+      couponCode?: string;
       address?: {
         name: string;
         email?: string;
@@ -323,7 +327,7 @@ export const api = {
       };
       /** Coupon code applied at checkout (customer, prepaid only). */
       couponCode?: string;
-      /** ONLINE = pay the full total now; COD = pay the advance now, rest on delivery. */
+      /** ONLINE = pay the full total now; COD = ₹300 per shoe now, rest at delivery. */
       paymentMethod?: 'ONLINE' | 'COD';
     },
     // Idempotency key: a retried/double-submitted checkout with the same key

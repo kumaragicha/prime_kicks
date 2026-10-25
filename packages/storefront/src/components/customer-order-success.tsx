@@ -13,7 +13,7 @@ const WHATSAPP_HELP_URL = 'https://api.whatsapp.com/send?phone=918866929090';
 
 /**
  * Customer-site order confirmation: payment is already done (online in full or
- * the COD advance), so this shows a success message and the order details —
+ * a courier-collected COD payment), so this shows a success message and order details —
  * items, amounts, payment, delivery address and expected delivery date. The
  * reseller site keeps its own WhatsApp-to-pay screen (OrderSuccess).
  */
@@ -46,7 +46,7 @@ export function CustomerOrderSuccess({ orderNumber }: { orderNumber: string }) {
 
         <div className="animate-[rise_0.45s_0.35s_both] motion-reduce:animate-none">
           <p className="m-0 mb-[10px] text-[10px] font-bold uppercase tracking-[.16em] text-accent">
-            {isCod ? 'Advance received' : 'Payment successful'}
+            {isCod ? 'Cash on delivery selected' : 'Payment successful'}
           </p>
           <h1 className="m-0 mb-[14px] text-[clamp(38px,5.5vw,58px)] leading-[.82] tracking-[-.09em]">
             Order <em className="font-[Georgia,serif] font-normal">confirmed.</em>
@@ -64,8 +64,9 @@ export function CustomerOrderSuccess({ orderNumber }: { orderNumber: string }) {
             >
               {isCod ? (
                 <>
-                  {formatCurrency(order.advancePaid)} advance paid · Please keep{' '}
-                  {formatCurrency(order.codAmount)} ready to pay in cash on delivery.
+                  {formatCurrency(order.advancePaid)} courier cash-handling fee paid online · Please
+                  keep {formatCurrency(order.codAmount)} ready to pay in cash when your shoes are
+                  delivered.
                 </>
               ) : (
                 <>

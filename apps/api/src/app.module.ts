@@ -12,6 +12,7 @@ import { CartModule } from './cart/cart.module';
 import { CouponsModule } from './coupons/coupons.module';
 import { CourierConfigModule } from './courier-config/courier-config.module';
 import { CreditCustomersModule } from './credit-customers/credit-customers.module';
+import { DevTestOrderModule } from './dev-test-order/dev-test-order.module';
 import { DimensionsModule } from './dimensions/dimensions.module';
 import { HealthController } from './health/health.controller';
 import { HeroModule } from './hero/hero.module';
@@ -56,6 +57,8 @@ import { WhatsAppModule } from './whatsapp/whatsapp.module';
     AnalyticsModule,
     HeroModule,
     CouponsModule,
+    // Dev-only: throwaway Shipmozo test-order tool (refuses in production).
+    DevTestOrderModule,
   ],
   controllers: [HealthController],
   providers: [

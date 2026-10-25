@@ -148,13 +148,13 @@ export function OrderDetails({ order }: { order: Order }) {
               </span>
             </div>
             <div className="flex justify-between">
-              <span>{isCod ? 'Advance paid online' : 'Paid online'}</span>
+              <span>{isCod ? 'Courier fee paid online' : 'Paid online'}</span>
               <span className="text-ink">{formatCurrency(order.advancePaid || order.total)}</span>
             </div>
             {isCod &&
               (codDue ? (
                 <div className="flex justify-between font-bold text-[#7a5a1e]">
-                  <span>To pay on delivery (cash)</span>
+                  <span>To pay at delivery (cash)</span>
                   <span>{formatCurrency(order.codAmount)}</span>
                 </div>
               ) : (

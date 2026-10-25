@@ -100,7 +100,9 @@ export class PaymentsService {
         existing.userId === userId &&
         existing.status === RAZORPAY_PAYMENT_STATUS.PENDING
       ) {
-        this.logger.debug(`Checkout idempotency hit for key ${idemKey} — reusing session ${existing.id}`);
+        this.logger.debug(
+          `Checkout idempotency hit for key ${idemKey} — reusing session ${existing.id}`,
+        );
         return {
           keyId: this.razorpay.keyId,
           razorpayOrderId: existing.razorpayOrderId,
@@ -120,8 +122,8 @@ export class PaymentsService {
       couponCode: input.couponCode,
       paymentMethod: input.paymentMethod,
     });
-    // Razorpay collects what's due now: the full total (ONLINE) or the COD
-    // advance. Paise; `payNow` is whole rupees.
+    // Razorpay collects the full ONLINE total or the per-shoe COD cash-handling
+    // payment. Paise; `payNow` is whole rupees.
     const amount = priced.payNow * 100;
 
     const razorpayOrder = await this.razorpay.instance.orders.create({
@@ -169,8 +171,15 @@ export class PaymentsService {
       throw error;
     }
 
-    this.logger.log(`Checkout session opened — Razorpay order ${razorpayOrder.id} for user ${userId}`);
-    return { keyId: this.razorpay.keyId, razorpayOrderId: razorpayOrder.id, amount, currency: 'INR' };
+    this.logger.log(
+      `Checkout session opened — Razorpay order ${razorpayOrder.id} for user ${userId}`,
+    );
+    return {
+      keyId: this.razorpay.keyId,
+      razorpayOrderId: razorpayOrder.id,
+      amount,
+      currency: 'INR',
+    };
   }
 
   /** Confirm a Checkout success callback from the storefront (in-page handler). */
@@ -205,10 +214,12 @@ export class PaymentsService {
    */
   async handleRedirectCallback(body: Record<string, unknown>): Promise<string> {
     const webAppUrl = this.config.get<string>('WEB_APP_URL') ?? 'http://localhost:3000';
-    const paymentId = typeof body.razorpay_payment_id === 'string' ? body.razorpay_payment_id : undefined;
+    const paymentId =
+      typeof body.razorpay_payment_id === 'string' ? body.razorpay_payment_id : undefined;
     const razorpayOrderId =
       typeof body.razorpay_order_id === 'string' ? body.razorpay_order_id : undefined;
-    const signature = typeof body.razorpay_signature === 'string' ? body.razorpay_signature : undefined;
+    const signature =
+      typeof body.razorpay_signature === 'string' ? body.razorpay_signature : undefined;
 
     // Razorpay POSTs a different shape on a failed/cancelled payment:
     // error[code], error[description], error[metadata][order_id], etc.
@@ -307,7 +318,9 @@ export class PaymentsService {
       // Still unresolved after ~3s — the winner's order-creation attempt is
       // taking unusually long or crashed. Report transient failure; the
       // webhook (if this wasn't it) retries on its own schedule regardless.
-      this.logger.warn(`Session ${sessionId} still CONSUMING after polling — reporting transient failure`);
+      this.logger.warn(
+        `Session ${sessionId} still CONSUMING after polling — reporting transient failure`,
+      );
       return { outcome: 'invalid' };
     }
 
@@ -358,7 +371,9 @@ export class PaymentsService {
         data: { razorpayOrderId: session.razorpayOrderId, razorpayPaymentId: paymentId },
       });
 
-      this.logger.log(`Payment confirmed — order ${order.orderNumber} created for session ${session.id}`);
+      this.logger.log(
+        `Payment confirmed — order ${order.orderNumber} created for session ${session.id}`,
+      );
       return { outcome: 'confirmed', orderNumber: order.orderNumber };
     } catch (error) {
       // The cart could no longer be fulfilled (most commonly: an item sold
@@ -366,7 +381,9 @@ export class PaymentsService {
       // took the customer's money — never keep it for something we can't
       // deliver: refund in full and leave no Order behind.
       const reason = error instanceof Error ? error.message : 'Unable to fulfil the order';
-      this.logger.error(`Order creation FAILED for paid session ${session.id}: ${reason} — refunding`);
+      this.logger.error(
+        `Order creation FAILED for paid session ${session.id}: ${reason} — refunding`,
+      );
       try {
         const refundId = await this.razorpay.refundPayment(paymentId, session.amount, reason);
         await this.prisma.razorpayCheckoutSession.update({
@@ -384,7 +401,8 @@ export class PaymentsService {
         // Refund itself failed — this needs a human. Leave the session
         // CONSUMING (neither PENDING nor resolved) so it's visibly stuck in
         // the admin table rather than silently lost, and surface loudly.
-        const refundReason = refundError instanceof Error ? refundError.message : String(refundError);
+        const refundReason =
+          refundError instanceof Error ? refundError.message : String(refundError);
         this.logger.error(
           `REFUND FAILED for session ${session.id}, payment ${paymentId}: ${refundReason}. ` +
             `Manual refund required — customer was charged but no order was created.`,
@@ -399,9 +417,10 @@ export class PaymentsService {
    * confirmed, refunded, or failed. Web storefront only: reseller/credit
    * orders never create a session.
    */
-  async listPayments(
-    query: RazorpayPaymentsQuerySchema,
-  ): Promise<{ data: AdminRazorpayPaymentRow[]; meta: { page: number; pageSize: number; total: number; totalPages: number } }> {
+  async listPayments(query: RazorpayPaymentsQuerySchema): Promise<{
+    data: AdminRazorpayPaymentRow[];
+    meta: { page: number; pageSize: number; total: number; totalPages: number };
+  }> {
     const { page, pageSize } = query;
 
     const [sessions, total] = await Promise.all([

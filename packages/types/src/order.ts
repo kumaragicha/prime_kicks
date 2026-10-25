@@ -80,7 +80,7 @@ export interface OrderAddress {
 /**
  * What kind of order this is, for the admin:
  * PREPAID  — web customer paid online in full (Razorpay)
- * COD      — web customer paid an advance online, balance in cash on delivery
+ * COD      — ₹300-per-shoe courier fee paid online; shoe amount paid to courier at delivery
  * RESELLER — placed by / for a reseller account (pay-later, reseller pricing)
  * CREDIT   — bulk order billed to a credit customer
  * CUSTOMER — older customer order with no recorded payment method
@@ -105,12 +105,12 @@ export interface Order {
   couponCode: string | null;
   /** Web customer orders: ONLINE (paid in full) or COD; null otherwise. */
   paymentMethod: 'ONLINE' | 'COD' | null;
-  /** Amount paid online at checkout (the full total, or the COD advance). */
+  /** Amount paid online at checkout (the full total for ONLINE; ₹300 per shoe for COD). */
   advancePaid: number;
   /** COD only: balance the courier collects on delivery (0 otherwise). */
   codAmount: number;
   orderKind: OrderKind;
-  /** Razorpay payment id for web orders paid online (prepaid or COD advance). */
+  /** Razorpay payment id for web orders paid online (ONLINE only). */
   razorpayPaymentId: string | null;
   total: number;
   currency: 'INR';

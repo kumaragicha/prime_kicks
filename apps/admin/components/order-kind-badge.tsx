@@ -4,7 +4,7 @@ import { Badge } from '@prime-kicks/ui';
 /** Admin-facing name and short explanation for each order type. */
 export const ORDER_KIND_INFO: Record<OrderKind, { label: string; hint: string }> = {
   PREPAID: { label: 'Prepaid', hint: 'Customer paid online in full' },
-  COD: { label: 'COD', hint: 'Advance paid online, balance in cash on delivery' },
+  COD: { label: 'COD', hint: '₹300 per shoe courier fee paid online, balance on delivery' },
   RESELLER: { label: 'Reseller', hint: 'Reseller order at reseller pricing' },
   CREDIT: { label: 'Credit (bulk)', hint: 'Bulk order billed to a credit customer' },
   CUSTOMER: { label: 'Customer', hint: 'Customer order without a recorded payment method' },

@@ -206,7 +206,9 @@ export default function OrderDetailPage() {
                 <span className="text-neutral-600">Order type</span>
                 <OrderKindBadge kind={order.orderKind} />
               </div>
-              <p className="text-xs text-neutral-500">{ORDER_KIND_INFO[order.orderKind ?? 'CUSTOMER'].hint}.</p>
+              <p className="text-xs text-neutral-500">
+                {ORDER_KIND_INFO[order.orderKind ?? 'CUSTOMER'].hint}.
+              </p>
 
               {order.orderKind === 'PREPAID' && (
                 <div className="flex justify-between">
@@ -218,12 +220,12 @@ export default function OrderDetailPage() {
               {order.orderKind === 'COD' && (
                 <>
                   <div className="flex justify-between">
-                    <span className="text-neutral-600">Advance paid online</span>
+                    <span className="text-neutral-600">Courier fee paid online</span>
                     <span className="font-medium">{formatCurrency(order.advancePaid)}</span>
                   </div>
                   {order.paymentStatus === 'RECEIVED' ? (
                     <div className="flex justify-between text-green-700">
-                      <span>Balance collected</span>
+                      <span>Collected at delivery</span>
                       <span className="font-semibold">{formatCurrency(order.codAmount)}</span>
                     </div>
                   ) : (

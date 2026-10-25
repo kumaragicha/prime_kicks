@@ -9,7 +9,7 @@ import { Toast } from '@/components/toast';
 import { ApiError, api, type SavedAddress, type StoreCart } from '@/lib/api';
 import { celebrateFromBottom } from '@/lib/celebrate';
 import { DELIVERY_WINDOW, expectedDeliveryDate, formatDeliveryDate } from '@/lib/delivery';
-import { COD_ADVANCE_PERCENT, splitPayment, type PaymentMethod } from '@prime-kicks/types';
+import { calculateCodCashHandlingFee, splitPayment, type PaymentMethod } from '@prime-kicks/types';
 import { formatCurrency } from '@prime-kicks/utils';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -280,15 +280,24 @@ export default function CartPage() {
     );
   }, [cart, isReseller, isPickup, shippingDeduction]);
   const itemCount = cart?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0;
+  const codCashHandlingFee = calculateCodCashHandlingFee(itemCount);
   // A prepaid-only coupon (e.g. PREPAID10) doesn't apply to COD — it stays
   // remembered and comes back if the customer switches to paying online.
   const couponActive = Boolean(
     appliedCoupon && (paymentMethod === 'ONLINE' || !appliedCoupon.prepaidOnly),
   );
   const couponDiscount = couponActive ? (appliedCoupon?.discount ?? 0) : 0;
+  const codCouponDiscount =
+    appliedCoupon && !appliedCoupon.prepaidOnly ? appliedCoupon.discount : 0;
   const total = subtotal - pickupDiscount - couponDiscount;
-  // What's charged online now vs. collected on delivery (COD advance split).
-  const { payNow, payOnDelivery } = splitPayment(total, payOnline ? paymentMethod : 'ONLINE');
+  // COD adds a ₹300-per-shoe courier cash-handling charge. It is paid through
+  // Razorpay; the remaining shoe amount is collected at delivery.
+  const checkoutTotal = total + (payOnline && paymentMethod === 'COD' ? codCashHandlingFee : 0);
+  const { payNow, payOnDelivery } = splitPayment(
+    checkoutTotal,
+    payOnline ? paymentMethod : 'ONLINE',
+    codCashHandlingFee,
+  );
   const deliveryBy = useMemo(() => formatDeliveryDate(expectedDeliveryDate()), []);
   // Struck MRP convention matches the product page ("50% off" → MRP is 2× the
   // selling price). Savings = everything off the MRP, including any coupon.
@@ -1083,7 +1092,11 @@ export default function CartPage() {
                       >
                         {(['ONLINE', 'COD'] as const).map((method) => {
                           const selected = paymentMethod === method;
-                          const codSplit = splitPayment(subtotal - pickupDiscount, 'COD');
+                          const codSplit = splitPayment(
+                            subtotal - pickupDiscount - codCouponDiscount + codCashHandlingFee,
+                            'COD',
+                            codCashHandlingFee,
+                          );
                           return (
                             <div
                               key={method}
@@ -1150,13 +1163,17 @@ export default function CartPage() {
                                 <div className="grid min-w-0 gap-[6px]">
                                   <p className="m-0 text-[14px] font-bold">Cash on delivery</p>
                                   <p className="m-0 text-[12px] text-[#555]">
-                                    Pay {COD_ADVANCE_PERCENT}% advance online now (
-                                    <b className="text-ink">{formatCurrency(codSplit.payNow)}</b>),
-                                    the rest (
+                                    <b className="text-ink">COD Courier Fee: ₹300 per shoe</b>
+                                    <br />
+                                    Charged by the courier partner for COD collection and handling.
+                                    This fee is separate from the shoe price and is not charged by
+                                    Prime Kicks.
+                                    <br />
+                                    Pay {formatCurrency(codSplit.payNow)} online now and{' '}
                                     <b className="text-ink">
                                       {formatCurrency(codSplit.payOnDelivery)}
-                                    </b>
-                                    ) in cash on delivery.
+                                    </b>{' '}
+                                    in cash upon delivery.
                                   </p>
                                   {removedCoupon && (
                                     <p className="m-0 flex items-start gap-[6px] rounded-[8px] bg-[#fbeeee] px-[10px] py-[8px] text-[11.5px] font-medium leading-[1.4] text-[#b3261e]">
@@ -1177,23 +1194,32 @@ export default function CartPage() {
 
                     {/* What's charged now vs. on delivery (phones; the side card shows it on larger screens) */}
                     <section className="grid gap-[10px] border-t border-line pt-[18px] text-[13px] text-[#555] min-[761px]:hidden">
-                      <div className="flex justify-between gap-[20px]">
-                        <span>Order total</span>
-                        <span className="text-ink">{formatCurrency(total)}</span>
-                      </div>
+                      {paymentMethod !== 'COD' && (
+                        <div className="flex justify-between gap-[20px]">
+                          <span>Order total</span>
+                          <span className="text-ink">{formatCurrency(checkoutTotal)}</span>
+                        </div>
+                      )}
                       {couponDiscount > 0 && appliedCoupon && (
                         <div className="flex justify-between gap-[20px] text-[#4b7d4b]">
                           <span>Includes coupon ({appliedCoupon.code})</span>
                           <span>−{formatCurrency(couponDiscount)}</span>
                         </div>
                       )}
-                      <div className="flex justify-between gap-[20px] font-bold text-ink">
-                        <span>{paymentMethod === 'COD' ? 'Pay now (advance)' : 'Pay now'}</span>
-                        <span>{formatCurrency(payNow)}</span>
-                      </div>
+                      {paymentMethod === 'COD' ? (
+                        <div className="flex justify-between gap-[20px] text-[15px] font-extrabold text-ink">
+                          <strong>Pay now</strong>
+                          <strong>{formatCurrency(payNow)}</strong>
+                        </div>
+                      ) : (
+                        <div className="flex justify-between gap-[20px] font-bold text-ink">
+                          <span>Pay now</span>
+                          <span>{formatCurrency(payNow)}</span>
+                        </div>
+                      )}
                       {paymentMethod === 'COD' && (
                         <div className="flex justify-between gap-[20px]">
-                          <span>Pay on delivery (cash)</span>
+                          <span>Pay at delivery</span>
                           <span className="text-ink">{formatCurrency(payOnDelivery)}</span>
                         </div>
                       )}
@@ -1685,18 +1711,26 @@ export default function CartPage() {
                     <span>Delivery</span>
                     <span className="font-bold text-[#4b7d4b]">FREE</span>
                   </div>
-                  <div className="flex items-baseline justify-between gap-[16px] border-t border-t-[#d6d1c7] pt-[12px] text-[14px] text-ink">
-                    <span>Total</span>
-                    <strong className="text-[20px]">{formatCurrency(total)}</strong>
-                  </div>
+                  {onPaymentStep && paymentMethod === 'COD' && (
+                    <div className="flex justify-between gap-[16px]">
+                      <span>COD courier fee</span>
+                      <span className="text-ink">{formatCurrency(codCashHandlingFee)}</span>
+                    </div>
+                  )}
+                  {paymentMethod !== 'COD' && (
+                    <div className="flex items-baseline justify-between gap-[16px] border-t border-t-[#d6d1c7] pt-[12px] text-[14px] text-ink">
+                      <span>Total</span>
+                      <strong className="text-[20px]">{formatCurrency(checkoutTotal)}</strong>
+                    </div>
+                  )}
                   {onPaymentStep && paymentMethod === 'COD' && (
                     <>
-                      <div className="flex justify-between gap-[16px] font-bold text-ink">
-                        <span>Pay now (advance)</span>
-                        <span>{formatCurrency(payNow)}</span>
+                      <div className="flex justify-between gap-[16px] text-[16px] font-extrabold text-ink">
+                        <strong>Pay now</strong>
+                        <strong>{formatCurrency(payNow)}</strong>
                       </div>
                       <div className="flex justify-between gap-[16px]">
-                        <span>Pay on delivery (cash)</span>
+                        <span>Pay at delivery</span>
                         <span className="text-ink">{formatCurrency(payOnDelivery)}</span>
                       </div>
                     </>
@@ -1755,10 +1789,12 @@ export default function CartPage() {
               <p className="m-0 text-[9px] font-bold uppercase tracking-[.14em] text-[#999]">
                 Total
               </p>
-              <strong className="text-[19px] tracking-[-.02em]">{formatCurrency(total)}</strong>
+              <strong className="text-[19px] tracking-[-.02em]">
+                {formatCurrency(checkoutTotal)}
+              </strong>
               {onPaymentStep && paymentMethod === 'COD' ? (
                 <p className="m-0 mt-[1px] text-[10px] font-bold text-[#555]">
-                  {formatCurrency(payNow)} now · {formatCurrency(payOnDelivery)} on delivery
+                  {formatCurrency(payNow)} now · {formatCurrency(payOnDelivery)} at delivery
                 </p>
               ) : (
                 savings > 0 &&
@@ -1793,9 +1829,7 @@ export default function CartPage() {
                     <path d="M8 11V8a4 4 0 0 1 8 0v3" strokeLinecap="round" />
                   </svg>
                   {onPaymentStep
-                    ? // COD's split is spelled out next to the total, so the button
-                      // stays one line on phones: always "Pay <amount due now>".
-                      `Pay ${formatCurrency(payNow)}`
+                    ? `Pay ${formatCurrency(payNow)}`
                     : onCheckoutStep
                       ? 'Continue to payment'
                       : 'Proceed to checkout'}
