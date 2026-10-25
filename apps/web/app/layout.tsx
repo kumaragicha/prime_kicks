@@ -1,8 +1,8 @@
+import { WelcomeOfferModal } from '@/components/welcome-offer-modal';
+import { Providers } from '@/providers';
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import GoogleAnalyticsWrapper from './GoogleAnalytics';
-import { WelcomeOfferModal } from '@/components/welcome-offer-modal';
-import { Providers } from '@/providers';
 
 /**
  * Allow users to zoom (WCAG 1.4.4). iOS Safari only auto-zooms on focus when an
@@ -19,7 +19,7 @@ export const viewport: Viewport = {
 const SITE_URL = 'https://primekicks.in';
 const SITE_DESCRIPTION =
   'Discover premium sneakers and footwear at Prime Kicks. Shop the latest styles, new drops and exclusive collections.';
-
+console.log('SITE_URL', SITE_URL);
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
