@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 // ─── Edit these to change the offer ──────────────────────────────────────────
 const OFFER_CODE = 'PRIME200';
 const OFFER_TITLE = 'Get ₹200 off';
-const OFFER_TEXT = 'Use this code at checkout on your prepaid order.';
+const OFFER_TEXT = 'Use this code at checkout on your order.';
 /** Delay before the modal opens, in ms. */
 const OPEN_DELAY_MS = 2500;
 // ─────────────────────────────────────────────────────────────────────────────
