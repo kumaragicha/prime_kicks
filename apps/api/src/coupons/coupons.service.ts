@@ -212,9 +212,8 @@ export class CouponsService {
     if (coupon.customerOnly && ctx.role !== 'CUSTOMER') {
       throw new BadRequestException('This coupon is only available to customers.');
     }
-    if (coupon.prepaidOnly && !ctx.prepaid) {
-      throw new BadRequestException('This coupon is valid on prepaid orders only.');
-    }
+    // Coupons apply to BOTH prepaid and COD orders — there is no payment-method
+    // restriction. (The legacy `prepaidOnly` column is retained but ignored.)
     if (ctx.subtotal < coupon.minOrderValue) {
       throw new BadRequestException(
         `Add ₹${coupon.minOrderValue - ctx.subtotal} more to use this coupon (minimum order ₹${coupon.minOrderValue}).`,
@@ -267,7 +266,9 @@ export class CouponsService {
       type: coupon!.type,
       value: coupon!.value,
       discount: validated.discount,
-      prepaidOnly: coupon!.prepaidOnly,
+      // Payment method no longer gates coupons — they apply to COD as well as
+      // prepaid — so the storefront must never treat any coupon as prepaid-only.
+      prepaidOnly: false,
       subtotal,
       total: subtotal - validated.discount,
     };

@@ -342,7 +342,26 @@ export default function CartPage() {
       notify(`${preview.code} applied — you saved ${formatCurrency(preview.discount)}!`);
     } catch (error) {
       setAppliedCoupon(null);
-      setCouponError(error instanceof Error ? error.message : 'That coupon could not be applied.');
+      // Parse specific coupon error messages from the API
+      let couponErrorMessage = 'That coupon could not be applied.';
+      if (error instanceof Error) {
+        const errorMessage = error.message || '';
+        // Map specific API error messages to user-friendly text
+        if (errorMessage.includes('This coupon code is not valid')) {
+          couponErrorMessage = 'This coupon code is not valid or has expired.';
+        } else if (errorMessage.includes('This coupon is only available to customers')) {
+          couponErrorMessage = 'This coupon is only available for customer accounts.';
+        } else if (errorMessage.includes('This coupon is valid on prepaid orders only')) {
+          couponErrorMessage = 'This coupon is valid on prepaid orders only.';
+        } else if (errorMessage.includes('This coupon has expired')) {
+          couponErrorMessage = 'This coupon has expired.';
+        } else if (errorMessage.includes('This coupon has reached')) {
+          couponErrorMessage = 'This coupon has reached its usage limit.';
+        } else {
+          couponErrorMessage = errorMessage;
+        }
+      }
+      setCouponError(couponErrorMessage);
     } finally {
       setCouponLoading(false);
     }

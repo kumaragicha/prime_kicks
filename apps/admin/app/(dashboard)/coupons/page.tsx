@@ -160,8 +160,8 @@ export default function CouponsPage() {
     <div className="max-w-5xl">
       <h1 className="text-2xl font-bold">Coupons</h1>
       <p className="mt-2 text-sm text-neutral-500">
-        Discount codes for the storefront. Coupons apply to customer, prepaid orders only — never
-        reseller, credit or admin orders.
+        Discount codes for the storefront. Coupons apply to customer orders — prepaid and COD —
+        never reseller, credit or admin orders.
       </p>
 
       {/* Create / edit form */}
@@ -286,14 +286,6 @@ export default function CouponsPage() {
           <label className="flex items-center gap-2 text-xs font-medium text-neutral-700">
             <input
               type="checkbox"
-              checked={form.prepaidOnly}
-              onChange={(e) => set('prepaidOnly', e.target.checked)}
-            />
-            Prepaid orders only
-          </label>
-          <label className="flex items-center gap-2 text-xs font-medium text-neutral-700">
-            <input
-              type="checkbox"
               checked={form.isActive}
               onChange={(e) => set('isActive', e.target.checked)}
             />
@@ -342,7 +334,7 @@ export default function CouponsPage() {
                       <div className="text-xs text-neutral-500">{c.description}</div>
                     )}
                     <div className="mt-0.5 text-[11px] text-neutral-400">
-                      {c.customerOnly ? 'Customers' : 'All roles'} · {c.prepaidOnly ? 'Prepaid' : 'Any payment'}
+                      {c.customerOnly ? 'Customers' : 'All roles'} · Prepaid &amp; COD
                     </div>
                   </td>
                   <td className="p-3">{discountLabel(c)}</td>

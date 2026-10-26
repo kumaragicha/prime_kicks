@@ -448,10 +448,10 @@ export class OrdersService {
     // create endpoint is open, so gate it — web orders always default to 0).
     const shipping = isAdminCreated ? (input.shipping ?? 0) : 0;
 
-    // Coupons apply ONLY to web customer prepaid orders — never reseller, credit
-    // or admin-created ones. Re-validated here (fresh) against the authoritative
-    // subtotal; an expired/exhausted code throws, which the Razorpay flow turns
-    // into a full refund (same as an unfulfillable cart).
+    // Coupons apply to web customer orders — ONLINE *and* COD — but never
+    // reseller, credit or admin-created ones. Re-validated here (fresh) against
+    // the authoritative subtotal; an expired/exhausted code throws, which the
+    // Razorpay flow turns into a full refund (same as an unfulfillable cart).
     // Web customer orders are paid ONLINE in full or with a ₹300-per-shoe COD
     // courier cash-handling payment through Razorpay. Every other kind has no payment method.
     const isWebPaidOrder = !isAdminCreated && prePaid;
@@ -465,7 +465,8 @@ export class OrdersService {
         userId: ownerUserId!,
         role: ownerRole,
         subtotal,
-        // A COD order is not fully prepaid, so prepaid-only coupons don't apply.
+        // Payment method no longer gates coupons (they apply to COD too); this
+        // flag is retained only for the validator's signature.
         prepaid: paymentMethod !== 'COD',
       });
       discount = validated.discount;
@@ -798,9 +799,9 @@ export class OrdersService {
       0,
     );
 
-    // Apply a coupon (customer + prepaid only) so the Razorpay amount reflects
-    // the discount. validateForCheckout enforces customer-only eligibility, so a
-    // reseller who somehow sends a code gets a clear error rather than a discount.
+    // Apply a coupon (customer only; works for ONLINE and COD) so the Razorpay
+    // amount reflects the discount. validateForCheckout enforces customer-only
+    // eligibility, so a reseller who somehow sends a code gets a clear error.
     let discount = 0;
     let couponCode: string | undefined;
     if (input.couponCode?.trim()) {
