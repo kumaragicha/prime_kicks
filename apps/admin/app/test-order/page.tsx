@@ -165,7 +165,30 @@ export default function TestOrderPage() {
     }
   }
 
+  function validateAddress(a: AddressFields): string[] {
+    const errs: string[] = [];
+    const digits = (v: string) => v.replace(/\D/g, '');
+    if (!a.name.trim()) errs.push('Full name is required');
+    else if (!/^[\p{L} ]+$/u.test(a.name.trim()))
+      errs.push('Full name can only contain letters and spaces');
+    if (digits(a.mobileNo).length < 10) errs.push('Enter a valid mobile number (at least 10 digits)');
+    if (a.altMobileNo.trim() && digits(a.altMobileNo).length < 10)
+      errs.push('Alternative mobile number must be at least 10 digits');
+    if (a.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a.email.trim()))
+      errs.push('Valid email is required');
+    if (!a.line1.trim()) errs.push('Address line 1 is required');
+    if (digits(a.pincode).length < 6) errs.push('Valid pincode is required');
+    if (!a.city.trim()) errs.push('City is required');
+    if (!a.state.trim()) errs.push('State is required');
+    return errs;
+  }
+
   async function placeOrder() {
+    const errs = validateAddress(address);
+    if (errs.length > 0) {
+      setError(errs.join(' · '));
+      return;
+    }
     setBusy('order');
     setError(null);
     if (clearTimer.current) clearTimeout(clearTimer.current);

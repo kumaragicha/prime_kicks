@@ -6,6 +6,7 @@ import {
   Post,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { addressSchema } from '@prime-kicks/validation';
 import { AddressService } from '../address/address.service';
 import { Public } from '../auth/decorators/public.decorator';
 import { CourierConfigService } from '../courier-config/courier-config.service';
@@ -122,10 +123,14 @@ export class DevTestOrderController {
       return { parsed, payload, slab: weightSlab(box.weight), box, dryRun: true };
     }
 
-    // Placing an order: use the REVIEWED fields the operator edited, not a re-parse.
+    // Placing an order: use the REVIEWED fields the operator edited, not a
+    // re-parse — and validate them with the SAME schema the web/admin checkout
+    // uses, so a missing name/phone/line1/pincode/city/state is rejected rather
+    // than silently filled with a dummy.
     const address = this.normalizeAddress(body?.address);
-    if (!address.line1 && !address.pincode) {
-      throw new BadRequestException('Parse an address and review the fields before placing.');
+    const check = addressSchema.safeParse(address);
+    if (!check.success) {
+      throw new BadRequestException(check.error.issues.map((i) => i.message));
     }
     const parsed = address;
     const payload = this.buildPayload(address, box);
@@ -349,7 +354,7 @@ export class DevTestOrderController {
   ): ShipmozoPushOrderPayload {
     const num = (v: string) => v.replace(/\D/g, '');
 
-    const phone = num(parsed.mobileNo) || '9999999999';
+    const phone = num(parsed.mobileNo);
     const altPhone = num(parsed.altMobileNo);
     // Shipmozo rejects an alternate phone equal to the main phone, so only send
     // it when it's present AND actually different.
@@ -363,11 +368,11 @@ export class DevTestOrderController {
       order_id: `TEST-${Date.now()}`,
       order_date: new Date().toISOString().slice(0, 10),
       order_type: 'ESSENTIALS',
-      consignee_name: parsed.name || 'Test Customer',
+      consignee_name: parsed.name,
       consignee_phone: phone,
       consignee_alternate_phone: alternatePhone,
       consignee_email: parsed.email || undefined,
-      consignee_address_line_one: parsed.line1 || 'Test address line one',
+      consignee_address_line_one: parsed.line1,
       consignee_address_line_two: lineTwo,
       consignee_pin_code: num(parsed.pincode),
       consignee_city: parsed.city,
